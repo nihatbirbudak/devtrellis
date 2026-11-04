@@ -146,8 +146,8 @@ $result = & $env:UFUK_AUTOMATIC_SCRIPT
         self.assertEqual(result["daily_time"], "08:00")
         self.assertFalse(result["application_started"])
         action = self.calls(response, "action")[0]
-        self.assertEqual(action["WorkingDirectory"], str(self.root))
-        self.assertIn('-File "' + str(self.root / "baslat.ps1") + '" -TarayiciAcma', action["Argument"])
+        self.assertEqual(Path(action["WorkingDirectory"]).resolve(), self.root.resolve())
+        self.assertIn('-File "' + str((self.root / "baslat.ps1").resolve()) + '" -TarayiciAcma', action["Argument"])
         for argument in ("-WindowStyle Hidden", "-NoProfile", "-NonInteractive"):
             self.assertIn(argument, action["Argument"])
         principal = self.calls(response, "principal")[0]
