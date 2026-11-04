@@ -1,0 +1,27 @@
+/* Okuma, Türkçe özet ve çok kaynaklı araştırma panelleri. */
+.insights { margin: 28px 0; border: 1px solid var(--line, #dddcd2); border-radius: 16px; background: #fcfcf8; overflow: hidden; }
+.insight-tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid #e3e5dc; background: #f0f3eb; }
+.insight-tab { flex: 1; padding: 12px 8px; color: #53665b; border: 0; border-radius: 9px; background: transparent; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.insight-tab[aria-selected="true"] { background: #fff; color: #173b31; box-shadow: 0 2px 8px #183b3110; }
+.insight-panel { padding: 24px; overflow-wrap: anywhere; }
+.insight-panel h3 { font-size: 22px; line-height: 1.4; margin: 12px 0; letter-spacing: -.025em; }
+.insight-panel h4 { margin: 22px 0 10px; font-size: 14px; }
+.insight-help, .insight-meta { font-size: 12px; line-height: 1.8; color: #66756d; margin: 0 0 16px; }
+.insight-label { font-size: 10px; letter-spacing: .11em; font-weight: 700; color: #537c59; margin-top: 24px; }
+.insight-summary { font-size: 15px; line-height: 1.95; white-space: pre-line; }
+.insight-status { padding: 14px; background: #e7efdf; border-radius: 8px; font-size: 14px; color: #24472f; }
+.insight-error, .insight-warning { padding: 12px 14px; border-radius: 8px; font-size: 12px; line-height: 1.8; background: #faf0df; color: #70512b; }
+.insight-error { background: #f9eae7; color: #8a3d33; }
+.insight-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 20px 0 12px; }
+.insight-actions .button { min-height: 38px; padding: 9px 15px; font-size: 12px; }
+.insight-evidence { border-top: 1px solid #dde4d9; padding-top: 16px; margin-top: 24px; }
+.insight-evidence summary, .article-body summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.insight-source { margin: 18px 0; padding-left: 14px; border-left: 3px solid #b9cdb3; }
+.insight-source blockquote { margin: 10px 0; color: #5c685f; font-size: 13px; line-height: 1.8; white-space: pre-line; }
+.insight-list { padding-left: 20px; font-size: 14px; line-height: 1.85; }
+.insight-list li { margin: 7px 0; }
+.article-body { margin: 22px 0; }
+.article-body p { font-size: 15px; line-height: 1.95; white-space: pre-line; }
+.card-read-label { font-size: 10px; color: #59715e; margin-top: 12px; }
+.news-card.is-read .card-content { background: #f7f8f3; }
+@media(max-width: 600px) { .insight-panel { padding: 17px; } .insight-tab { font-size: 11px; padding: 10px 5px; } .insight-tabs { gap: 1px; padding: 5px; } .insight-panel h3 { font-size: 20px; } }

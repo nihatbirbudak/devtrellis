@@ -1,0 +1,1783 @@
+[
+  {
+    "id": "anthropic",
+    "name": "Anthropic News",
+    "topic": "ai",
+    "url": "https://www.anthropic.com/news",
+    "fetch_url": "https://www.anthropic.com/news",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.anthropic.com",
+      "anthropic.com"
+    ],
+    "item_hosts": [
+      "www.anthropic.com",
+      "anthropic.com"
+    ],
+    "include_patterns": [
+      "^/news/[^/]+/?$"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Claude, ajan araçları ve Ev otomasyonunun araştırma akışı için ilgili değişiklikleri bulur.",
+    "publisher": "Anthropic",
+    "source_type": "Üretici",
+    "branches": [
+      "Ajanlar",
+      "Büyük dil modelleri"
+    ],
+    "discovered_from": "https://www.anthropic.com/news",
+    "exclude_patterns": [
+      "^/news/announcements/?$"
+    ],
+    "candidate_status": "existing"
+  },
+  {
+    "id": "apple_ml",
+    "name": "Apple Machine Learning Research",
+    "topic": "ai",
+    "url": "https://machinelearning.apple.com/",
+    "fetch_url": "https://machinelearning.apple.com/rss.xml",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "machinelearning.apple.com"
+    ],
+    "item_hosts": [
+      "machinelearning.apple.com"
+    ],
+    "publisher": "Apple ML Research",
+    "branches": [
+      "Yerel modeller",
+      "Verimli çıkarım",
+      "Bilgisayarlı görü",
+      "Ses modelleri"
+    ],
+    "source_type": "Araştırma",
+    "discovered_from": "https://machinelearning.apple.com/",
+    "evidence_type": "arastirma_duyurusu",
+    "benefit": "Cihaz üstü öğrenme, bellek verimliliği, ses ve görüntü araştırmalarını izler; Apple donanımına özgü sonuçları ayrı değerlendirir.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "arxiv",
+    "name": "arXiv · sera ve robotik keşfi",
+    "topic": "ai",
+    "url": "https://arxiv.org/",
+    "fetch_url": "https://export.arxiv.org/api/query?search_query=%28ti%3Agreenhouse%20OR%20ti%3Airrigation%29%20AND%20%28cat%3Acs.AI%20OR%20cat%3Acs.RO%20OR%20cat%3Acs.LG%20OR%20cat%3Acs.CV%29&start=0&max_results=10&sortBy=submittedDate&sortOrder=descending",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "export.arxiv.org"
+    ],
+    "item_hosts": [
+      "arxiv.org",
+      "export.arxiv.org"
+    ],
+    "evidence_type": "on_baski",
+    "benefit": "Sera ve sulamayla ilgili dar bir yapay zekâ/robotik sorgusunda ön baskı keşfi yapar; hakemli sonuç sayılmaz.",
+    "publisher": "arXiv",
+    "source_type": "Araştırma",
+    "branches": [
+      "Bilimsel ön baskılar",
+      "Sera yapay zekâsı",
+      "Robotik araştırma"
+    ],
+    "discovered_from": "https://arxiv.org/",
+    "candidate_status": "existing"
+  },
+  {
+    "id": "bair",
+    "name": "Berkeley AI Research",
+    "topic": "ai",
+    "url": "https://bair.berkeley.edu/blog/",
+    "fetch_url": "https://bair.berkeley.edu/blog/feed.xml",
+    "kind": "rss",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "bair.berkeley.edu"
+    ],
+    "item_hosts": [
+      "bair.berkeley.edu"
+    ],
+    "publisher": "UC Berkeley BAIR",
+    "branches": [
+      "Pekiştirmeli öğrenme",
+      "Bilgisayarlı görü",
+      "Ajan belleği"
+    ],
+    "source_type": "Araştırma",
+    "discovered_from": "https://bair.berkeley.edu/blog/",
+    "evidence_type": "arastirma_duyurusu",
+    "benefit": "Üniversite araştırmalarında yöntem, deney ve sınırlamaları takip ederek üretici duyurularına akademik çeşitlilik ekler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "google_research",
+    "name": "Google Research",
+    "topic": "ai",
+    "url": "https://research.google/blog/",
+    "fetch_url": "https://research.google/blog/rss/",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "research.google",
+      "www.research.google"
+    ],
+    "item_hosts": [
+      "research.google",
+      "www.research.google"
+    ],
+    "publisher": "Google",
+    "branches": [
+      "Bilgisayarlı görü",
+      "Ajanlar",
+      "Bilimsel araştırma",
+      "Veri güvenliği"
+    ],
+    "source_type": "Araştırma",
+    "discovered_from": "https://research.google/blog/",
+    "evidence_type": "arastirma_duyurusu",
+    "benefit": "Algı, bilgi erişimi, ajanlar ve bilimsel yöntemleri araştırma ekibinin teknik açıklamalarından izler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "huggingface_blog",
+    "name": "Hugging Face · Teknik blog",
+    "topic": "ai",
+    "url": "https://huggingface.co/blog",
+    "fetch_url": "https://huggingface.co/blog/feed.xml",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "huggingface.co"
+    ],
+    "item_hosts": [
+      "huggingface.co"
+    ],
+    "publisher": "Hugging Face",
+    "branches": [
+      "Açık modeller",
+      "Veri kümeleri",
+      "Çıkarım",
+      "Ses ve görüntü"
+    ],
+    "source_type": "Teknik yayın",
+    "discovered_from": "https://huggingface.co/blog",
+    "evidence_type": "teknik_yayin",
+    "benefit": "Açık model, veri kümesi ve çalıştırma araçlarını teknik yazılardan izler; ortak yazarların üretici iddiaları ayrıca değerlendirilir.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "llama_cpp",
+    "name": "llama.cpp",
+    "topic": "ai",
+    "url": "https://github.com/ggml-org/llama.cpp/releases",
+    "fetch_url": "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Yerel modellerin Windows, CUDA ve bellek kullanımındaki değişikliklerini izler. Her derleme ayrı gazete haberi sayılmaz.",
+    "publisher": "ggml-org",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Yerel modeller",
+      "CUDA",
+      "Verimli çıkarım"
+    ],
+    "discovered_from": "https://github.com/ggml-org/llama.cpp/releases",
+    "candidate_status": "existing"
+  },
+  {
+    "id": "microsoft_research",
+    "name": "Microsoft Research",
+    "topic": "ai",
+    "url": "https://www.microsoft.com/en-us/research/blog/",
+    "fetch_url": "https://www.microsoft.com/en-us/research/feed/",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.microsoft.com",
+      "microsoft.com"
+    ],
+    "item_hosts": [
+      "www.microsoft.com",
+      "microsoft.com"
+    ],
+    "publisher": "Microsoft Research",
+    "branches": [
+      "Ajanlar",
+      "Model değerlendirme",
+      "Bilimsel araştırma",
+      "Sistemler"
+    ],
+    "source_type": "Araştırma",
+    "discovered_from": "https://www.microsoft.com/en-us/research/blog/",
+    "evidence_type": "arastirma_duyurusu",
+    "benefit": "Araştırma yöntemleri, ajan değerlendirmesi ve sistem verimliliğine ilişkin kurumun çalışmalarını takip eder.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "mit_ai",
+    "name": "MIT News · Artificial Intelligence",
+    "topic": "ai",
+    "url": "https://news.mit.edu/topic/artificial-intelligence2",
+    "fetch_url": "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "news.mit.edu"
+    ],
+    "item_hosts": [
+      "news.mit.edu"
+    ],
+    "publisher": "Massachusetts Institute of Technology",
+    "branches": [
+      "Bilimsel araştırma",
+      "Bilgisayarlı görü",
+      "İnsan ve yapay zekâ"
+    ],
+    "source_type": "Araştırma",
+    "discovered_from": "https://news.mit.edu/topic/artificial-intelligence2",
+    "evidence_type": "arastirma_duyurusu",
+    "benefit": "Üniversitenin yapay zekâ araştırmalarını ve saha uygulamalarını takip eder; kurum haberini makalenin kendisi saymaz.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "mozilla_ai",
+    "name": "Mozilla AI Blog",
+    "topic": "ai",
+    "url": "https://blog.mozilla.ai/",
+    "fetch_url": "https://blog.mozilla.ai/rss/",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "blog.mozilla.ai"
+    ],
+    "item_hosts": [
+      "blog.mozilla.ai"
+    ],
+    "publisher": "Mozilla AI",
+    "branches": [
+      "Açık modeller",
+      "Ajan altyapısı",
+      "Yerel çıkarım",
+      "Yerel ses"
+    ],
+    "source_type": "Teknik yayın",
+    "discovered_from": "https://blog.mozilla.ai/",
+    "evidence_type": "teknik_yayin",
+    "benefit": "Açık ve taşınabilir model altyapısı, yerel çıkarım karşılaştırmaları ve ajan araçlarına ilişkin teknik yazıları izler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "nvidia_developer",
+    "name": "NVIDIA Technical Blog",
+    "topic": "ai",
+    "url": "https://developer.nvidia.com/blog/",
+    "fetch_url": "https://developer.nvidia.com/blog/feed/",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "developer.nvidia.com",
+      "developer-blogs.nvidia.com"
+    ],
+    "item_hosts": [
+      "developer.nvidia.com",
+      "developer-blogs.nvidia.com"
+    ],
+    "publisher": "NVIDIA",
+    "branches": [
+      "CUDA",
+      "Model sıkıştırma",
+      "Bilgisayarlı görü",
+      "Çıkarım hızlandırma"
+    ],
+    "source_type": "Teknik yayın",
+    "discovered_from": "https://developer.nvidia.com/blog/",
+    "evidence_type": "teknik_yayin",
+    "benefit": "RTX/CUDA ortamında çıkarım, görme ve bellek kullanımına uygun teknik gelişmeleri; ölçümleri donanım koşullarıyla birlikte izler.",
+    "candidate_status": "new",
+    "pagination": "wordpress"
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama Blog",
+    "topic": "ai",
+    "url": "https://ollama.com/blog",
+    "fetch_url": "https://ollama.com/blog",
+    "kind": "html",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "ollama.com"
+    ],
+    "item_hosts": [
+      "ollama.com"
+    ],
+    "publisher": "Ollama",
+    "branches": [
+      "Yerel modeller",
+      "Model çalıştırma",
+      "Yerel ses"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://ollama.com/blog",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Yerel model sunumu, yeni model desteği ve çalıştırma değişikliklerini takip eder; bulut duyurularının yerel desteği ayrıca denetlenir.",
+    "candidate_status": "new",
+    "include_patterns": [
+      "^/blog/[^/]+/?$"
+    ]
+  },
+  {
+    "id": "openai_news",
+    "name": "OpenAI News",
+    "topic": "ai",
+    "url": "https://openai.com/news/",
+    "fetch_url": "https://openai.com/news/rss.xml",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "openai.com",
+      "www.openai.com"
+    ],
+    "item_hosts": [
+      "openai.com",
+      "www.openai.com"
+    ],
+    "publisher": "OpenAI",
+    "branches": [
+      "Ajanlar",
+      "Büyük dil modelleri",
+      "Model değerlendirme"
+    ],
+    "source_type": "Üretici",
+    "discovered_from": "https://openai.com/news/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Model ve ajan yetenekleri, API değişiklikleri ve değerlendirme yöntemlerini üreticinin duyurusundan izler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "claude_agent_sdk",
+    "name": "Claude Agent SDK Python",
+    "topic": "jarvis",
+    "url": "https://github.com/anthropics/claude-agent-sdk-python/releases",
+    "fetch_url": "https://api.github.com/repos/anthropics/claude-agent-sdk-python/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Ev otomasyonunun ajan katmanında yetki, araç çağrısı, oturum ve hata davranışını etkileyen sürümleri izler.",
+    "publisher": "Anthropic",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Ajan araçları",
+      "Oturum yönetimi",
+      "Araç yetkileri"
+    ],
+    "discovered_from": "https://github.com/anthropics/claude-agent-sdk-python/releases",
+    "candidate_status": "existing"
+  },
+  {
+    "id": "csa_iot",
+    "name": "Connectivity Standards Alliance",
+    "topic": "jarvis",
+    "url": "https://csa-iot.org/newsroom/",
+    "fetch_url": "https://csa-iot.org/feed/",
+    "kind": "rss",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "csa-iot.org"
+    ],
+    "item_hosts": [
+      "csa-iot.org"
+    ],
+    "publisher": "Connectivity Standards Alliance",
+    "branches": [
+      "Matter",
+      "Zigbee",
+      "Cihaz birlikte çalışabilirliği"
+    ],
+    "source_type": "Kurum",
+    "discovered_from": "https://csa-iot.org/newsroom/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Matter ve Zigbee gibi cihaz standartlarındaki resmî gelişmeleri izler; birlikte çalışabilirlik iddiasını cihazda denenmiş kabul etmez.",
+    "candidate_status": "new",
+    "collection_scope": "İlk kontrolde Zigbee 4.0 için iki teknik PDF tanıtımı alındı. Bu akış, kurumun bütün Matter ve Zigbee haberlerini kapsamaz."
+  },
+  {
+    "id": "mosquitto",
+    "name": "Eclipse Mosquitto",
+    "topic": "jarvis",
+    "url": "https://mosquitto.org/blog/",
+    "fetch_url": "https://mosquitto.org/blog/",
+    "kind": "html",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "mosquitto.org",
+      "www.mosquitto.org"
+    ],
+    "item_hosts": [
+      "mosquitto.org",
+      "www.mosquitto.org"
+    ],
+    "publisher": "Eclipse Foundation",
+    "branches": [
+      "MQTT",
+      "IoT mesajlaşma",
+      "Bağlantı güvenilirliği"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://mosquitto.org/blog/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "MQTT aracısının kararlılık, kalıcılık ve bağlantı değişikliklerini resmî sürüm notlarından izler.",
+    "candidate_status": "new",
+    "include_patterns": [
+      "^/blog/\\d{4}/\\d{2}/[^/]+/?$"
+    ]
+  },
+  {
+    "id": "esphome",
+    "name": "ESPHome Blog",
+    "topic": "jarvis",
+    "url": "https://esphome.io/blog/",
+    "fetch_url": "https://esphome.io/blog/rss.xml",
+    "kind": "rss",
+    "interval_hours": 48,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "esphome.io"
+    ],
+    "item_hosts": [
+      "esphome.io"
+    ],
+    "publisher": "Open Home Foundation",
+    "branches": [
+      "Sensörler",
+      "Gömülü yazılım",
+      "Yerel ses",
+      "Ev otomasyonu"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://esphome.io/blog/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "ESP32/ESP8266 sensörleri, yerel ses uçları ve entegrasyon değişikliklerini resmî sürüm açıklamalarından izler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "home_assistant",
+    "name": "Home Assistant",
+    "topic": "jarvis",
+    "url": "https://www.home-assistant.io/blog/",
+    "fetch_url": "https://www.home-assistant.io/atom.xml",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.home-assistant.io",
+      "home-assistant.io"
+    ],
+    "item_hosts": [
+      "www.home-assistant.io",
+      "home-assistant.io"
+    ],
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Ev ve sera entegrasyonları, yerel ses ve uyumluluk değişikliklerini izler.",
+    "publisher": "Open Home Foundation",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Ev otomasyonu",
+      "Yerel ses",
+      "Cihaz entegrasyonları"
+    ],
+    "discovered_from": "https://www.home-assistant.io/blog/",
+    "candidate_status": "existing"
+  },
+  {
+    "id": "nodered",
+    "name": "Node-RED Blog",
+    "topic": "jarvis",
+    "url": "https://nodered.org/blog/",
+    "fetch_url": "https://nodered.org/blog/",
+    "kind": "html",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "nodered.org"
+    ],
+    "item_hosts": [
+      "nodered.org"
+    ],
+    "publisher": "OpenJS Foundation / Node-RED",
+    "branches": [
+      "Akış otomasyonu",
+      "IoT",
+      "Entegrasyonlar"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://nodered.org/blog/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Olay tabanlı akışlar, otomasyon ve bağlantı araçlarının resmî sürüm ve yol haritası duyurularını takip eder.",
+    "candidate_status": "new",
+    "include_patterns": [
+      "^/blog/\\d{4}/\\d{2}/\\d{2}/[^/]+/?$"
+    ]
+  },
+  {
+    "id": "openhab",
+    "name": "openHAB Blog",
+    "topic": "jarvis",
+    "url": "https://www.openhab.org/blog/",
+    "fetch_url": "https://www.openhab.org/rss.xml",
+    "kind": "rss",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.openhab.org",
+      "openhab.org"
+    ],
+    "item_hosts": [
+      "www.openhab.org",
+      "openhab.org"
+    ],
+    "publisher": "openHAB Foundation",
+    "branches": [
+      "Ev otomasyonu",
+      "Cihaz uyumluluğu",
+      "Yerel kontrol"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://www.openhab.org/about/feeds",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Farklı bir açık ev otomasyonu ekosisteminden entegrasyon ve uyumluluk gelişmeleri sağlayarak kaynak çeşitliliğini artırır.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "pipecat",
+    "name": "Pipecat",
+    "topic": "jarvis",
+    "url": "https://github.com/pipecat-ai/pipecat/releases",
+    "fetch_url": "https://api.github.com/repos/pipecat-ai/pipecat/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Ev otomasyonunun ses akışı, gecikme ve sağlayıcı uyumluluğundaki değişiklikleri yakalar.",
+    "publisher": "Pipecat / Daily",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Gerçek zamanlı ses",
+      "Sesli ajanlar",
+      "Ses sağlayıcıları"
+    ],
+    "discovered_from": "https://github.com/pipecat-ai/pipecat/releases",
+    "candidate_status": "existing"
+  },
+  {
+    "id": "piper",
+    "name": "Piper · Yerel ses sentezi",
+    "topic": "jarvis",
+    "url": "https://github.com/OHF-Voice/piper1-gpl/releases",
+    "fetch_url": "https://api.github.com/repos/OHF-Voice/piper1-gpl/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "publisher": "Open Home Foundation / OHF Voice",
+    "branches": [
+      "Ses sentezi",
+      "Yerel modeller",
+      "Türkçe ses"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://github.com/OHF-Voice/piper1-gpl",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Yerelde metinden sese dönüştürme, ses modeli uyumluluğu ve lisans değişikliklerini projenin sürümlerinden izler.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "speechbrain",
+    "name": "SpeechBrain · Konuşma araştırmaları",
+    "topic": "jarvis",
+    "url": "https://github.com/speechbrain/speechbrain/releases",
+    "fetch_url": "https://api.github.com/repos/speechbrain/speechbrain/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "publisher": "SpeechBrain",
+    "branches": [
+      "Konuşma tanıma",
+      "Ses ayırma",
+      "Konuşmacı tanıma",
+      "Konuşma çevirisi"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://speechbrain.github.io/",
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Konuşma tanıma, ses iyileştirme ve ses modellerinin araştırma yazılımındaki gelişmeleri takip eder.",
+    "candidate_status": "new"
+  },
+  {
+    "id": "ableton",
+    "name": "Ableton Blog",
+    "topic": "medya",
+    "url": "https://www.ableton.com/en/blog/",
+    "fetch_url": "https://www.ableton.com/en/blog/feeds/latest/",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.ableton.com"
+    ],
+    "item_hosts": [
+      "www.ableton.com"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Müzik üretimi, ses tasarımı, canlı performans ve üretici eğitim içeriklerini izler.",
+    "publisher": "Ableton",
+    "branches": [
+      "Müzik",
+      "Ses",
+      "Performans",
+      "İş akışı"
+    ],
+    "source_type": "Üretici",
+    "discovered_from": "https://www.ableton.com/en/blog/"
+  },
+  {
+    "id": "aswf",
+    "name": "Academy Software Foundation News",
+    "topic": "medya",
+    "url": "https://www.aswf.io/",
+    "fetch_url": "https://www.aswf.io/feed/",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.aswf.io"
+    ],
+    "item_hosts": [
+      "www.aswf.io"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "VFX ve animasyon üretimindeki açık araç, renk, varlık paylaşımı ve standart gelişmelerini vakıftan izler.",
+    "publisher": "Academy Software Foundation",
+    "branches": [
+      "VFX",
+      "3D",
+      "Renk",
+      "İş akışı",
+      "Açık standartlar"
+    ],
+    "source_type": "Kurum",
+    "discovered_from": "https://www.aswf.io/"
+  },
+  {
+    "id": "adobe",
+    "name": "Adobe Blog · Öne çıkanlar",
+    "topic": "medya",
+    "url": "https://blog.adobe.com/",
+    "fetch_url": "https://blog.adobe.com/fragments/bricks/home-marquee-container-1",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "blog.adobe.com"
+    ],
+    "item_hosts": [
+      "blog.adobe.com"
+    ],
+    "include_patterns": [
+      "^/en/publish/[0-9]{4}/[0-9]{2}/[0-9]{2}/"
+    ],
+    "title_from_context": true,
+    "collection_scope": "Ana sayfanın doğrudan bağladığı öne çıkan haber kartları; tüm Adobe haberlerinin listesi değildir.",
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Adobe’nin öne çıkardığı ürün duyurularında Medya üretimi’nın video, ses ve ekip çalışmasına uygun gelişmeleri arar.",
+    "publisher": "Adobe",
+    "source_type": "Üretici",
+    "branches": [
+      "Video",
+      "Kurgu",
+      "Ses",
+      "Yaratıcı yapay zekâ",
+      "İş akışı"
+    ],
+    "discovered_from": "https://blog.adobe.com/"
+  },
+  {
+    "id": "ardour",
+    "name": "Ardour Official News",
+    "topic": "medya",
+    "url": "https://discourse.ardour.org/c/blog/15",
+    "fetch_url": "https://discourse.ardour.org/c/blog/15.rss",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "discourse.ardour.org"
+    ],
+    "item_hosts": [
+      "discourse.ardour.org"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Dijital ses iş istasyonunun kayıt, MIDI, miks ve eklenti yeniliklerini resmî duyuru kategorisinden izler.",
+    "publisher": "Ardour Project",
+    "branches": [
+      "Ses",
+      "Müzik",
+      "Kayıt",
+      "Miks"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://ardour.org/",
+    "collection_scope": "Ardour'un resmî Blog kategorisi; genel kullanıcı yardım konuları dahil değildir."
+  },
+  {
+    "id": "audacity",
+    "name": "Audacity Blog",
+    "topic": "medya",
+    "url": "https://www.audacityteam.org/blog/",
+    "fetch_url": "https://www.audacityteam.org/blog/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.audacityteam.org"
+    ],
+    "item_hosts": [
+      "www.audacityteam.org"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Ses düzenleme, gürültü azaltma ve yerel yapay zekâ eklentilerine ilişkin resmî haberleri izler.",
+    "publisher": "Muse Group / Audacity contributors",
+    "branches": [
+      "Ses",
+      "Müzik",
+      "Yaratıcı yapay zekâ"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://www.audacityteam.org/blog/",
+    "include_patterns": [
+      "^/blog/[^/]+/?$"
+    ],
+    "collection_scope": "Resmî blog arşivi; yayın sıklığı düşüktür, her uygulama sürümü bloga yazılmaz."
+  },
+  {
+    "id": "blender_developers",
+    "name": "Blender Developers Blog",
+    "topic": "medya",
+    "url": "https://code.blender.org/",
+    "fetch_url": "https://code.blender.org/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "code.blender.org"
+    ],
+    "item_hosts": [
+      "code.blender.org"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Blender geliştiricilerinin render, animasyon ve üretim iş akışı değişikliklerini izler.",
+    "publisher": "Blender Foundation",
+    "branches": [
+      "3D",
+      "VFX",
+      "Animasyon",
+      "Render",
+      "İş akışı"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://www.blender.org/news/",
+    "include_patterns": [
+      "^/[0-9]{4}/[0-9]{2}/[^/]+/?$"
+    ],
+    "title_from_context": true
+  },
+  {
+    "id": "frame_io",
+    "name": "Frame.io Insider",
+    "topic": "medya",
+    "url": "https://blog.frame.io/",
+    "fetch_url": "https://blog.frame.io/feed/",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "blog.frame.io"
+    ],
+    "item_hosts": [
+      "blog.frame.io"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Post prodüksiyon, renk, ses ve ekipli inceleme akışı için Frame.io'nun teknik yayınlarını izler.",
+    "publisher": "Adobe",
+    "branches": [
+      "Kurgu",
+      "Renk",
+      "VFX",
+      "Ses",
+      "İş akışı"
+    ],
+    "source_type": "Teknik yayın",
+    "discovered_from": "https://blog.frame.io/",
+    "collection_scope": "Adobe bünyesindeki Frame.io yayını; Adobe'den bağımsız bir yayıncı sayılmaz."
+  },
+  {
+    "id": "kdenlive",
+    "name": "Kdenlive News",
+    "topic": "medya",
+    "url": "https://kdenlive.org/news/",
+    "fetch_url": "https://kdenlive.org/news/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "kdenlive.org"
+    ],
+    "item_hosts": [
+      "kdenlive.org"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Açık kaynak video kurgusunda yeni sürüm, kararlılık ve üretim akışı haberlerini izler.",
+    "publisher": "KDE / Kdenlive",
+    "branches": [
+      "Video",
+      "Kurgu",
+      "Efekt",
+      "İş akışı"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://kdenlive.org/news/",
+    "selector": "h3 a[href]",
+    "include_patterns": [
+      "^/news/.+"
+    ],
+    "collection_scope": "Resmî genel haber listesinin ilk sayfası; sürümler ve geliştirme raporları birlikte izlenir."
+  },
+  {
+    "id": "obs",
+    "name": "OBS Project News",
+    "topic": "medya",
+    "url": "https://obsproject.com/blog/",
+    "fetch_url": "https://obsproject.com/blog/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "obsproject.com"
+    ],
+    "item_hosts": [
+      "obsproject.com"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Canlı yayın, ekran kaydı, ses karıştırma ve video kodlama gelişmelerini proje ekibinden izler.",
+    "publisher": "OBS Project / Wizards of OBS",
+    "branches": [
+      "Canlı yayın",
+      "Video",
+      "Ses",
+      "Kodlama"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://obsproject.com/blog/",
+    "include_patterns": [
+      "^/blog/[^/]+/?$"
+    ],
+    "exclude_patterns": [
+      "^/blog/(?:tags|authors|page)(?:/|$)"
+    ]
+  },
+  {
+    "id": "shotcut",
+    "name": "Shotcut News",
+    "topic": "medya",
+    "url": "https://www.shotcut.org/blog/",
+    "fetch_url": "https://www.shotcut.org/blog/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.shotcut.org",
+      "shotcut.org"
+    ],
+    "item_hosts": [
+      "www.shotcut.org",
+      "shotcut.org"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Kurgu, HDR renk, efekt ve ses araçlarının resmî sürüm notlarını izler.",
+    "publisher": "Meltytech / Shotcut",
+    "branches": [
+      "Video",
+      "Kurgu",
+      "Renk",
+      "Ses"
+    ],
+    "source_type": "Açık kaynak",
+    "discovered_from": "https://www.shotcut.org/blog/",
+    "include_patterns": [
+      "^/blog/[^/]+/?$"
+    ],
+    "exclude_patterns": [
+      "^/blog/page/"
+    ]
+  },
+  {
+    "id": "smpte",
+    "name": "SMPTE Blog",
+    "topic": "medya",
+    "url": "https://www.smpte.org/blog",
+    "fetch_url": "https://www.smpte.org/blog/rss.xml",
+    "kind": "rss",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.smpte.org"
+    ],
+    "item_hosts": [
+      "www.smpte.org"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "Profesyonel görüntü, ses, yayın altyapısı ve standartlara ilişkin kurum yayınlarını izler.",
+    "publisher": "Society of Motion Picture and Television Engineers",
+    "branches": [
+      "Yayıncılık",
+      "Renk",
+      "HDR",
+      "İş akışı",
+      "Açık standartlar"
+    ],
+    "source_type": "Kurum",
+    "discovered_from": "https://www.smpte.org/blog"
+  },
+  {
+    "id": "stability_media",
+    "name": "Stability AI News & Updates",
+    "topic": "medya",
+    "url": "https://stability.ai/news-updates",
+    "fetch_url": "https://stability.ai/news-updates",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "stability.ai"
+    ],
+    "item_hosts": [
+      "stability.ai"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Görüntü, video, 3D ve müzik üretimi için yaratıcı yapay zekâ araçlarının resmî duyurularını izler.",
+    "publisher": "Stability AI",
+    "branches": [
+      "Yaratıcı yapay zekâ",
+      "Video",
+      "Görüntü",
+      "Ses",
+      "Müzik",
+      "3D"
+    ],
+    "source_type": "Üretici",
+    "discovered_from": "https://stability.ai/news-updates",
+    "include_patterns": [
+      "^/news-updates/[^/]+/?$"
+    ],
+    "title_from_context": true,
+    "collection_scope": "Üretici haberleri; teknik duyurular yanında şirket ve iş birliği haberlerini de içerir."
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube Official Blog",
+    "topic": "medya",
+    "url": "https://blog.youtube/",
+    "fetch_url": "https://blog.youtube/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "blog.youtube"
+    ],
+    "item_hosts": [
+      "blog.youtube"
+    ],
+    "include_patterns": [
+      "^/(news-and-events|creator-and-artist-stories|inside-youtube|culture-and-trends)/[^/]+/?$"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Yayıncı araçları, üretim ve dağıtım değişikliklerini resmî duyurulardan izler.",
+    "publisher": "Google / YouTube",
+    "source_type": "Üretici",
+    "branches": [
+      "Yayıncılık",
+      "Canlı yayın",
+      "Video"
+    ],
+    "discovered_from": "https://blog.youtube/",
+    "selector": "h3.yt-hero-card__title > a[href], h2.yt-short-post-overview__title > a[href], h3.yt-specific-topic-card__title > a[href]",
+    "collection_scope": "Ana sayfanın başlık taşıyan öne çıkan, kısa haber ve konu kartları; paragraf içi bağlantılar alınmaz. Kaynak başına ilk 10 farklı haber okunur."
+  },
+  {
+    "id": "arduino",
+    "name": "Arduino · Maker ve robotik",
+    "topic": "robotik",
+    "url": "https://blog.arduino.cc/",
+    "fetch_url": "https://blog.arduino.cc/",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "blog.arduino.cc"
+    ],
+    "item_hosts": [
+      "blog.arduino.cc"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Mikrodenetleyici, kamera, sensör ve robot geliştirme araçlarını resmî blogdan izler.",
+    "publisher": "Arduino",
+    "source_type": "Üretici",
+    "branches": [
+      "Mikrodenetleyici",
+      "Sensörler",
+      "Robot kontrolü",
+      "Maker"
+    ],
+    "discovered_from": "https://blog.arduino.cc/",
+    "include_patterns": [
+      "^/[0-9]{4}/[0-9]{2}/[0-9]{2}/"
+    ]
+  },
+  {
+    "id": "lerobot",
+    "name": "LeRobot",
+    "topic": "robotik",
+    "url": "https://github.com/huggingface/lerobot/releases",
+    "fetch_url": "https://api.github.com/repos/huggingface/lerobot/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 84,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "evidence_type": "resmi_surum",
+    "benefit": "Uygun maliyetli robot kolları, kamera ve veri toplama araçlarında uygulanabilir gelişmeleri izler.",
+    "publisher": "Hugging Face",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Robot öğrenmesi",
+      "Robot kolları"
+    ],
+    "discovered_from": "https://github.com/huggingface/lerobot/releases",
+    "collection_scope": "Resmî GitHub sürümleri; teknik değişiklik kayıtlarıdır."
+  },
+  {
+    "id": "moveit",
+    "name": "MoveIt · Hareket planlama",
+    "topic": "robotik",
+    "url": "https://moveit.ai/blog/",
+    "fetch_url": "https://moveit.ai/blog/",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "moveit.ai"
+    ],
+    "item_hosts": [
+      "moveit.ai"
+    ],
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Robot kollarının hareket planlama, kontrol ve simülasyon yazılımını izler.",
+    "publisher": "MoveIt · PickNik Robotics",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Hareket planlama",
+      "Robot kolları",
+      "ROS 2",
+      "Simülasyon"
+    ],
+    "discovered_from": "https://moveit.ai/blog/",
+    "include_patterns": [
+      "/(?:[0-9]{4})/[0-9]{2}/[0-9]{2}/[^/]+\\.html$"
+    ],
+    "collection_scope": "Açık kaynak proje ve teknik yazı arşivi; çok sayıda yazı 2024 veya öncesindendir, yeni haber sayılmaz."
+  },
+  {
+    "id": "open_robotics",
+    "name": "Open Robotics · ROS ve Gazebo",
+    "topic": "robotik",
+    "url": "https://www.openrobotics.org/blog",
+    "fetch_url": "https://www.openrobotics.org/blog",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.openrobotics.org"
+    ],
+    "item_hosts": [
+      "www.openrobotics.org"
+    ],
+    "evidence_type": "birincil_duyuru",
+    "benefit": "ROS, Gazebo ve Open-RMF ekosistemindeki resmî değişiklikleri izler.",
+    "publisher": "Open Robotics · Open Source Robotics Foundation",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "ROS 2",
+      "Simülasyon",
+      "Robot kontrolü",
+      "Robot filoları"
+    ],
+    "discovered_from": "https://www.openrobotics.org/blog",
+    "include_patterns": [
+      "^/blog/[0-9]{4}/[0-9]+/[0-9]+/"
+    ]
+  },
+  {
+    "id": "px4",
+    "name": "PX4 · Otopilot ve kontrol",
+    "topic": "robotik",
+    "url": "https://px4.io/blog/",
+    "fetch_url": "https://px4.io/blog/",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "px4.io"
+    ],
+    "item_hosts": [
+      "px4.io"
+    ],
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Açık kaynak otopilot, ROS 2 bağlantısı ve simülasyon duyurularını izler.",
+    "publisher": "Dronecode Foundation · PX4",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Otopilot",
+      "ROS 2",
+      "Sensörler",
+      "Simülasyon"
+    ],
+    "discovered_from": "https://px4.io/blog/",
+    "selector": "h2 a[href], article h3 a[href]",
+    "collection_scope": "Resmî blog düşük sıklıkla güncellenir; eski sürüm duyuruları yeni haber sayılmaz."
+  },
+  {
+    "id": "raspberry_pi",
+    "name": "Raspberry Pi · Haberler",
+    "topic": "robotik",
+    "url": "https://www.raspberrypi.com/news/",
+    "fetch_url": "https://www.raspberrypi.com/news/feed/",
+    "kind": "rss",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.raspberrypi.com"
+    ],
+    "item_hosts": [
+      "www.raspberrypi.com",
+      "raspberrypi.com"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Robot ve sensör projelerindeki kart, kamera ve yazılım gelişmelerini izler.",
+    "publisher": "Raspberry Pi",
+    "source_type": "Üretici",
+    "branches": [
+      "Tek kart bilgisayar",
+      "Maker",
+      "Robot kontrolü",
+      "Kamera"
+    ],
+    "discovered_from": "https://www.raspberrypi.com/news/"
+  },
+  {
+    "id": "ros_industrial",
+    "name": "ROS-Industrial · Teknik blog",
+    "topic": "robotik",
+    "url": "https://rosindustrial.org/news",
+    "fetch_url": "https://rosindustrial.org/news",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "rosindustrial.org"
+    ],
+    "item_hosts": [
+      "rosindustrial.org"
+    ],
+    "evidence_type": "birincil_duyuru",
+    "benefit": "Endüstriyel ROS entegrasyonlarını, simülasyon varlıklarını ve kontrol uygulamalarını izler.",
+    "publisher": "ROS-Industrial Consortium",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Endüstriyel robotik",
+      "CANopen",
+      "ROS 2",
+      "Simülasyon"
+    ],
+    "discovered_from": "https://rosindustrial.org/news",
+    "include_patterns": [
+      "^/news/[0-9]{4}/[0-9]+/[0-9]+/"
+    ],
+    "selector": "h1 a[href], h2 a[href], h3 a[href]"
+  },
+  {
+    "id": "sensirion",
+    "name": "Sensirion · Sensör haberleri",
+    "topic": "robotik",
+    "url": "https://sensirion.com/company/news",
+    "fetch_url": "https://sensirion.com/company/news",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "sensirion.com"
+    ],
+    "item_hosts": [
+      "sensirion.com"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Sera ve robotik ölçümlerde kullanılabilecek sensörlerin resmî ürün gelişmelerini izler.",
+    "publisher": "Sensirion",
+    "source_type": "Üretici",
+    "branches": [
+      "Sıcaklık ve nem",
+      "CO₂",
+      "Hava kalitesi",
+      "Akış ölçümü"
+    ],
+    "discovered_from": "https://sensirion.com/company/news",
+    "include_patterns": [
+      "^/company/news/press-releases-and-news/article/.*(?:sensor|sensing|sen[0-9]|humidity|temperature|flow|co2)"
+    ],
+    "title_from_context": true,
+    "quality_notes": "Bağlantılar sensör ve ölçüm konularına daraltılmıştır; üretici iddiaları bağımsız deney sayılmaz."
+  },
+  {
+    "id": "alata",
+    "name": "ALATA · Araştırma haberleri",
+    "topic": "tarim",
+    "url": "https://arastirma.tarimorman.gov.tr/alata/HaberArsivi",
+    "fetch_url": "https://arastirma.tarimorman.gov.tr/alata/HaberArsivi",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "tr",
+    "fetch_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "item_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "Akdeniz koşullarındaki yetiştiricilik ve yerel tarımsal araştırma duyurularını izler.",
+    "publisher": "Alata Bahçe Kültürleri Araştırma Enstitüsü",
+    "source_type": "Kurum",
+    "branches": [
+      "Akdeniz tarımı",
+      "Bitki sağlığı",
+      "Toprak ve su",
+      "Bahçe bitkileri"
+    ],
+    "discovered_from": "https://arastirma.tarimorman.gov.tr/alata/HaberArsivi",
+    "include_patterns": [
+      "^/alata/Haber/[0-9]+"
+    ],
+    "quality_notes": "Kurum ziyaretleri de yayımlanır; teknik değer ayrıca değerlendirilmelidir."
+  },
+  {
+    "id": "batem",
+    "name": "BATEM",
+    "topic": "tarim",
+    "url": "https://arastirma.tarimorman.gov.tr/batem",
+    "fetch_url": "https://arastirma.tarimorman.gov.tr/batem",
+    "kind": "html",
+    "interval_hours": 168,
+    "enabled": true,
+    "language": "tr",
+    "fetch_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "item_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "include_patterns": [
+      "^/batem/(Haber|Duyuru)/[0-9]+"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "Akdeniz koşullarında sera, sebze, hastalık ve yetiştirme araştırmalarını izler.",
+    "publisher": "Tarım ve Orman Bakanlığı",
+    "source_type": "Kurum",
+    "branches": [
+      "Akdeniz tarımı",
+      "Bitki sağlığı",
+      "Sebzecilik"
+    ],
+    "discovered_from": "https://arastirma.tarimorman.gov.tr/batem",
+    "collection_scope": "Akdeniz tarımsal araştırma kurumunun duyuruları; teknik projeler yanında ziyaret ve tören haberleri de gelebilir."
+  },
+  {
+    "id": "bmae",
+    "name": "BMAE · Biyolojik mücadele",
+    "topic": "tarim",
+    "url": "https://arastirma.tarimorman.gov.tr/bmae",
+    "fetch_url": "https://arastirma.tarimorman.gov.tr/bmae",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "tr",
+    "fetch_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "item_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "Akdeniz koşullarında biyolojik mücadele eğitimleri ve aylık zararlı izleme duyurularını bulur.",
+    "publisher": "Biyolojik Mücadele Araştırma Enstitüsü",
+    "source_type": "Kurum",
+    "branches": [
+      "Biyolojik mücadele",
+      "Bitki sağlığı",
+      "Akdeniz tarımı",
+      "Zararlı izleme"
+    ],
+    "discovered_from": "https://arastirma.tarimorman.gov.tr/bmae",
+    "include_patterns": [
+      "^/bmae/(Haber|Duyuru)/[0-9]+"
+    ],
+    "quality_notes": "Teknik bakım bültenleri yanında kurum ve eğitim duyuruları bulunabilir."
+  },
+  {
+    "id": "glase",
+    "name": "GLASE Technical Articles",
+    "topic": "tarim",
+    "url": "https://glase.org/resources/technical-articles/",
+    "fetch_url": "https://glase.org/resources/technical-articles/",
+    "kind": "html",
+    "interval_hours": 168,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "glase.org",
+      "www.glase.org"
+    ],
+    "item_hosts": [
+      "glase.org",
+      "www.glase.org"
+    ],
+    "include_patterns": [
+      "^/(technical-articles|industry-news)/[^/]+"
+    ],
+    "evidence_type": "teknik_yayin",
+    "benefit": "Sera ışığı, enerji ve ölçüm konularındaki teknik çalışmaları bulur.",
+    "publisher": "GLASE",
+    "source_type": "Araştırma",
+    "branches": [
+      "Sera aydınlatması",
+      "Enerji",
+      "Bitki ölçümü"
+    ],
+    "discovered_from": "https://glase.org/resources/technical-articles/",
+    "collection_scope": "Teknik makale arşividir; sera aydınlatması, doğal ışık ve enerji uygulamalarını içerir."
+  },
+  {
+    "id": "hortidaily",
+    "name": "HortiDaily · Sera sektörü",
+    "topic": "tarim",
+    "url": "https://www.hortidaily.com/",
+    "fetch_url": "https://www.hortidaily.com/",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.hortidaily.com"
+    ],
+    "item_hosts": [
+      "www.hortidaily.com"
+    ],
+    "evidence_type": "teknik_yayin",
+    "benefit": "Sera teknolojileri, üretim uygulamaları ve araştırma duyurularını sektörel yayından izler.",
+    "publisher": "Fresh Publishers · HortiDaily",
+    "source_type": "Teknik yayın",
+    "branches": [
+      "Sera",
+      "Enerji",
+      "Sulama",
+      "Bitki besleme",
+      "Bitki sağlığı"
+    ],
+    "discovered_from": "https://www.hortidaily.com/",
+    "include_patterns": [
+      "^/article/[0-9]+/"
+    ],
+    "quality_notes": "Sektörel haber ve ticari açıklama karışımıdır; üretici iddiaları bağımsız kanıt sayılmaz."
+  },
+  {
+    "id": "kirklareli_topraksu",
+    "name": "Kırklareli · Toprak ve su araştırmaları",
+    "topic": "tarim",
+    "url": "https://arastirma.tarimorman.gov.tr/kirklarelitopraksu/HaberArsivi",
+    "fetch_url": "https://arastirma.tarimorman.gov.tr/kirklarelitopraksu/HaberArsivi",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "tr",
+    "fetch_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "item_hosts": [
+      "arastirma.tarimorman.gov.tr"
+    ],
+    "evidence_type": "kurum_duyurusu",
+    "benefit": "Akıllı sulama, toprak ve su kullanımı araştırmaları ile uygulama günlerini izler.",
+    "publisher": "Atatürk Toprak Su ve Tarımsal Meteoroloji Araştırma Enstitüsü",
+    "source_type": "Kurum",
+    "branches": [
+      "Akıllı sulama",
+      "Toprak ve su",
+      "Tarımsal meteoroloji"
+    ],
+    "discovered_from": "https://arastirma.tarimorman.gov.tr/kirklarelitopraksu/HaberArsivi",
+    "include_patterns": [
+      "^/kirklarelitopraksu/Haber/[0-9]+"
+    ],
+    "quality_notes": "Düşük sıklıklı kurum akışıdır; teknik tarla günleri yanında ziyaret ve eğitim duyuruları da bulunur."
+  },
+  {
+    "id": "purdue_cea",
+    "name": "Purdue · Kontrollü Çevre Tarımı",
+    "topic": "tarim",
+    "url": "https://www.purdue.edu/hla/sites/cea/",
+    "fetch_url": "https://www.purdue.edu/hla/sites/cea/",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.purdue.edu"
+    ],
+    "item_hosts": [
+      "www.purdue.edu"
+    ],
+    "evidence_type": "teknik_yayin",
+    "benefit": "Hidroponik besleme, akıllı algılama ve düşük maliyetli sera araştırmalarını bulur.",
+    "publisher": "Purdue University · Nemali Lab",
+    "source_type": "Araştırma",
+    "branches": [
+      "Kontrollü çevre tarımı",
+      "Hidroponik",
+      "Bitki sensörleri"
+    ],
+    "discovered_from": "https://www.purdue.edu/hla/sites/cea/",
+    "include_patterns": [
+      "^/hla/sites/cea/[^/]+/?$"
+    ],
+    "exclude_patterns": [
+      "^/hla/sites/cea/(events|teaching|contact-us|research-areas|school-programs|extension-education|nemali-receives|author)(/|-|$)"
+    ],
+    "collection_scope": "Araştırma grubunun teknik proje ve yayın bağlantıları; bazı kayıtlar tarihsel başvuru malzemesidir."
+  },
+  {
+    "id": "uf_ifas_greenhouses",
+    "name": "UF/IFAS EDIS · Greenhouses",
+    "topic": "tarim",
+    "url": "https://ask.ifas.ufl.edu/topics/greenhouses",
+    "fetch_url": "https://ask.ifas.ufl.edu/topics/greenhouses",
+    "kind": "html",
+    "interval_hours": 72,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "ask.ifas.ufl.edu"
+    ],
+    "item_hosts": [
+      "ask.ifas.ufl.edu"
+    ],
+    "evidence_type": "teknik_yayin",
+    "benefit": "Sera soğutması, havalandırma, ısıtma ve enerji için üniversitenin ücretsiz teknik yayınlarını bulur.",
+    "publisher": "University of Florida · IFAS Extension",
+    "source_type": "Araştırma",
+    "branches": [
+      "Sera iklimi",
+      "Havalandırma",
+      "Enerji",
+      "Sera yetiştiriciliği"
+    ],
+    "discovered_from": "https://ask.ifas.ufl.edu/topics/greenhouses",
+    "include_patterns": [
+      "^/publication/",
+      "^/[A-Za-z]{2}[0-9]+/?$"
+    ],
+    "collection_scope": "Teknik yayın arşividir; güncel haber akışı değildir."
+  },
+  {
+    "id": "wur",
+    "name": "WUR Autonomous Greenhouse Challenge",
+    "topic": "tarim",
+    "url": "https://www.wur.nl/en/research/plant/autonomous-greenhouse-challenge",
+    "fetch_url": "https://www.wur.nl/en/research/plant/autonomous-greenhouse-challenge",
+    "kind": "project",
+    "interval_hours": 168,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.wur.nl",
+      "wur.nl"
+    ],
+    "item_hosts": [
+      "www.wur.nl",
+      "wur.nl"
+    ],
+    "evidence_type": "arastirma_projesi",
+    "benefit": "Otonom sera deneylerini izlemek için kurumun proje sayfasındaki değişiklikleri takip eder.",
+    "publisher": "Wageningen University & Research",
+    "source_type": "Araştırma",
+    "branches": [
+      "Otonom sera",
+      "Kontrollü ortam"
+    ],
+    "discovered_from": "https://www.wur.nl/en/research/plant/autonomous-greenhouse-challenge",
+    "collection_scope": "Tek proje sayfasıdır; tarih bulunmadığında yeni haber veya yeni deney sonucu olarak sunulmaz."
+  },
+  {
+    "id": "anthropic_research",
+    "name": "Anthropic Research",
+    "topic": "ai",
+    "url": "https://www.anthropic.com/research",
+    "fetch_url": "https://www.anthropic.com/research",
+    "kind": "html",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "www.anthropic.com",
+      "anthropic.com"
+    ],
+    "item_hosts": [
+      "www.anthropic.com",
+      "anthropic.com"
+    ],
+    "include_patterns": [
+      "^/(research|engineering)/[^/]+/?$"
+    ],
+    "evidence_type": "uretici_duyurusu",
+    "benefit": "Ajan araştırmaları, bağlam yönetimi ve kaynak temelli inceleme yöntemlerini takip eder.",
+    "publisher": "Anthropic",
+    "source_type": "Üretici",
+    "branches": [
+      "Araştırma ajanları",
+      "Bağlam yönetimi",
+      "Model değerlendirme"
+    ],
+    "discovered_from": "https://www.anthropic.com/research",
+    "exclude_patterns": [
+      "^/research/(alignment|economics|engineering|frontier-red-team|interpretability|societal-impacts|science)/?$"
+    ]
+  },
+  {
+    "id": "nvidia_aiq",
+    "name": "NVIDIA AI-Q / Deep Researcher Agent",
+    "topic": "ai",
+    "url": "https://github.com/NVIDIA-AI-Blueprints/deep-researcher-agent",
+    "fetch_url": "https://api.github.com/repos/NVIDIA-AI-Blueprints/deep-researcher-agent/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "publisher": "NVIDIA",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Araştırma ajanları",
+      "Bakım ve sürümler"
+    ],
+    "benefit": "Araştırma ajanlarının yayımlanan sürümlerini, düzeltmelerini ve bakım değişikliklerini takip eder.",
+    "discovered_from": "https://github.com/NVIDIA-AI-Blueprints/deep-researcher-agent/releases"
+  },
+  {
+    "id": "deepagents",
+    "name": "LangChain Deep Agents",
+    "topic": "ai",
+    "url": "https://github.com/langchain-ai/deepagents",
+    "fetch_url": "https://api.github.com/repos/langchain-ai/deepagents/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "publisher": "LangChain",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Araştırma ajanları",
+      "Bakım ve sürümler"
+    ],
+    "benefit": "Araştırma ajanlarının yayımlanan sürümlerini, düzeltmelerini ve bakım değişikliklerini takip eder.",
+    "discovered_from": "https://github.com/langchain-ai/deepagents/releases"
+  },
+  {
+    "id": "gpt_researcher",
+    "name": "GPT Researcher",
+    "topic": "ai",
+    "url": "https://github.com/assafelovic/gpt-researcher",
+    "fetch_url": "https://api.github.com/repos/assafelovic/gpt-researcher/releases?per_page=30",
+    "kind": "github_releases",
+    "interval_hours": 24,
+    "enabled": true,
+    "language": "en",
+    "fetch_hosts": [
+      "api.github.com"
+    ],
+    "item_hosts": [
+      "github.com"
+    ],
+    "publisher": "GPT Researcher",
+    "source_type": "Açık kaynak",
+    "branches": [
+      "Araştırma ajanları",
+      "Bakım ve sürümler"
+    ],
+    "benefit": "Araştırma ajanlarının yayımlanan sürümlerini, düzeltmelerini ve bakım değişikliklerini takip eder.",
+    "discovered_from": "https://github.com/assafelovic/gpt-researcher/releases"
+  },
+  {
+    "id": "python_blog", "name": "Python Insider", "topic": "software",
+    "url": "https://blog.python.org/", "fetch_url": "https://blog.python.org/rss.xml",
+    "kind": "rss", "interval_hours": 24, "enabled": true, "language": "en",
+    "fetch_hosts": ["blog.python.org"], "item_hosts": ["blog.python.org"],
+    "publisher": "Python Software Foundation", "source_type": "Açık kaynak",
+    "branches": ["Programlama dilleri", "Python", "Sürüm duyuruları"],
+    "benefit": "Python'un resmî sürüm ve bakım duyurularını takip eder.",
+    "discovered_from": "https://blog.python.org/"
+  },
+  {
+    "id": "github_changelog", "name": "GitHub Changelog", "topic": "software",
+    "url": "https://github.blog/changelog/", "fetch_url": "https://github.blog/changelog/feed/",
+    "kind": "rss", "interval_hours": 24, "enabled": true, "language": "en",
+    "fetch_hosts": ["github.blog"], "item_hosts": ["github.blog"],
+    "publisher": "GitHub", "source_type": "Üretici",
+    "branches": ["Geliştirici araçları", "Sürüm kontrolü", "CI/CD"],
+    "benefit": "GitHub ürün ve geliştirici iş akışı değişikliklerini birincil kaynaktan izler.",
+    "discovered_from": "https://github.blog/changelog/"
+  },
+  {
+    "id": "postgresql_news", "name": "PostgreSQL News", "topic": "data",
+    "url": "https://www.postgresql.org/about/news/", "fetch_url": "https://www.postgresql.org/news.rss",
+    "kind": "rss", "interval_hours": 24, "enabled": true, "language": "en",
+    "fetch_hosts": ["www.postgresql.org"], "item_hosts": ["www.postgresql.org"],
+    "publisher": "PostgreSQL Global Development Group", "source_type": "Açık kaynak",
+    "branches": ["Veritabanları", "PostgreSQL", "Sürüm duyuruları"],
+    "benefit": "PostgreSQL sürümlerini, bakım ve topluluk duyurularını takip eder.",
+    "discovered_from": "https://www.postgresql.org/about/news/"
+  },
+  {
+    "id": "google_security", "name": "Google Security Blog", "topic": "security",
+    "url": "https://blog.google/security/", "fetch_url": "https://blog.google/security/rss/",
+    "kind": "rss", "interval_hours": 24, "enabled": true, "language": "en",
+    "fetch_hosts": ["blog.google"], "item_hosts": ["blog.google", "security.googleblog.com"],
+    "publisher": "Google", "source_type": "Üretici",
+    "branches": ["Yazılım güvenliği", "Güvenli geliştirme", "Güvenlik araştırmaları"],
+    "benefit": "Google'ın güvenlik araştırmalarını, koruma ve düzeltme duyurularını izler.",
+    "discovered_from": "https://blog.google/security/"
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "checked_at": "2026-10-26T00:37:14.741145+00:00",
+  "note": "Bu adaylar aktif katalogda değildir; erişim veya içerik kalitesi nedeniyle bekliyor.",
+  "candidates": [
+    {
+      "id": "deepmind",
+      "name": "Google DeepMind",
+      "topic": "ai",
+      "url": "https://deepmind.google/blog/",
+      "reason": "Sıkıştırılmış beklenmeyen yanıt güvenlik sınırı nedeniyle okunmadı.",
+      "checked_at": "2026-10-26T00:28:14.306670+00:00"
+    },
+    {
+      "id": "umass_greenhouse",
+      "name": "UMass Extension · Greenhouse Update",
+      "topic": "tarim",
+      "url": "https://www.umass.edu/agriculture-food-environment/ht/greenhouse-floriculture/greenhouse-updates",
+      "reason": "Kaynak erişimi kısıtladı (HTTP 403); engel aşılmadı.",
+      "checked_at": "2026-10-26T00:26:21.140114+00:00"
+    },
+    {
+      "id": "ifapa",
+      "name": "IFAPA · Araştırma haberleri",
+      "topic": "tarim",
+      "url": "https://www.juntadeandalucia.es/agriculturaypesca/ifapa/web/inicio",
+      "reason": "Sayfada doğrulanabilir haber bağlantısı bulunamadı; seçici gözden geçirilmeli.",
+      "checked_at": "2026-10-26T00:29:41.808148+00:00"
+    },
+    {
+      "id": "inrae",
+      "name": "INRAE · Araştırma haberleri",
+      "topic": "tarim",
+      "url": "https://www.inrae.fr/actualites",
+      "reason": "Genel haber dizininin dinamik sonuçları yerine yalnız popüler yan bağlantılar elde edildi; güvenilir konu akışı olarak kabul edilmedi.",
+      "checked_at": "2026-10-26T00:26:32.196438+00:00"
+    },
+    {
+      "id": "netafim",
+      "name": "Netafim · Sulama ve fertigasyon",
+      "topic": "tarim",
+      "url": "https://www.netafim.com/en/blog/",
+      "reason": "Kaynağın robots erişim kuralı bu okumaya izin vermiyor.",
+      "checked_at": "2026-10-26T00:26:40.469166+00:00"
+    },
+    {
+      "id": "priva",
+      "name": "Priva · Sera teknolojileri",
+      "topic": "tarim",
+      "url": "https://www.priva.com/blog/horticulture",
+      "reason": "Sayfada doğrulanabilir haber bağlantısı bulunamadı; seçici gözden geçirilmeli.",
+      "checked_at": "2026-10-26T00:26:41.146476+00:00"
+    },
+    {
+      "id": "adafruit_robotics",
+      "name": "Adafruit · Robotik",
+      "topic": "robotik",
+      "url": "https://blog.adafruit.com/category/robotics/",
+      "reason": "Kaynak bağlantısı kurulamadı veya güvenli biçimde tamamlanamadı.",
+      "checked_at": "2026-10-26T00:26:58.200517+00:00"
+    },
+    {
+      "id": "seeed",
+      "name": "Seeed Studio · Sensör ve robotik",
+      "topic": "robotik",
+      "url": "https://www.seeedstudio.com/blog/",
+      "reason": "Kaynak erişimi kısıtladı (HTTP 403); engel aşılmadı.",
+      "checked_at": "2026-10-26T00:27:08.285390+00:00"
+    },
+    {
+      "id": "blackmagic",
+      "name": "Blackmagic Design Media",
+      "topic": "medya",
+      "url": "https://www.blackmagicdesign.com/uk/media",
+      "reason": "Sayfada doğrulanabilir haber bağlantısı bulunamadı; seçici gözden geçirilmeli.",
+      "checked_at": "2026-10-26T00:23:35.138584+00:00"
+    },
+    {
+      "id": "runway",
+      "name": "Runway Research News",
+      "topic": "medya",
+      "url": "https://runway.com/news/research",
+      "reason": "Sayfada doğrulanabilir haber bağlantısı bulunamadı; seçici gözden geçirilmeli.",
+      "checked_at": "2026-10-26T00:23:37.921370+00:00"
+    }
+  ]
+}

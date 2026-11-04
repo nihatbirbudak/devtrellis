@@ -1,0 +1,134 @@
+<!-- Gelişmeleri izlemek, proje kartı hazırlamak ve araştırma dosyalarını paylaşmak için yerel platform. -->
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173b31">
+  <meta name="color-scheme" content="light">
+  <title>UFUK — Geliştirici alanı</title>
+  <link rel="icon" href="/static/ufuk.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/platform.css">
+  <script src="/static/ui-text.js" defer></script>
+  <script src="/static/platform.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#platform-content">İçeriğe geç</a>
+  <header class="site-header">
+    <a class="brand" href="/platform" aria-label="UFUK geliştirici alanı"><img src="/static/ufuk.svg" width="42" height="42" alt=""><span>UFUK<small>Geliştirici alanı</small></span></a>
+    <span class="local-label"><span aria-hidden="true">●</span> Yerel önizleme · Paylaşım dosyalarıyla çalışır</span>
+    <div class="header-tools"><label class="language-label"><span class="sr-only">Dil</span><select data-language aria-label="Dil"><option value="en">EN</option><option value="tr">TR</option></select></label><a class="back-link" href="/">Ana çalışma alanı <span aria-hidden="true">↗</span></a></div>
+  </header>
+  <main id="platform-content" tabindex="-1">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Keşfet. Araştır. Birlikte geliştir.</p>
+        <h1 id="page-title">Bir sonraki fikrinin<br>ufkunu genişlet.</h1>
+        <p class="intro-copy">Dünyadaki gelişmeleri kaynaklarından izle. Projelerini anlat,<br class="desktop-break"> araştırmalarını yeniden kullanılabilecek bir bilgiye dönüştür.</p>
+        <a href="/guide?language=en" data-guide-link target="_blank" rel="noopener noreferrer">Kurulum ve araştırma rehberi</a>
+      </div>
+      <aside class="scope-note" aria-label="Kaynak kapsamı">
+        <span class="eyebrow">TAKİP ETTİĞİN KAYNAKLAR</span>
+        <p id="coverage">Kaynak kapsamı yükleniyor…</p>
+        <small id="coverage-health"></small>
+        <small id="coverage-date">Bu alan kayıtlı kaynaklardaki gelişmeleri gösterir.</small>
+        <a href="/">Kaynakları çalışma alanında yönet <span aria-hidden="true">↗</span></a>
+      </aside>
+    </section>
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+    <div id="global-status" class="sr-only" role="status" aria-live="polite"></div>
+    <div class="section-nav" role="tablist" aria-label="Geliştirici alanı bölümleri">
+      <button id="tab-feed" type="button" role="tab" aria-selected="true" aria-controls="panel-feed" data-tab="feed">Gelişmeler</button>
+      <button id="tab-project" type="button" role="tab" aria-selected="false" aria-controls="panel-project" tabindex="-1" data-tab="project">Projelerim</button>
+      <button id="tab-research" type="button" role="tab" aria-selected="false" aria-controls="panel-research" tabindex="-1" data-tab="research">Araştırma kütüphanesi</button>
+    </div>
+
+    <section id="panel-feed" class="panel" role="tabpanel" aria-labelledby="tab-feed">
+      <div class="section-heading"><div><h2>Takip etmek istediğin gelişmeler</h2><p>Yayın tarihini ve kaynağını görerek oku; eski kayıtlar arşiv olarak işaretlenir.</p></div><div class="heading-actions"><button id="provider-open" type="button" class="button secondary" disabled>Araştırma sağlayıcısı</button><button id="interest-open" type="button" class="button secondary" disabled>İlgi alanlarını düzenle</button></div></div>
+      <form id="feed-form" class="filters" role="search">
+        <label class="search-label"><span class="sr-only">Gelişmelerde ara</span><input id="feed-query" type="search" placeholder="Bir konu, araç veya gelişme ara…" maxlength="200"></label>
+        <label class="interest-label"><span class="sr-only">İlgi alanına göre filtrele</span><select id="feed-interest"><option value="">Tüm ilgi alanları</option></select></label>
+        <button type="submit" class="button">Ara</button>
+      </form>
+      <p id="feed-count" class="results-note" role="status" aria-live="polite">Gelişmeler yükleniyor…</p>
+      <div id="feed-error" class="notice error" role="alert" hidden></div>
+      <div id="feed-list" class="card-grid" aria-busy="true"></div>
+      <nav id="feed-pagination" class="pagination" aria-label="Gelişme sayfaları" hidden><button id="feed-prev" type="button" class="button secondary">← Önceki</button><span id="feed-page"></span><button id="feed-next" type="button" class="button secondary">Sonraki →</button></nav>
+    </section>
+
+    <section id="panel-project" class="panel" role="tabpanel" aria-labelledby="tab-project" hidden>
+      <div class="section-heading"><div><h2>Projelerinin anlatılacak bir tarafı var.</h2><p>Ne geliştirdiğini, ne işe yaradığını ve nereden başlanacağını bir kartta topla.</p></div><button id="new-project" type="button" class="button" disabled>+ Proje kartı oluştur</button></div>
+      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Projelerimde ara</span><input id="project-query" type="search" maxlength="200" placeholder="Proje adı, konu veya yazar ara…"></label><label><input id="project-archived" type="checkbox"> Arşivlenenleri göster</label><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></div>
+      <div id="project-list" class="card-grid"></div>
+    </section>
+
+    <section id="panel-research" class="panel" role="tabpanel" aria-labelledby="tab-research" hidden>
+      <div class="section-heading"><div><h2>Bir kez araştır, yeniden yararlan.</h2><p>Kaynaklı notlarını sakla; seçtiğin araştırmayı dosya olarak paylaş veya kütüphanene ekle.</p></div><button id="new-research" type="button" class="button" disabled>+ Araştırma ekle</button></div>
+      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Araştırma kütüphanesinde ara</span><input id="research-query" type="search" maxlength="200" placeholder="Araştırma, kaynak veya konu ara…"></label><label><input id="research-archived" type="checkbox"> Arşivlenenleri göster</label><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></div>
+      <div id="research-list" class="card-grid"></div>
+    </section>
+    <footer><strong>UFUK</strong><span>Bugün kişisel çalışma alanın. Birlikte büyüyen bir bilgi kütüphanesine doğru.</span><span>Bu sürümde ortak sunucu bağlantısı yoktur.</span></footer>
+  </main>
+
+  <dialog id="interest-dialog" aria-labelledby="interest-title">
+    <form id="interest-form">
+      <div class="dialog-header"><h2 id="interest-title">İlgi alanların</h2><button type="button" class="close-button" data-close="interest-dialog" aria-label="İlgi alanları penceresini kapat">✕</button></div>
+      <fieldset id="interest-fields" class="dialog-body"><label for="interest-input">Hangi konuları takip ediyorsun?</label><textarea id="interest-input" rows="4" maxlength="600" placeholder="Yapay zekâ, robotik, açık kaynak" aria-describedby="interest-help"></textarea><p id="interest-help" class="field-help">Virgülle ayır. En fazla 12 konu; her biri en fazla 40 karakter. Boş bırakırsan tüm kayıtlı konuları görürsün.</p><p id="interest-error" class="notice error" role="alert" hidden></p></fieldset>
+      <div class="dialog-actions"><button type="button" class="button secondary" data-close="interest-dialog">Vazgeç</button><button type="submit" class="button" id="interest-save">Kaydet</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="entry-dialog" class="wide-dialog" aria-labelledby="entry-title">
+    <form id="entry-form">
+      <div class="dialog-header"><div><span class="eyebrow">BU BİLGİSAYARDA SAKLANIR</span><h2 id="entry-title">Yeni proje kartı</h2></div><button type="button" class="close-button" data-close="entry-dialog" aria-label="Düzenleme penceresini kapat">✕</button></div>
+      <fieldset id="entry-fields" class="dialog-body form-grid">
+        <div class="full"><label for="entry-name">Başlık <span aria-hidden="true">*</span></label><input id="entry-name" name="title" required maxlength="160" autocomplete="off"></div>
+        <div class="full"><label for="entry-summary">Kısa açıklama <span aria-hidden="true">*</span></label><textarea id="entry-summary" name="summary" required maxlength="600" rows="3" placeholder="Ne anlatıyor, kimin işine yarar?"></textarea></div>
+        <div class="full"><label for="entry-body">Ayrıntılar</label><textarea id="entry-body" name="body" maxlength="12000" rows="8" placeholder="Bulgular, kullanım, sınırlar ve sonraki adımlar…"></textarea><p class="field-help">Düz metin olarak saklanır. Paylaşmadan önce kişisel bilgileri çıkar.</p></div>
+        <div class="full"><label for="entry-url">Proje veya araştırma bağlantısı</label><input id="entry-url" name="url" type="url" maxlength="2048" placeholder="https://" autocomplete="off"></div>
+        <div><label for="entry-tags">Konu etiketleri</label><input id="entry-tags" name="tags" maxlength="600" placeholder="Yapay zekâ, Python"><p class="field-help">Virgülle ayır; en fazla 12 etiket.</p></div>
+        <div><label for="entry-author">Yazar / görünen ad</label><input id="entry-author" name="author" maxlength="100" autocomplete="off"><p class="field-help">Paylaşım dosyasında bu ad görünür.</p></div>
+        <div class="full"><label for="entry-sources">Kaynaklar</label><textarea id="entry-sources" name="sources" rows="3" placeholder="Kaynak başlığı | https://ornek.org/yazi" aria-describedby="sources-help"></textarea><p id="sources-help" class="field-help">Her satıra bir kaynak: başlık | bağlantı. En fazla 10 kaynak.</p></div>
+        <div class="full"><label for="entry-license">Bu metnin paylaşım izni</label><select id="entry-license" name="license" aria-describedby="license-help"><option value="">Taslak — henüz seçilmedi</option><option value="CC-BY-4.0">CC BY 4.0 — adımı belirterek kullanılabilir</option><option value="CC0-1.0">CC0 1.0 — haklardan vazgeçme</option></select><p id="license-help" class="field-help">Dosya paylaşmadan önce bir izin seç. İzin yalnız hazırladığın kart / rapor metni içindir; bağlantılı projenin kodunu veya kaynak yayını yeniden lisanslamaz. <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a> · <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener noreferrer">CC0 1.0</a></p></div>
+        <p id="entry-share-help" class="field-help full"></p>
+        <p id="entry-error" class="notice error full" role="alert" hidden></p>
+      </fieldset>
+      <div class="dialog-actions"><span class="field-help">Kaydetmek, paylaşmak anlamına gelmez.</span><button type="button" class="button secondary" data-close="entry-dialog">Vazgeç</button><button type="submit" class="button" id="entry-save">Yerel olarak kaydet</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detail-dialog" class="wide-dialog" aria-labelledby="detail-title"><div class="dialog-header"><span class="eyebrow">KÜTÜPHANE KAYDI</span><button type="button" class="close-button" data-close="detail-dialog" aria-label="Kayıt penceresini kapat">✕</button></div><div id="detail-content" class="dialog-body"></div><div class="dialog-actions"><button type="button" class="button secondary" data-close="detail-dialog">Kapat</button></div></dialog>
+
+  <dialog id="share-dialog" class="wide-dialog" aria-labelledby="share-title">
+    <div class="dialog-header"><div><span class="eyebrow" id="share-direction">PAYLAŞIM ÖNİZLEMESİ</span><h2 id="share-title">Dosyada ne yer alacak?</h2></div><button type="button" class="close-button" data-close="share-dialog" aria-label="Paylaşım önizlemesini kapat">✕</button></div>
+    <div class="dialog-body"><p id="share-notice" class="notice"></p><div id="share-content"></div><details class="packet-details"><summary>Dosyanın tam içeriğini gör</summary><pre id="share-json"></pre></details><p id="share-error" class="notice error" role="alert" hidden></p></div>
+    <div class="dialog-actions"><button type="button" class="button secondary" data-close="share-dialog">Vazgeç</button><button type="button" class="button" id="share-confirm">JSON dosyasını indir</button></div>
+  </dialog>
+  <dialog id="provider-dialog" aria-labelledby="provider-title">
+    <form id="provider-form">
+      <div class="dialog-header"><h2 id="provider-title">Araştırma sağlayıcısı</h2><button type="button" class="close-button" data-close="provider-dialog" aria-label="Kapat">✕</button></div>
+      <fieldset id="provider-fields" class="dialog-body provider-fields">
+        <label for="provider-select">Derin araştırma sağlayıcısı</label>
+        <select id="provider-select"><option value="claude">Claude CLI</option><option value="codex">Codex CLI</option><option value="nvidia">NVIDIA API</option></select>
+        <p id="provider-availability" class="field-help"></p><p id="provider-current-model" class="field-help"></p>
+        <p class="notice">NVIDIA ve Codex yalnız uygulamanın sağladığı kaynak metinlerini analiz eder; model kendi web aramasını yapmaz veya video izlemez. Claude sınırlı web araştırması kullanabilir.</p>
+        <section id="provider-nvidia-help" class="provider-start" hidden>
+          <h3>NVIDIA ile başla</h3>
+          <ol><li>NVIDIA Build hesabını aç ve Get API Key adımını izle.</li><li>Anahtarını kurulum rehberindeki ortam değişkeni veya kimlik deposu adımıyla kendi bilgisayarına tanıt.</li><li>NVIDIA API seçimini kaydet; erişim ilk araştırma çağrısında sınanır.</li></ol>
+          <p><a href="https://build.nvidia.com/explore" target="_blank" rel="noopener noreferrer">NVIDIA Build · Get API Key ↗</a> · <a href="https://docs.api.nvidia.com/nim/docs/api-quickstart" target="_blank" rel="noopener noreferrer">Resmî başlangıç rehberi ↗</a></p>
+          <p class="field-help">Ücretsiz deneme/prototip erişimi; kota ve yayın/üretim kullanımı NVIDIA koşullarına bağlı.</p>
+          <p class="field-help">API anahtarını forma, araştırma metnine veya paylaşım dosyasına yazma.</p>
+          <a href="/guide?language=en" data-guide-link target="_blank" rel="noopener noreferrer">Kurulum ve araştırma rehberi</a>
+        </section>
+        <label for="provider-model">Codex modeli (isteğe bağlı)</label><input id="provider-model" maxlength="100" placeholder="Yerel CLI ayarını kullan"><p class="field-help">Boş bırakırsan kendi CLI ayarındaki model kullanılır. API anahtarını veya parolanı buraya yazma.</p>
+        <label for="provider-language">Araştırma raporunun dili</label><select id="provider-language"><option value="en">English</option><option value="tr">Türkçe</option></select><p class="field-help">Rapor dili, arayüz dili seçiminden bağımsızdır.</p>
+        <p class="field-help">Modelin markası veya fiyatı doğruluk kanıtı değildir; kaynakları, tarihi ve raporun sınırlarını kontrol et.</p>
+        <p id="provider-error" class="notice error" role="alert" hidden></p>
+      </fieldset>
+      <div class="dialog-actions"><button type="button" class="button secondary" data-close="provider-dialog">Vazgeç</button><button id="provider-save" type="submit" class="button">Kaydet</button></div>
+    </form>
+  </dialog>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+  <noscript><p class="notice">Geliştirici alanı için tarayıcında JavaScript açık olmalı. <a href="/">Ana çalışma alanına dön.</a></p></noscript>
+</body>
+</html>

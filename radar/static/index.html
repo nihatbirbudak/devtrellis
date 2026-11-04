@@ -1,0 +1,113 @@
+<!-- UFUK: kaynaklı gelişmeleri taramak, okumak ve araştırmaya ayırmak için kişisel çalışma alanı. -->
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173b31">
+  <meta name="color-scheme" content="light">
+  <title>UFUK — Kişisel gelişme radarın</title>
+  <link rel="icon" href="/static/ufuk.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/workspace.css">
+  <link rel="stylesheet" href="/static/insights.css">
+  <script src="/static/ui-text.js" defer></script>
+  <script src="/static/legacy-text.js" defer></script>
+  <script src="/static/research-text.js" defer></script>
+  <script src="/static/workspace.js" defer></script>
+  <script src="/static/insights.js" defer></script>
+  <link rel="stylesheet" href="/static/workflow.css">
+  <script src="/static/workflow.js" defer></script>
+  <link rel="stylesheet" href="/static/discovery.css">
+  <script src="/static/discovery.js" defer></script>
+  <link rel="stylesheet" href="/static/source-learning.css">
+  <script src="/static/source-learning.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#content">Gelişmelere geç</a>
+  <svg class="svg-definitions" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><path d="m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4V4Z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+  </defs></svg>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="UFUK çalışma alanı">
+      <a class="wordmark" href="/" aria-label="UFUK ana sayfa"><img src="/static/ufuk.svg" width="40" height="40" alt=""><span>UFUK<small>Kişisel gelişme radarın</small></span></a>
+      <div class="workspace-name"><span class="workspace-avatar">U</span><span>Çalışma alanım<small>Kişisel koleksiyon</small></span></div>
+      <a class="source-link" href="/platform">Geliştirici alanını aç →</a>
+      <a class="source-link" href="/guide?language=en" data-guide-link target="_blank" rel="noopener noreferrer">Kurulum ve araştırma rehberi</a>
+      <label class="legacy-language"><span>Dil</span><select data-language aria-label="Dil"><option value="en">EN</option><option value="tr">TR</option></select></label>
+      <span class="nav-label">GÖZAT · ARAŞTIR · KARAR VER</span>
+      <div class="view-tabs primary-navigation" role="tablist" aria-label="Günlük çalışma" aria-orientation="vertical">
+        <button type="button" class="view-tab active" id="tab-selection" role="tab" aria-selected="true" aria-controls="content" data-view="selection"><svg><use href="#i-grid"/></svg><span>Önemli gelişmeler</span><span class="tab-count" data-count="selection">—</span></button>
+        <button type="button" class="view-tab" id="tab-research" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="research"><svg><use href="#i-search"/></svg><span>Araştırılıyor</span><span class="tab-count" data-count="research">—</span></button>
+        <button type="button" class="view-tab" id="tab-decisions" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="decisions"><svg><use href="#i-clock"/></svg><span>Kararını bekleyenler</span><span class="tab-count" data-count="decisions">—</span></button>
+        <button type="button" class="view-tab" id="tab-development" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="development"><svg><use href="#i-stack"/></svg><span>Geliştirmeler</span><span class="tab-count" data-count="development">—</span></button>
+      </div>
+      <details class="nav-details"><summary>Ayrıntılar</summary>
+      <div class="view-tabs secondary-navigation" role="tablist" aria-label="Kayıtlar ve ayarlar" aria-orientation="vertical">
+        <button type="button" class="view-tab" id="tab-all" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="all"><svg><use href="#i-stack"/></svg><span>Tüm gelişmeler</span><span class="tab-count" data-count="all">—</span></button>
+        <button type="button" class="view-tab" id="tab-sources" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="sources"><svg><use href="#i-globe"/></svg><span>Kaynaklar</span><span class="tab-count" data-count="sources">—</span></button>
+        <button type="button" class="view-tab" id="tab-collections" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="collections"><svg><use href="#i-bookmark"/></svg><span>Koleksiyonlar</span><span class="tab-count" data-count="collections">—</span></button>
+        <button type="button" class="view-tab" id="tab-saved" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="saved"><svg><use href="#i-bookmark"/></svg><span>Yararlı buldukların</span><span class="tab-count" data-count="saved">—</span></button>
+        <button type="button" class="view-tab" id="tab-later" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="later"><svg><use href="#i-clock"/></svg><span>Sonra oku</span><span class="tab-count" data-count="later">—</span></button>
+        <button type="button" class="view-tab" id="tab-legacy-notes" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="legacy-notes"><svg><use href="#i-list"/></svg><span>Kişisel notlar</span><span class="tab-count" data-count="legacy-notes">—</span></button>
+        <button type="button" class="view-tab" id="tab-settings" role="tab" aria-selected="false" aria-controls="content" tabindex="-1" data-view="settings"><svg><use href="#i-list"/></svg><span>İlgi ve ayarlar</span></button>
+      </div></details>
+      <div class="sidebar-note"><div class="horizon-art" aria-hidden="true"><span></span><i></i><b></b></div><p>Merakın bir adım<br>ötesine bak.</p><span>Az gürültü.<br>Daha çok anlam.</span></div>
+      <div class="sidebar-bottom"><span class="connection-dot" aria-hidden="true"></span><span id="sidebar-health">Kaynaklar kontrol ediliyor</span><small>Bu bilgisayarda · Kişisel çalışma alanın</small></div>
+    </aside>
+
+    <div class="main-shell">
+      <header class="site-header">
+        <span class="header-location">Çalışma alanın <span>/</span> Gelişmeler</span>
+        <div class="header-actions"><button id="workflow-notifications" class="workflow-notifications" type="button" aria-label="Yeni araştırma raporlarını aç">Yeni raporlar <span data-count="notifications">0</span></button>
+          <label class="search-field"><svg><use href="#i-search"/></svg><span class="sr-only">Havuzda ara</span><input id="search" type="search" placeholder="Bir konu, kaynak veya fikir ara…" autocomplete="off" maxlength="200"><kbd aria-hidden="true">/</kbd></label>
+          <a class="export-link" href="/api/export" download="ufuk-koleksiyon.json" aria-label="Koleksiyonu JSON dosyası olarak indir" title="Koleksiyonu dışa aktar"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/></svg><span>Dışa aktar</span></a>
+          <button class="button button-primary collect-button" id="collect-button" type="button" disabled><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 18 17"/></svg><span>Günü hazırla</span></button>
+        </div>
+      </header>
+      <main class="main-content">
+        <section class="intro" aria-labelledby="masthead-title">
+          <div class="intro-copy"><p class="eyebrow"><span></span> DÜNYADAN SENİN UFUK ÇİZGİNE</p><h1 id="masthead-title">Dünyada yeni.<br><span>Senin için değerli.</span></h1><p>Ev otomasyonundan tarıma, yapay zekâdan medyaya.<br class="desktop-break"> UFUK kaynakları incelesin; sen hangi fikrin uygulanacağına karar ver.</p></div>
+          <aside class="edition-note" aria-label="Bu sayıya bakış"><time id="today"></time><span class="edition-label">BUGÜNÜN ÖNEMLİ GELİŞMELERİ</span><strong id="selection-count">Seçkin hazırlanıyor</strong><span id="reading-time">Kaynaklarıyla, tek bir yerde.</span><div class="edition-topics" aria-hidden="true"><span>AI</span><span>J</span><span>R</span><span>T</span><span>M</span></div></aside>
+        </section>
+        <div class="overview-strip" aria-label="Koleksiyonun durumu">
+          <div><svg><use href="#i-stack"/></svg><strong id="metric-total">—</strong><span>gelişme havuzda</span></div>
+          <div><svg><use href="#i-globe"/></svg><strong id="metric-sources">—</strong><span>kaynak sağlıklı</span></div>
+          <div><svg><use href="#i-bookmark"/></svg><strong id="metric-saved">—</strong><span>yararlı bulduğun</span></div>
+          <div><svg><use href="#i-search"/></svg><strong id="metric-selected">—</strong><span>rapor karar bekliyor</span></div>
+        </div>
+        <section class="workspace-layout" aria-label="Gelişme koleksiyonu">
+          <div class="feed-column">
+            <div class="view-heading"><div><h2 id="view-title" tabindex="-1">Önemli gelişmeler</h2><p id="view-description">Seçilmiş gelişmeler hazırlanıyor.</p></div><div class="view-options"><button id="view-grid" class="layout-button" type="button" aria-label="Kart görünümü" aria-pressed="true" title="Kart görünümü"><svg><use href="#i-grid"/></svg></button><button id="view-list" class="layout-button" type="button" aria-label="Liste görünümü" aria-pressed="false" title="Liste görünümü"><svg><use href="#i-list"/></svg></button></div></div>
+            <div class="filter-bar"><div class="topic-filters" role="group" aria-label="Konu filtresi">
+              <button class="topic-button active" type="button" aria-pressed="true" data-topic="all">Tümü</button>
+            </div><button id="clear-filters" class="clear-filters" type="button">Temizle</button></div>
+            <label id="source-filter-control" class="catalog-control pool-source-control" hidden>Kaynak<select id="source-filter"><option value="">Bütün kaynaklar</option></select></label>
+            <div class="collection-line"><span id="pool-status">Koleksiyon yükleniyor…</span><label class="archive-toggle" id="archive-control" hidden><input id="show-archive" type="checkbox" checked><span>Arşiv dahil</span></label></div>
+            <div id="request-error" class="inline-error" role="alert" hidden></div>
+            <div id="content" role="tabpanel" aria-labelledby="tab-selection" tabindex="-1" aria-busy="true" data-layout="grid"><div class="loading-state" role="status"><span class="loading-dot"></span>UFUK hazırlanıyor…</div><div class="news-grid skeleton-grid" aria-hidden="true"><div class="skeleton-card"></div><div class="skeleton-card"></div></div></div>
+          </div>
+          <aside class="context-rail" aria-label="Okuma rehberi">
+            <div class="rail-card perspective-card"><span class="eyebrow">BİR BAKIŞ AÇISI</span><h3>Her haberi değil,<br>işine yarayanı.</h3><p>Bir duyuru, tek başına doğrulanmış sonuç değildir. Kartlarda kaynağı, tarihi ve bize olası yararını birlikte gör.</p><div class="perspective-mark" aria-hidden="true"><span></span><i></i></div></div>
+            <div class="rail-card"><span class="eyebrow">KÜÇÜK BİR RUTİN</span><ol class="reading-steps"><li><span>01</span><div><strong>Gözat</strong><p>Hazır Türkçe değerlendirmelerden ilgini çekeni seç.</p></div></li><li><span>02</span><div><strong>Araştır</strong><p>Derin araştır de; kaynakları ve uygunluğu UFUK incelesin.</p></div></li><li><span>03</span><div><strong>Karar ver</strong><p>Geliştirmeye al, izlemeye al veya pas geç.</p></div></li><li><span>04</span><div><strong>Devir planını indir</strong><p>Deneme adımlarını Codex veya Claude ile uygulamak üzere al.</p></div></li></ol></div>
+            <div class="source-status-note"><span class="connection-dot"></span><div><strong>Kaynakların nabzı</strong><p id="collection-status">Son kontrol bilgisi alınıyor.</p></div></div>
+          </aside>
+        </section>
+        <footer class="site-footer"><span>UFUK <i>·</i> Merak ortak. Seçim bilinçli.</span><span><kbd>/</kbd> ile ara <i>·</i> Kartı aç, kaynakla birlikte oku</span></footer>
+      </main>
+    </div>
+  </div>
+  <dialog id="reader-dialog" class="reader-dialog" aria-labelledby="reader-title"><div class="reader-toolbar"><span><img src="/static/ufuk.svg" width="26" height="26" alt=""> UFUK <i>/</i> OKUMA ALANI</span><button id="reader-close" class="reader-close" type="button" aria-label="Okuma alanını kapat"><span>Kapat</span><kbd>Esc</kbd><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="reader-content"></div></dialog>
+  <dialog id="job-dialog" class="reader-dialog job-dialog" aria-labelledby="job-title"><div class="reader-toolbar"><span><img src="/static/ufuk.svg" width="26" height="26" alt=""> UFUK <i>/</i> İNCELEME DEFTERİ</span><button id="job-close" class="reader-close" type="button" aria-label="İnceleme notunu kapat"><span>Kapat</span><kbd>Esc</kbd><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="job-content"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+  <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

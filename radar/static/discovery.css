@@ -1,0 +1,30 @@
+/* Konu sorusunu ve kaynak keşfi sonuçlarını mevcut araştırma görünümüne uyarlar. */
+.discovery-form { padding: 24px 28px 30px; }
+.discovery-field { display: grid; gap: 8px; margin: 20px 0; }
+.discovery-field label { font-weight: 650; font-size: 13px; }
+.discovery-field textarea, .discovery-field select { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; color: #24372d; background: #fffef9; border: 1px solid #cbd5c6; border-radius: 8px; font: inherit; line-height: 1.6; }
+.discovery-field textarea { resize: vertical; }
+.discovery-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.discovery-heading h3 { margin: 0; font-size: 18px; }
+.discovery-requests, .discovery-overview { margin: 0 0 24px; padding: 22px; border: 1px solid #d8e0cf; border-radius: 13px; background: #f6f7ee; min-width: 0; }
+.discovery-overview p, .discovery-request p { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.discovery-request { padding: 18px 0; border-top: 1px solid #d8e0cf; margin-top: 18px; }
+.discovery-request h4 { font-size: 19px; margin: 12px 0 8px; line-height: 1.4; overflow-wrap: anywhere; }
+.discovery-run { padding: 12px 0; border-top: 1px solid #d8e0cf; overflow-wrap: anywhere; }
+.discovery-overview summary { cursor: pointer; padding: 10px 0; }
+.evidence-quality { padding: 15px; margin: 16px 0; border: 1px solid #ddceb3; border-radius: 10px; background: #fff7e8; }
+.evidence-quality[data-status="verified"] { background: #edf4e8; border-color: #b4c7a3; }
+.evidence-quality[data-status="contradicted"] { background: #fff0ea; border-color: #ddac99; }
+.evidence-quality p { line-height: 1.6; font-size: 13px; }
+.evidence-claim { border-top: 1px solid #ddd; padding: 14px 0; overflow-wrap: anywhere; }
+.evidence-claim blockquote { margin: 10px 0; white-space: pre-wrap; font-size: 13px; }
+@media (max-width: 780px) { .discovery-form { padding: 18px; } .discovery-requests, .discovery-overview { padding: 16px; } }
+@media (max-width: 560px) {
+  .header-actions { display: grid; grid-template-columns: 44px 36px 44px minmax(0,1fr); width: 100%; }
+  .header-actions .search-field { grid-row: 2; grid-column: 1 / -1; width: 100%; }
+  .header-actions .workflow-notifications { grid-row: 1; grid-column: 1; }
+  .header-actions .export-link { grid-row: 1; grid-column: 2; }
+  .header-actions .collect-button { grid-row: 1; grid-column: 3; }
+  .header-actions .discovery-entry { grid-row: 1; grid-column: 4; min-width: 0; min-height: 44px; }
+}
+.discovery-context {white-space:pre-wrap; overflow-wrap:anywhere;}
