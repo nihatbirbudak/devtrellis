@@ -4,17 +4,17 @@
 
 [English](README.md) · [MIT lisansı](LICENSE) · [Araştırma ve ücretsiz NVIDIA rehberi](GUIDE.tr.md) · [Topluluk sunucusu](COMMUNITY.md)
 
-**[Canlı topluluk: devtrellis.org](https://devtrellis.org)** — hesap açmadan hazır araştırmaları bul; kendi araştırman bitince istersen uygulamadan doğrudan paylaş. Dosya taşıman veya kayıt olman gerekmez.
+DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes için açık bir teknoloji bilgi topluluğudur. Amacı, yararlı araştırmayı bulup yeniden kullanmayı kolaylaştırarak aynı konuyu tekrar tekrar yapay zekâya araştırttırmanın zaman ve token maliyetini azaltmaya yardımcı olmaktır. Güncel haberler, araştırmalar, projeler ve gelişmeler biriktikçe insanlar aramayı bile düşünmedikleri çalışmaları ve konuları da keşfedebilir.
 
-**Doğrudan sitede oku:** araştırma başlığına veya **Araştırmayı oku** düğmesine tıklayarak paylaşılan raporun tamamını, kaynaklarını, modelini ve tarihlerini gör. GitHub, proje veya özgün yayın bağlantılarından ayrıntılara geçebilirsin. Okumak için program kurman, API anahtarın veya yapay zekâ asistanın olması gerekmez; yeniden araştırmak isteğe bağlıdır.
+Önce **[devtrellis.org](https://devtrellis.org)** üzerinde hazır araştırmayı ara. Başlığa veya **Araştırmayı oku** düğmesine tıklayarak tam raporu oku; GitHub, proje ve özgün kaynak bağlantılarını incele. Tarihini, kaynaklarını, kapsamını ve sınırlarını kontrol et. Yeterliyse kullan; eksik veya eski kalan kısmı kendi modelinle yeniden araştır. Sitede okumak için hesap, kurulum, API anahtarı veya yapay zekâ asistanı gerekmez. Hazır raporu okumak ve içe almak model çağırmaz.
 
-DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes için açık bir teknoloji bilgi topluluğu kurmayı hedefliyor: yeni çalışmaları takip et, kaynaklarıyla araştır, önceki araştırmaları kullan ve projeni paylaş. Uzun vadede günlük gelişmelerin kalıcı konu sayfalarına bağlandığı, toplulukla güncellenen bir teknoloji ansiklopedisi olacak. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları açıklıyor.
+Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** veya **Önizle ve paylaş** seç: tam metni, kaynakları, model bilgisini ve metin iznini kontrol edip onayladığın kopyayı varsayılan olarak anonim biçimde incelemeye gönder. Katkı isteğe bağlıdır; hesap açmak veya dosya taşımak gerekmez. Böylece bulma, kontrol etme, yeniden kullanma ve katkı sunma döngüsüyle ortak bilgi birikir. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları ayırır.
 
-Kişisel alan bilgisayarında çalışır. Yeni model işi başlatmadan önce toplulukta hazır araştırmayı ara. Yeterliyse kaynakları, tarihi ve model bilgisiyle oku; değilse yeni araştırmana başlangıç bağlamı olarak kullan. Okuma ve içe alma model çağırmaz. Kendi raporun hazır olunca **Yerelde tut** veya **Önizle ve paylaş** seç: yalnız onayladığın araştırma kopyası, varsayılan olarak anonim biçimde incelemeye gider. Topluluk hesabı ve dosya aktarımı gerekmez.
+## Bugünkü kapsam
 
-İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulmasını ve kendi araştırmalarından açık onayla katkı sunmasını sağlar. Önceki çalışmayı kullanmak tekrarlanan model işini azaltabilir; belirli bir token tasarrufu veya model eğitimi vaat edilmez. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır. Otomatik kamusal araştırma için kullanıma izin veren sağlayıcı erişimi gerekir; NVIDIA deneme erişimi tek başına yeterli değildir.
+Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır.
 
-Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir.
+İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulup okumasını ve önizleme ile açık onay sonrasında katkı sunmasını sağlar. Yeniden kullanım tekrarlanan model işini azaltabilir; henüz belirli bir token veya zaman tasarrufu ölçülmemiştir.
 
 ## Kurulum
 

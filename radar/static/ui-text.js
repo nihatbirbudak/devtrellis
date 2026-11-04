@@ -530,6 +530,13 @@
     "Bu kaydın kalıcı bağlantısı": "Permanent link to this record",
     "Bu kayıt bulunamadı veya artık yayımlanmıyor.": "This record was not found or is no longer published.",
     "Araştırmaların tam metnini ve özgün kaynaklarını doğrudan burada oku. Okumak için hesap, kurulum veya yapay zekâ modeli gerekmez.": "Read full research and original sources right here. No account, installation or AI model is needed to read.",
+    "Daha az tekrar. Daha çok keşif.": "Less repetition. More discovery.",
+    "Hazır araştırmadan başla.": "Build on existing research.",
+    "Yeni gelişmeleri keşfet.": "Discover what is new.",
+    "Aynı konuyu yeniden araştırmadan önce topluluğun kaynaklı çalışmalarına bak. Zaman ve token bütçeni yeni sorulara ayır; topluluğun biriktirdiği haberler, projeler ve gelişmelerle henüz bilmediğin konuları keşfet.": "Before researching the same topic again, explore the community's work and sources. Put your time and token budget toward new questions, and discover unfamiliar topics through news, projects and developments gathered by the community.",
+    "Birlikte biriken bilgi": "Knowledge that grows together",
+    "Herkes okuyabilir, isteyen katkı verir.": "Open to read. Optional to contribute.",
+    "Okumak için hesap, kurulum veya yapay zekâ gerekmez. Kendi araştırmanı yerelde tutabilir ya da önizleyip paylaşabilirsin. Paylaştığın çalışma, başkasının aynı işe yeniden başlamasına gerek bırakmayabilir.": "No account, installation or AI is needed to read. Keep your research locally or preview and share it. Your contribution may save someone else from starting the same work again.",
     "Araştırmaları oku": "Read research",
     "Kendi araştırmamı başlat": "Start my own research",
     "Tam metni açmak için araştırmanın başlığına veya Araştırmayı oku düğmesine tıkla. Kaynak ve GitHub bağlantıları doğrudan asıl yayına gider.": "Click a research title or Read research to open the full text. Source and GitHub links take you directly to the original publication."

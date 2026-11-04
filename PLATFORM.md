@@ -1,17 +1,19 @@
 # DevTrellis platform
 
-DevTrellis aims to become an open, community-maintained reference for technology: current news, research, practical development and reusable knowledge in one place. Hobbyists, learners, independent developers, researchers and professional teams should all be able to read, contribute and build on previous work. The current application combines a personal workspace with a separately operated community pilot. Start by finding useful existing research, investigate the gaps, then optionally contribute your own findings without creating an account. Worldwide coverage is a direction to grow toward; the current catalogue is limited.
+DevTrellis aims to make useful technology research easier to find, assess and reuse. Reusing work that already answers a question can help reduce the time and tokens spent asking AI to repeat the investigation. A shared collection of current news, research, projects and developments should also help hobbyists, learners and professional developers discover subjects and work they did not know to search for.
+
+The current application combines a personal workspace with a separately operated community pilot. Find an existing report, check its date, original sources, scope and limitations, and use it if it is sufficient. Investigate missing or outdated parts, then optionally preview and contribute your own findings anonymously. Reading existing work requires no model; new research uses the reader's own provider. Worldwide coverage is a direction to grow toward; the current catalogue is limited.
 
 [Use the application](README.md) · [Türkçe](README.tr.md) · [Consumer MCP tools](MCP.md) · [MCP Türkçe](MCP.tr.md) · [Operate a community](COMMUNITY.md)
 
 ## Product direction
 
-The long-term goal is a living technology encyclopedia connected to a current developments feed. News records what changed; topic pages explain what is known, what remains uncertain and which sources or experiments support it. Research and projects contribute to those pages over time.
+The long-term goal is a living technology reference connected to a current developments feed. News records what changed; planned topic pages would explain what is known, what remains uncertain and which sources or experiments support it. Research, corrections and projects would contribute to those pages over time. Useful reuse and discovery guide this direction; the table separates existing features from future work.
 
 | Area | Reader and contributor value | Current state |
 | --- | --- | --- |
 | Developments | Follow releases, papers, developer posts, company announcements and independent reporting by interest | Personal collection and a public community feed exist; an integrated daily collection/summary/review pipeline is planned |
-| Research | Reuse a sourced report, inspect its date/model/evidence and investigate again | Account-free search/read/import and optional anonymous submission from local research exist; comparison of related reports is planned |
+| Research | Check a report's date, sources and scope; reuse sufficient work and investigate only the gaps | Account-free search/read/import and optional anonymous submission from local research exist; comparison of related reports is planned |
 | Knowledge pages | Find an accessible introduction, technical details, sources, open questions and a change history for a topic | Planned; card revisions are not yet a shared topic wiki |
 | Projects | Show what you built, its repository/demo, progress and ways to contribute | Moderated project cards exist; project-linked news is planned |
 | AI tools | Search existing reports before repeating research and offer an optional contribution afterward | A local consumer MCP bridge provides search, read, preview and explicitly confirmed submission; it makes no model calls |
@@ -25,7 +27,7 @@ Company announcements, independent findings, personal experiments and AI-generat
 
 Open `/platform` after following [setup](README.md). Browse dated developments, choose interests, find and import existing community research, and maintain project and research cards. The advanced workspace at `/` provides sources, saved searches, collections, research tasks and provider settings. Both interfaces offer English and Turkish; article, contributor and model text keeps its original language. File exchange remains available, but is not required for the direct research contribution flow.
 
-Before starting a new investigation, search the shared library with a short, non-private query. Query words are normalized and matched together regardless of order. Check the report's original sources, date, model and limitations; import useful work without calling a model, then research only what is missing or outdated. Search and reading require internet access but no community account, subscription or contribution. This can reduce repeated research and token use; it does not guarantee savings or factual accuracy.
+Before starting a new investigation, search the shared library with a short, non-private query. Query words are normalized and matched together regardless of order. Check the report's original sources, date, scope, model and limitations; read the full text on the site or import useful work without calling a model, then research only what is missing or outdated. Search and reading require internet access but no community account, subscription or contribution. This can reduce repeated research and token use; no particular saving has been measured, and reuse does not establish factual accuracy.
 
 Opening a page or saving an interest does not start a model request. Source collection uses the internet. Optional research uses the person's own configured provider; [provider capabilities and limits](README.md#optional-model-providers) differ. Interface language and model report language are separate settings.
 

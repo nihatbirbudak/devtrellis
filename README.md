@@ -4,19 +4,15 @@
 
 [Türkçe](README.tr.md) · [MIT license](LICENSE) · [Research & free NVIDIA setup](GUIDE.md) · [Community service](COMMUNITY.md)
 
-**[Live community: devtrellis.org](https://devtrellis.org)** — search existing research without an account; optionally share your own completed research from the app, without uploading files or registering.
+DevTrellis is an open technology knowledge community for hobbyists and professional developers. Its aim is to make useful research easier to find and reuse, helping reduce the time and tokens spent asking AI to investigate the same topic again. By bringing together current news, research, projects and developments, the community can also help people discover work and topics they did not know to look for.
 
-**Read directly on the site:** open a research title or choose **Read research** to see the complete shared report, sources, model and dates. Follow its GitHub, project or original publication links for more detail. Reading needs no local installation, API key or AI assistant; researching further is optional.
+Start at **[devtrellis.org](https://devtrellis.org)**: open a title or choose **Read research** to read the full shared report and follow its GitHub, project and original source links. Check its date, sources, scope and limitations. If it answers your question, reuse it; if something is missing or outdated, research that part with your own model. Reading on the site needs no account, installation, API key or AI assistant. Reading and importing an existing report do not call a model.
 
-DevTrellis is building an open technology knowledge community for hobbyists and professional developers: follow new work, investigate it with sources, reuse research, and share projects. The long-term goal is a living, community-maintained reference that connects daily developments to lasting topic pages. See the [product vision and roadmap](PLATFORM.md) for what exists and what is planned.
-
-Your personal workspace runs on your computer. Search the community before starting a model job: an existing report may already answer your question. Read its sources, date and model, or use it as context for fresh research. Reading and importing do not call a model. When your own report is ready, choose **Keep local** or **Preview and share**. The latter sends only the approved research snapshot, anonymously by default, for moderation. No community account or file transfer is required.
-
-An optional [MCP connection](MCP.md) lets compatible assistants search/read the library and offer a reviewed contribution from their own research. Reuse can avoid repeated model work; it does not guarantee a particular token saving or train anyone's model. Living topic pages, an hourly community researcher and publisher connectors remain planned. Public automated research requires provider access that permits the intended use; NVIDIA trial access alone is insufficient.
-
-This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment variables, database keys and the `ufuk-share` format remain compatible. The community service must be installed and operated separately.
+Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact text, sources, model details and content permission before sending a copy, anonymously by default, for moderation. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
 
 ## Two ways to use it
+
+This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment variables, database keys and the `ufuk-share` format remain compatible. The community service is installed and operated separately. Living topic pages, an hourly community researcher and publisher connectors remain planned.
 
 | Personal workspace | Community service |
 | --- | --- |
@@ -26,6 +22,8 @@ This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment varia
 | Keep private research on your computer | Version corrections and withdraw publications |
 
 The developer space, advanced workspace and community screens offer English and Turkish. Source and contributor text keeps its original language; interface language does not rewrite other people's work. Model report language is a separate provider setting.
+
+An optional [MCP connection](MCP.md) lets compatible assistants search/read existing research and offer a contribution with an explicit preview and approval. Reuse may reduce repeated model work; no particular token or time saving has been measured.
 
 ## Install
 
