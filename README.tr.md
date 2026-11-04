@@ -14,7 +14,7 @@ Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** vey
 
 Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır.
 
-İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulup okumasını ve önizleme ile açık onay sonrasında katkı sunmasını sağlar. Yeniden kullanım tekrarlanan model işini azaltabilir; henüz belirli bir token veya zaman tasarrufu ölçülmemiştir.
+İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulup okumasını ve önizleme ile açık onay sonrasında katkı sunmasını sağlar. Asistana dönen rapor metni yine bağlam tokeni tüketebilir. Yeniden kullanım tekrarlanan model işini azaltabilir; henüz belirli bir token veya zaman tasarrufu ölçülmemiştir.
 
 ## Kurulum
 

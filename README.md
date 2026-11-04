@@ -23,7 +23,7 @@ This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment varia
 
 The developer space, advanced workspace and community screens offer English and Turkish. Source and contributor text keeps its original language; interface language does not rewrite other people's work. Model report language is a separate provider setting.
 
-An optional [MCP connection](MCP.md) lets compatible assistants search/read existing research and offer a contribution with an explicit preview and approval. Reuse may reduce repeated model work; no particular token or time saving has been measured.
+An optional [MCP connection](MCP.md) lets compatible assistants search/read existing research and offer a contribution with an explicit preview and approval. Report text returned to an assistant can still consume context tokens. Reuse may reduce repeated model work; no particular token or time saving has been measured.
 
 ## Install
 

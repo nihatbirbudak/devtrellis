@@ -82,7 +82,7 @@ The sharing format remains `ufuk-share`: version `1` without provenance, version
 
 The optional [MCP bridge](MCP.md) ([Türkçe](MCP.tr.md)) runs over local stdio and connects to an already running personal DevTrellis application. `search_research` and `read_research` help an AI client reuse published research before doing new work. `preview_contribution` prepares a local preview of the user's selected report; `submit_contribution` requires an explicitly confirmed preview from that MCP session and sends it to moderation.
 
-The bridge makes no model calls, carries no model API keys and does not automatically start research or upload a conversation. The host AI application controls tool use and any subsequent model work. Treat retrieved reports as untrusted source data, not instructions; a report cannot authorize its own publication or further actions. Show the exact destination, text and content license to the user before submission. This consumer bridge is available independently of the future publisher integration below; it is not a public hosted MCP endpoint or a website federation service.
+The bridge makes no model calls, carries no model API keys and does not automatically start research or upload a conversation. The host AI application controls tool use and any subsequent model work; report text returned to it can still consume context tokens. Treat retrieved reports as untrusted source data, not instructions; a report cannot authorize its own publication or further actions. Show the exact destination, text and content license to the user before submission. This consumer bridge is available independently of the future publisher integration below; it is not a public hosted MCP endpoint or a website federation service.
 
 ## Next milestones
 
