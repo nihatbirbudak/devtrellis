@@ -515,6 +515,25 @@
     "Topluluk hizmeti isteği tamamlayamadı; yerel araştırmanız korunuyor.": "The community service could not complete the request; your local research is preserved."
   });
   EN["Bu kayıtta düzenlenecek araştırma sorusu bulunmuyor."] = "This record has no research question to edit.";
+  Object.assign(EN, {
+    "Araştırmayı oku": "Read research",
+    "Ayrıntıları oku": "Read details",
+    "Proje bağlantısı": "Project link",
+    "Araştırma bağlantısı": "Research link",
+    "Özgün yayın": "Original publication",
+    "Kaynaklar ve özgün bağlantılar": "Sources and original links",
+    "Tüm kaynaklar tam metnin altında yer alır.": "All sources are listed below the full text.",
+    "Projenin ayrıntıları": "Project details",
+    "Tam araştırma metni": "Full research text",
+    "Bu kayıtta ek metin bulunmuyor. Özet ve özgün kaynakları okuyabilirsin.": "This record has no additional text. You can read its summary and original sources.",
+    "Bu metni burada okumak için hesap, yerel uygulama veya yapay zekâ modeli gerekmez. Yeni bir araştırma yapmak istersen kendi modelini kullanabilirsin.": "Reading this text here requires no account, local app or AI model. You can optionally use your own model to start new research.",
+    "Bu kaydın kalıcı bağlantısı": "Permanent link to this record",
+    "Bu kayıt bulunamadı veya artık yayımlanmıyor.": "This record was not found or is no longer published.",
+    "Araştırmaların tam metnini ve özgün kaynaklarını doğrudan burada oku. Okumak için hesap, kurulum veya yapay zekâ modeli gerekmez.": "Read full research and original sources right here. No account, installation or AI model is needed to read.",
+    "Araştırmaları oku": "Read research",
+    "Kendi araştırmamı başlat": "Start my own research",
+    "Tam metni açmak için araştırmanın başlığına veya Araştırmayı oku düğmesine tıkla. Kaynak ve GitHub bağlantıları doğrudan asıl yayına gider.": "Click a research title or Read research to open the full text. Source and GitHub links take you directly to the original publication."
+  });
   const TR = {};
   function register(messages = {}) {
     if (messages.en && typeof messages.en === "object") Object.assign(EN, messages.en);

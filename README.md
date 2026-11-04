@@ -6,6 +6,8 @@
 
 **[Live community: devtrellis.org](https://devtrellis.org)** — search existing research without an account; optionally share your own completed research from the app, without uploading files or registering.
 
+**Read directly on the site:** open a research title or choose **Read research** to see the complete shared report, sources, model and dates. Follow its GitHub, project or original publication links for more detail. Reading needs no local installation, API key or AI assistant; researching further is optional.
+
 DevTrellis is building an open technology knowledge community for hobbyists and professional developers: follow new work, investigate it with sources, reuse research, and share projects. The long-term goal is a living, community-maintained reference that connects daily developments to lasting topic pages. See the [product vision and roadmap](PLATFORM.md) for what exists and what is planned.
 
 Your personal workspace runs on your computer. Search the community before starting a model job: an existing report may already answer your question. Read its sources, date and model, or use it as context for fresh research. Reading and importing do not call a model. When your own report is ready, choose **Keep local** or **Preview and share**. The latter sends only the approved research snapshot, anonymously by default, for moderation. No community account or file transfer is required.

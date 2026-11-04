@@ -6,6 +6,8 @@
 
 **[Canlı topluluk: devtrellis.org](https://devtrellis.org)** — hesap açmadan hazır araştırmaları bul; kendi araştırman bitince istersen uygulamadan doğrudan paylaş. Dosya taşıman veya kayıt olman gerekmez.
 
+**Doğrudan sitede oku:** araştırma başlığına veya **Araştırmayı oku** düğmesine tıklayarak paylaşılan raporun tamamını, kaynaklarını, modelini ve tarihlerini gör. GitHub, proje veya özgün yayın bağlantılarından ayrıntılara geçebilirsin. Okumak için program kurman, API anahtarın veya yapay zekâ asistanın olması gerekmez; yeniden araştırmak isteğe bağlıdır.
+
 DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes için açık bir teknoloji bilgi topluluğu kurmayı hedefliyor: yeni çalışmaları takip et, kaynaklarıyla araştır, önceki araştırmaları kullan ve projeni paylaş. Uzun vadede günlük gelişmelerin kalıcı konu sayfalarına bağlandığı, toplulukla güncellenen bir teknoloji ansiklopedisi olacak. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları açıklıyor.
 
 Kişisel alan bilgisayarında çalışır. Yeni model işi başlatmadan önce toplulukta hazır araştırmayı ara. Yeterliyse kaynakları, tarihi ve model bilgisiyle oku; değilse yeni araştırmana başlangıç bağlamı olarak kullan. Okuma ve içe alma model çağırmaz. Kendi raporun hazır olunca **Yerelde tut** veya **Önizle ve paylaş** seç: yalnız onayladığın araştırma kopyası, varsayılan olarak anonim biçimde incelemeye gider. Topluluk hesabı ve dosya aktarımı gerekmez.

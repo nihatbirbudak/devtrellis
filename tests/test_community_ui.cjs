@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const {test} = require("node:test");
-const {safeURL, parsePacket, validatePacket, filterCards} = require("../radar/static/community.js");
+const {safeURL, parsePacket, validatePacket, filterCards, publicCardId} = require("../radar/static/community.js");
 const {BRAND, EN, createTranslator, provenanceFacts, loadTopicLabels} = require("../radar/static/ui-text.js");
 const source = fs.readFileSync(path.join(__dirname, "../radar/static/community.js"), "utf8");
 const html = fs.readFileSync(path.join(__dirname, "../radar/static/community.html"), "utf8");
@@ -17,7 +17,7 @@ const topicDefinitions = [
   {id: "data", label_tr: "Veri ve veritabanları", label_en: "Data and databases"}
 ];
 
-function harness({authenticated = false, role = "contributor", malicious = false, provenance = null, language = "en", feedItems = [], topicStatus = 200} = {}) {
+function harness({authenticated = false, role = "contributor", malicious = false, provenance = null, language = "en", feedItems = [], topicStatus = 200, cardId = "card-one", search = "", publicStatus = 200, kind = "research", fullBody = null} = {}) {
   let document;
   class Node {
     constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.listeners = new Map(); this.attributes = {}; this.dataset = {}; this.value = ""; this.hidden = false; this.disabled = false; this.open = false; this._text = ""; this.className = ""; }
@@ -31,11 +31,11 @@ function harness({authenticated = false, role = "contributor", malicious = false
     addEventListener(name, listener) { if (!this.listeners.has(name)) this.listeners.set(name, []); this.listeners.get(name).push(listener); }
     focus() { document.activeElement = this; }
     showModal() { this.open = true; }
-    close() { this.open = false; }
+    close() { this.open = false; for (const handler of this.listeners.get("close") || []) handler({target:this}); }
     reportValidity() { return true; }
-    async dispatch(name) {
+    async dispatch(name, details = {}) {
       if (this.disabled) return;
-      const event = {target: this, currentTarget: this, preventDefault() {}};
+      const event = {target: this, currentTarget: this, preventDefault() {}, ...details};
       await Promise.all((this.listeners.get(name) || []).map(handler => handler(event)));
       await turn(); await turn();
     }
@@ -59,10 +59,11 @@ function harness({authenticated = false, role = "contributor", malicious = false
     nodes.push(item);
     document.body.append(item);
   }
-  const card = {id: "card-one", owner: {username: "tester", display_name: "Test Contributor"}, version: 7, status: "pending", packet: packet(), published_version: 4, moderation_note: "Please clarify the source."};
+  const card = {id: cardId, owner: {username: "tester", display_name: "Test Contributor"}, version: 7, status: "pending", packet: {...packet(), kind}, published_version: 4, moderation_note: "Please clarify the source."};
+  if (fullBody !== null) card.packet.body = fullBody;
   if (provenance) { card.packet.schema_version = 2; card.packet.provenance = provenance; }
   if (malicious) { card.packet.title = '<img src=x onerror="alert(1)">'; card.packet.body = "<script>alert(2)</script>"; card.packet.sources[0] = {title: "<svg onload=alert(3)>", url: "javascript:alert(4)"}; }
-  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0};
+  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0, history: []};
   const session = () => ({authenticated: fixture.authenticated, user: fixture.authenticated ? {id: "user-one", username: "tester", display_name: "Test Contributor", role: fixture.role} : null, csrf_token: fixture.authenticated ? "TEST_AUTH_CSRF" : "TEST_ANON_CSRF"});
   const fetch = async (url, options) => {
     const body = options.body ? JSON.parse(options.body) : null;
@@ -76,17 +77,17 @@ function harness({authenticated = false, role = "contributor", malicious = false
     else if (url.startsWith("/api/community/feed?")) response = {items: feedItems, total: feedItems.length, offset: 0, limit: 24};
     else if (url === "/api/community/mine" || url === "/api/community/review") response = {items: [card]};
     else if (url.startsWith("/api/community/cards?")) response = {items: [card], total: 1};
-    else if (url === "/api/community/cards/card-one") response = {...card, moderation_version: 11};
+    else if (url === `/api/community/cards/${card.id}`) {status=publicStatus;response=status===200 ? {...card, status:"published", moderation_version:11} : {detail:"Not found"};}
     else if (url.startsWith("/api/community/submissions/")) {
       if (fixture.conflict) { status = 409; response = {detail: "version conflict"}; }
       else { response = {card: {...card, version: 8, packet: body.packet || card.packet}}; }
     } else throw new Error(`Unexpected API call: ${url}`);
     return {ok: status === 200, status, json: async () => copy(response)};
   };
-  const window = {addEventListener() {}, confirm: () => true};
+  const window = {addEventListener() {}, confirm: () => true, location:new URL(`https://community.example/${search}`), history:{replaceState(_state,_title,address){fixture.history.push(address);window.location=new URL(address,window.location);}}};
   vm.runInNewContext(source, {document, window, fetch, URL, URLSearchParams, TextEncoder, Intl, Date, Set, console, crypto: {randomUUID: () => `TEST-REQUEST-${++fixture.uuidCount}`}, UfukUI: {language, brand: BRAND, t: createTranslator(language), provenanceFacts, loadTopicLabels: () => loadTopicLabels(language, fetch), initialize() {}}});
   const flatten = root => [root, ...root.children.flatMap(flatten)];
-  return {fixture, document, byId: document.getElementById, ready: async () => { await turn(); await turn(); }, findButton: label => flatten(document.getElementById("community-list")).find(item => item.tagName === "BUTTON" && item.textContent === label), flatten};
+  return {fixture, document, window, byId: document.getElementById, ready: async () => { await turn(); await turn(); }, findButton: label => flatten(document.getElementById("community-list")).find(item => item.tagName === "BUTTON" && item.textContent === label), flatten};
 }
 
 test("ortak haberlerin konu dili API kaydından gelir; arşiv işareti yerine yayın ve görülme tarihleri kalır", async () => {
@@ -171,7 +172,7 @@ test("anonim okuma XSS metnini HTML'e çevirmeden gösterir ve güvensiz kaynak 
   await app.ready();
   await app.byId("community-tab-research").dispatch("click");
   assert.match(app.byId("community-list").textContent, /<img src=x onerror/);
-  await app.findButton("Read").dispatch("click");
+  await app.findButton("Read research").dispatch("click");
   assert.equal(app.byId("card-dialog").open, true);
   assert.match(app.byId("card-content").textContent, /<script>alert\(2\)<\/script>/);
   assert.ok(app.flatten(app.byId("card-content")).every(item => item.tagName !== "SCRIPT" && item.tagName !== "IMG" && !String(item.href || "").startsWith("javascript:")));
@@ -248,4 +249,82 @@ test("yayından kaldırma yayımlı revizyonu değil moderasyon sürümünü kul
   const write = app.fixture.requests.find(item => item.url.endsWith("/hide"));
   assert.equal(write.body.expected_version, 11);
   assert.equal(write.body.note, "Source has been withdrawn.");
+});
+
+test("iki dilde başlık ve birincil okuma tam metni açar; okumak model, giriş veya yerel uygulama istemez", async () => {
+  const id="25335c49583f4d4096b2a5f1026bfce0";
+  const fullBody="Original report\n"+"Evidence detail. ".repeat(300)+"\nREADER_COMPLETE_END";
+  for(const language of ["en","tr"]){
+    const app=harness({cardId:id,language,fullBody,provenance:{model:"synthetic/test-model",generated_at:"2026-01-02T12:00:00Z",question:"Original question",evidence_status:"unverified"}});await app.ready();
+    await app.byId("community-tab-research").dispatch("click");
+    const heading=app.flatten(app.byId("community-list")).find(item=>item.tagName==="A"&&item.className==="card-title-link");
+    assert.equal(heading.href,`/?card=${id}`);
+    const read=app.findButton(language==="en"?"Read research":"Araştırmayı oku");assert.match(read.className,/read-primary/);
+    const before=app.fixture.requests.length;await heading.dispatch("click");
+    assert.deepEqual(app.fixture.requests.slice(before).map(row=>row.url),[`/api/community/cards/${id}`]);
+    assert.equal(app.byId("card-dialog").open,true);assert.equal(app.byId("login-dialog").open,false);
+    const body=app.flatten(app.byId("card-content")).find(item=>item.className==="detail-body");assert.equal(body.textContent,fullBody);
+    assert.match(app.byId("card-content").textContent,/synthetic\/test-model/);
+    assert.match(app.byId("card-content").textContent,language==="en"?/Full research text/:/Tam araştırma metni/);
+    assert.match(app.byId("card-content").textContent,language==="en"?/requires no account, local app or AI model/:/hesap, yerel uygulama veya yapay zekâ modeli gerekmez/);
+    assert.equal(app.window.location.search,`?card=${id}`);
+    assert.ok(app.fixture.requests.every(row=>!row.options.method||row.options.method==="GET"));
+    assert.ok(app.fixture.requests.every(row=>!row.url.includes("/login")&&!row.url.includes("127.0.0.1")&&!row.url.includes("research-requests")));
+    app.byId("card-dialog").close();assert.equal(app.window.location.search,"");
+    await read.dispatch("click");assert.equal(app.byId("card-dialog").open,true);
+  }
+});
+
+test("proje kartında ayrıntı okuma birincildir; GitHub ve özgün kaynaklar güvenli doğrudan bağlantıdır", async()=>{
+  const app=harness({kind:"project"});await app.ready();
+  app.fixture.card.packet.url="https://github.com/example/project";
+  app.fixture.card.packet.provenance={source_url:"https://example.org/original",model:"unknown",generated_at:null};
+  app.fixture.card.packet.sources=[{title:"Original",url:"https://example.org/original"},{title:"Unsafe",url:"javascript:alert(1)"},{title:"Credential",url:"https://name:secret@example.org"},{title:"Article",url:"https://example.org/article"}];
+  await app.byId("community-tab-project").dispatch("click");
+  const links=app.flatten(app.byId("community-list")).filter(item=>item.tagName==="A");
+  assert.ok(links.some(link=>link.href==="https://github.com/example/project"&&link.textContent.startsWith("GitHub")));
+  assert.ok(links.some(link=>link.href==="https://example.org/original"));
+  for(const link of links){assert.equal(link.target,"_blank");assert.equal(link.rel,"noopener noreferrer");assert.ok(safeURL(link.href));}
+  const before=app.fixture.requests.length;await app.findButton("Read details").dispatch("click");
+  assert.deepEqual(app.fixture.requests.slice(before).map(row=>row.url),["/api/community/cards/card-one"]);
+  assert.match(app.byId("card-content").textContent,/Project details/);
+  const detailLinks=app.flatten(app.byId("card-content")).filter(item=>item.tagName==="A");
+  assert.equal(detailLinks.filter(link=>link.href==="https://example.org/original").length,1);
+  assert.ok(detailLinks.every(link=>!String(link.href).startsWith("javascript:")&&!String(link.href).includes("secret")));
+});
+
+test("kalıcı bağlantı sadece 32 haneli tek kayıt kimliğini kabul eder",()=>{
+  const id="25335c49583f4d4096b2a5f1026bfce0";
+  assert.equal(publicCardId(`?card=${id}`),id);assert.equal(publicCardId(`?research=${id.toUpperCase()}`),id);
+  for(const input of ["", "?card=", "?card=../private", "?card=%3Cscript%3E", "?card=https://other.test", `?card=${id}&card=${id}`, `?card=${id}&research=${id}`,`?card=${id}0`]) assert.equal(publicCardId(input),null,input);
+});
+
+test("kalıcı bağlantı yenilendiğinde yalnız yayımlı kayıt endpointi açılır ve eksik meta bilinmiyor kalır",async()=>{
+  const id="25335c49583f4d4096b2a5f1026bfce0";
+  for(const key of ["card","research"]){
+    const app=harness({cardId:id,search:`?${key}=${id}`,fullBody:"PERMALINK_FULL_BODY"});await app.ready();
+    assert.equal(app.byId("card-dialog").open,true);assert.match(app.byId("card-content").textContent,/PERMALINK_FULL_BODY/);
+    assert.match(app.byId("card-content").textContent,/Model not recorded/);assert.match(app.byId("card-content").textContent,/Generation date not recorded/);
+    assert.equal(app.fixture.requests.filter(row=>row.url===`/api/community/cards/${id}`).length,1);
+    assert.equal(app.fixture.requests.some(row=>row.url.includes("/mine")||row.url.includes("/review")||row.options.method==="POST"),false);
+  }
+});
+
+test("yayınlanmamış permalink özel kayda düşmez; geçersiz kimlik uzak kayıt isteği oluşturmaz",async()=>{
+  const id="52b6ec51d4aa414d8cc6e05f2b58eb1c";
+  const missing=harness({authenticated:true,role:"moderator",cardId:id,search:`?card=${id}`,publicStatus:404,fullBody:"PRIVATE_PENDING_TEST_MARKER"});await missing.ready();
+  assert.equal(missing.byId("card-dialog").open,false);assert.match(missing.byId("community-error").textContent,/not found or is no longer published/);
+  assert.doesNotMatch(missing.document.body.textContent,/PRIVATE_PENDING_TEST_MARKER/);
+  assert.equal(missing.fixture.requests.some(row=>row.url.includes("/mine")||row.url.includes("/review")),false);
+  const invalid=harness({search:"?card=../private"});await invalid.ready();
+  assert.equal(invalid.fixture.requests.some(row=>row.url.startsWith("/api/community/cards/")),false);
+});
+
+test("özel katkı görünümü kalıcı bağlantı üretmez ve mevcut taslağı yalnız kendi alanında okur",async()=>{
+  const id="52b6ec51d4aa414d8cc6e05f2b58eb1c";
+  const app=harness({authenticated:true,cardId:id});await app.ready();await app.byId("community-tab-mine").dispatch("click");
+  assert.equal(app.flatten(app.byId("community-list")).some(item=>String(item.href).includes("?card=")),false);
+  const before=app.fixture.requests.length;await app.findButton("Read").dispatch("click");
+  assert.equal(app.fixture.requests.length,before);assert.equal(app.fixture.history.length,0);
+  assert.equal(app.flatten(app.byId("card-content")).some(item=>String(item.href).includes("?card=")),false);
 });

@@ -5,6 +5,12 @@
   const t = (key, values = {}) => UI ? UI.t(key, values) : key.replace(/\{(\w+)\}/g, (match, name) => Object.hasOwn(values, name) ? String(values[name]) : match);
   const MAX_BYTES = 32768;
   const PAGE_SIZE = 24;
+  const validCardId = value => typeof value === "string" && /^[a-f0-9]{32}$/i.test(value);
+  function publicCardId(search) {
+    const params = new URLSearchParams(search);
+    const values = [...params.getAll("card"), ...params.getAll("research")];
+    return values.length === 1 && validCardId(values[0]) ? values[0].toLowerCase() : null;
+  }
   const safeURL = value => {
     try { const url = new URL(String(value || "")); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null; }
     catch { return null; }
@@ -39,11 +45,11 @@
     if (error.status === 401 || error.status === 403) return t("Oturumun sona ermiş olabilir. Taslağını koruyup yeniden giriş yap.");
     return t(error.message || "İşlem tamamlanamadı. Yeniden deneyebilirsin.");
   }
-  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText};
+  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText, publicCardId};
   if (typeof document === "undefined") return;
   UI?.initialize();
   const byId = id => document.getElementById(id);
-  const state = {session: null, topicLabels: {}, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, reviewBusy: false};
+  const state = {session: null, topicLabels: {}, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, detailLoading: false, publicCardOpen: false, reviewBusy: false};
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -65,6 +71,31 @@
     item.target = "_blank";
     item.rel = "noopener noreferrer";
     return item;
+  }
+  function setPermalink(id = null) {
+    if (!window.history?.replaceState || !window.location?.href) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("card"); url.searchParams.delete("research");
+    if (validCardId(id)) url.searchParams.set("card", id.toLowerCase());
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+  function originalLinks(packet, compact = false) {
+    const entries = [], seen = new Set();
+    for (const [label, value] of [[t(packet.kind === "project" ? "Proje bağlantısı" : "Araştırma bağlantısı"), packet.url], [t("Özgün yayın"), packet.provenance?.source_url], ...(packet.sources || []).map(source => [source.title || t("Kaynak"), source.url])]) {
+      const url = safeURL(value); if (!url || seen.has(url)) continue;
+      seen.add(url); const host = new URL(url).hostname;
+      const github = host === "github.com" || host.endsWith(".github.com");
+      entries.push({url, github, label: github ? `GitHub · ${label}` : label});
+    }
+    if (!entries.length) return null;
+    const block = node("section", compact ? "card-original-links" : "reader-original-links");
+    block.append(node(compact ? "h4" : "h3", "source-heading", t("Kaynaklar ve özgün bağlantılar")));
+    const list = node("ul", "source-list");
+    const visible = compact ? [...entries.filter(item => item.github), ...entries.filter(item => !item.github)].slice(0, 3) : entries;
+    for (const item of visible) { const row = node("li"); row.append(link(`${item.label} ↗`, item.url)); list.append(row); }
+    block.append(list);
+    if (compact && entries.length > 3) block.append(node("p", "field-help", t("Tüm kaynaklar tam metnin altında yer alır.")));
+    return block;
   }
   function message(id, text) { byId(id).textContent = text || ""; byId(id).hidden = !text; }
   function dateLabel(value) {
@@ -201,7 +232,17 @@
     meta.append(node("span", "badge", t(packet.kind === "project" ? "Proje" : "Araştırma")));
     const privateView = state.tab === "mine" || state.tab === "review";
     if (privateView) meta.append(node("span", `badge status-${card.status}`, statusLabel(card.status)));
-    body.append(meta, node("h3", "", packet.title), node("p", "summary", packet.summary));
+    const heading = node("h3");
+    if (privateView) heading.textContent = packet.title;
+    else if (validCardId(card.id)) {
+      const titleLink = node("a", "card-title-link", packet.title); titleLink.href = `/?card=${card.id}`;
+      titleLink.addEventListener("click", event => {
+        if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault(); return openCard(card, "read", event.currentTarget);
+      }); heading.append(titleLink);
+    } else heading.append(button(packet.title, event => openCard(card, "read", event.currentTarget), "card-title-link"));
+    body.append(meta, heading, node("p", "summary", packet.summary));
+    const sources = originalLinks(packet, true); if (sources) body.append(sources);
     if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", tag))); body.append(tags); }
     body.append(node("p", "entry-note", t("Güncellendi: {date}", {date: dateLabel(packet.updated_at)})));
     if (packet.provenance) {
@@ -213,8 +254,8 @@
     if (privateView && card.published_version && ["pending", "rejected"].includes(card.status)) body.append(node("p", "private-version-note", t("Yayımlanan sürüm: {version}. Bu taslak onaylanana kadar önceki sürüm görünür kalır.", {version: card.published_version})));
     if (privateView && (card.moderation_note || card.review_note || card.note)) body.append(node("p", "private-version-note", t("İnceleme notu: {note}", {note: card.moderation_note || card.review_note || card.note})));
     const actions = node("div", "card-actions community-card-actions");
-    actions.append(button(t("Oku"), event => openCard(card, "read", event.currentTarget)));
-    if (!privateView) actions.append(button(t("Kendi modelimle araştır"), () => openResearchApp(card)));
+    actions.append(button(t(privateView ? "Oku" : packet.kind === "project" ? "Ayrıntıları oku" : "Araştırmayı oku"), event => openCard(card, "read", event.currentTarget), privateView ? "text-button" : "button read-primary"));
+    if (!privateView) actions.append(button(t("Kendi modelimle araştır"), () => openResearchApp(card), "text-button research-optional"));
     if (state.tab === "mine") {
       actions.append(button(t("Düzelt"), () => openComposer(card.packet, card)));
       if (card.status !== "withdrawn") actions.append(button(t("Geri çek"), event => withdraw(card, event.currentTarget)));
@@ -229,39 +270,39 @@
     const heading = node("h2", "detail-title", packet.title);
     if (titleId) heading.id = titleId;
     content.append(node("p", "card-preview-kind", t(packet.kind === "project" ? "Proje" : "Araştırma")), heading, node("p", "detail-summary", packet.summary));
+    content.append(node("h3", "reader-body-heading", t(packet.kind === "project" ? "Projenin ayrıntıları" : "Tam araştırma metni")), node("div", "detail-body", packet.body || t("Bu kayıtta ek metin bulunmuyor. Özet ve özgün kaynakları okuyabilirsin.")));
+    const originals = originalLinks(packet); if (originals) content.append(originals);
     const meta = node("dl", "detail-meta");
     for (const [key, value] of [["Yazar", packet.author], ["Oluşturuldu", dateLabel(packet.created_at)], ["Güncellendi", dateLabel(packet.updated_at)], ["Metin izni", packet.license]]) meta.append(node("dt", "", t(key)), node("dd", "", value || t("Belirtilmedi")));
     content.append(meta);
-    if (packet.provenance) {
+    if (packet.provenance || packet.kind === "research") {
       const provenance = node("section", "provenance-panel"); provenance.append(node("h3", "", t("Araştırmanın kökeni")));
       const facts = node("dl", "detail-meta");
-      for (const [label, value] of UI?.provenanceFacts?.(packet.provenance, t, dateLabel) || []) facts.append(node("dt", "", label), node("dd", "", value));
+      for (const [label, value] of UI?.provenanceFacts?.(packet.provenance || {model: "unknown", generated_at: null}, t, dateLabel) || []) facts.append(node("dt", "", label), node("dd", "", value));
       provenance.append(facts, node("p", "field-help", t("Bu bilgiler kaynak araştırmaya aittir; kart metni sonradan düzenlenmiş olabilir. İçe alınan kayıtların model ve kaynak bilgileri yazar beyanıdır.")), node("p", "field-help", t("Modelin markası veya fiyatı doğruluk kanıtı değildir; kaynakları, tarihi ve raporun sınırlarını kontrol et.")));
-      if (packet.provenance.modified) provenance.append(node("p", "notice", t("Kart içeriği özgün rapordan sonra değiştirildi; yeniden kanıt denetimi yapılmadı.")));
+      if (packet.provenance?.modified) provenance.append(node("p", "notice", t("Kart içeriği özgün rapordan sonra değiştirildi; yeniden kanıt denetimi yapılmadı.")));
       content.append(provenance);
     }
-    if (packet.url) content.append(link(t("Proje / araştırma bağlantısı ↗"), packet.url));
-    if (packet.body) content.append(node("div", "detail-body", packet.body));
     if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", tag))); content.append(tags); }
-    if (packet.sources?.length) {
-      content.append(node("h3", "source-heading", t("Kaynaklar")));
-      const sources = node("ul", "source-list");
-      for (const source of packet.sources) { const item = node("li"); item.append(link(`${source.title} ↗`, source.url)); sources.append(item); }
-      content.append(sources);
-    }
     content.append(node("p", "field-help", t("Yalnız kart metni seçilen izinle paylaşılır; bağlantılı kod ve kaynak yayınları yeniden lisanslanmaz.")));
     return content;
   }
-  async function openCard(card, mode, trigger) {
-    if (trigger.disabled) return;
+  async function openCard(card, mode, trigger, publicOnly = false) {
+    if (trigger.disabled || state.detailLoading) return;
+    state.detailLoading = true;
     trigger.disabled = true;
     message("community-error", "");
+    const privateView = !publicOnly && (state.tab === "mine" || state.tab === "review");
     try {
-      const privateView = state.tab === "mine" || state.tab === "review";
       const latest = privateView ? card : await request(`/cards/${encodeURIComponent(card.id)}`);
       state.detail = latest.card || latest;
       byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title"));
-      if (!privateView) byId("card-content").append(button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button"));
+      if (!privateView) {
+        const optional = node("section", "reader-optional");
+        optional.append(node("p", "field-help", t("Bu metni burada okumak için hesap, yerel uygulama veya yapay zekâ modeli gerekmez. Yeni bir araştırma yapmak istersen kendi modelini kullanabilirsin.")), button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button secondary"));
+        if (validCardId(card.id)) { const permalink = node("a", "reader-permalink", t("Bu kaydın kalıcı bağlantısı")); permalink.href = `/?card=${card.id}`; optional.append(permalink); }
+        byId("card-content").append(optional);
+      }
       byId("card-download").hidden = privateView;
       byId("card-file-options").hidden = privateView;
       if (!privateView) byId("card-download").href = `/api/community/cards/${encodeURIComponent(card.id)}/packet`;
@@ -279,8 +320,11 @@
       byId("review-hide").disabled = false;
       if (mode === "review" && own) message("review-error", t("Bu katkı sana ait. Kendi katkını onaylayamazsın."));
       byId("card-dialog").showModal();
-    } catch (error) { message("community-error", errorText(error)); }
-    finally { trigger.disabled = false; }
+      byId("card-dialog").scrollTop = 0;
+      state.publicCardOpen = !privateView;
+      if (!privateView && validCardId(card.id)) setPermalink(card.id);
+    } catch (error) { message("community-error", !privateView && error.status === 404 ? t("Bu kayıt bulunamadı veya artık yayımlanmıyor.") : errorText(error)); }
+    finally { trigger.disabled = false; state.detailLoading = false; }
   }
   function openLogin() { message("login-error", ""); byId("login-password").value = ""; byId("login-dialog").showModal(); byId("login-username").focus(); }
   function openResearchApp(card = null) {
@@ -466,6 +510,8 @@
       const [, labels] = await Promise.all([loadSession(), UI?.loadTopicLabels?.()]);
       state.topicLabels = labels || {};
       await loadRecords();
+      const id = publicCardId(window.location?.search || "");
+      if (id) await openCard({id}, "read", byId("community-main"), true);
     }
     catch (error) {
       byId("community-count").textContent = t("Topluluk başlatılamadı.");
@@ -490,6 +536,8 @@
   document.querySelectorAll("[data-close]").forEach(trigger => trigger.addEventListener("click", () => closeDialog(trigger.dataset.close)));
   document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("cancel", event => { event.preventDefault(); closeDialog(dialog.id); }));
   byId("login-open").addEventListener("click", openLogin);
+  byId("community-browse").addEventListener("click", () => selectTab("research", true));
+  byId("card-dialog").addEventListener("close", () => { if (state.publicCardOpen) setPermalink(); state.publicCardOpen = false; });
   byId("community-start").addEventListener("click", () => openResearchApp());
   byId("login-form").addEventListener("submit", login);
   byId("logout").addEventListener("click", logout);
