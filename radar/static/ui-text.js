@@ -6,6 +6,7 @@
     "UFUK — Geliştirici alanı":"UFUK — Developer space",
     "UFUK geliştirici alanı":"UFUK developer space",
     "İçeriğe geç":"Skip to content",
+    "Kod ve kurulum":"Source and setup",
     "Geliştirici alanı":"Developer space",
     "Yerel önizleme · Paylaşım dosyalarıyla çalışır":"Local preview · Share files with others",
     "Ana çalışma alanı":"Advanced workspace",
@@ -418,6 +419,20 @@
       return String(template).replace(/UFUK|Ufuk/g, BRAND).replace(/\{(\w+)\}/g, (match, name) => Object.hasOwn(values, name) ? String(values[name]) : match);
     };
   }
+  async function loadTopicLabels(language, fetcher) {
+    const labels = Object.create(null);
+    try {
+      const response = await fetcher("/api/topics", {credentials: "same-origin", headers: {Accept: "application/json"}});
+      if (!response.ok) return labels;
+      const definitions = await response.json();
+      if (!Array.isArray(definitions)) return labels;
+      const field = language === "en" ? "label_en" : "label_tr";
+      for (const topic of definitions) {
+        if (topic && typeof topic.id === "string" && typeof topic[field] === "string" && topic[field].trim()) labels[topic.id] = topic[field];
+      }
+    } catch { /* Konu listesi alınamasa da kayıtlar mevcut etiketleriyle okunabilir. */ }
+    return labels;
+  }
   function provenanceFacts(value, translate, dateLabel) {
     if (!value || typeof value !== "object") return [];
     const evidence = {verified: "Kaynak eşleşmesi kaydedilmiş", unverified: "Denetlenmemiş", insufficient: "Yetersiz dayanak", unknown: "Bilinmiyor"};
@@ -429,7 +444,7 @@
     return facts;
   }
 
-  if (typeof module !== "undefined" && module.exports) module.exports = {BRAND, EN, createTranslator, register, provenanceFacts};
+  if (typeof module !== "undefined" && module.exports) module.exports = {BRAND, EN, createTranslator, register, provenanceFacts, loadTopicLabels};
   if (typeof document === "undefined") return;
   let stored = null;
   try { stored = localStorage.getItem("ufuk.ui.language"); } catch { /* Depolama kapalıysa tarayıcı tercihi kullanılır. */ }
@@ -465,5 +480,6 @@
     }
     for (const link of document.querySelectorAll("[data-guide-link]")) link.href = `/guide?language=${language}`;
   }
-  window.UfukUI = {brand: BRAND, language, t, initialize, register, provenanceFacts};
+  window.UfukUI = {brand: BRAND, language, t, initialize, register, provenanceFacts,
+    loadTopicLabels: () => loadTopicLabels(language, globalThis.fetch)};
 })();

@@ -4,6 +4,8 @@
 
 [Türkçe](README.tr.md) · [MIT license](LICENSE) · [Research & free NVIDIA setup](GUIDE.md) · [Community service](COMMUNITY.md)
 
+**[Live community preview: devtrellis.org](https://devtrellis.org)** — public reading and search; contributions are by invitation during the alpha pilot.
+
 DevTrellis is building an open technology knowledge community for hobbyists and professional developers: follow new work, investigate it with sources, reuse research, and share projects. The long-term goal is a living, community-maintained reference that connects daily developments to lasting topic pages. See the [product vision and roadmap](PLATFORM.md) for what exists and what is planned.
 
 Today, your personal workspace runs on your computer. A separate community service hosts explicitly submitted research and project cards. Reading shared work does not require contributing or having a model account. Living topic pages, an hourly community researcher after public deployment, and publisher API/MCP connections are planned features. Public automated research depends on provider access that permits the intended use; NVIDIA trial access alone is insufficient.

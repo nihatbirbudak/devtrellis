@@ -76,7 +76,7 @@
 
   UI?.initialize();
   const byId = id => document.getElementById(id);
-  const state = {token: "", settings: {interests: [], version: 0}, entries: [], ready: false, tab: "feed", feedGeneration: 0, feedOffset: 0, feedTotal: 0, feedBusy: false, editor: null, editorSnapshot: "", editorBusy: false, interestSnapshot: "", interestVersion: 0, interestBusy: false, share: null, shareBusy: false, importBusy: false};
+  const state = {token: "", topicLabels: {}, settings: {interests: [], version: 0}, entries: [], ready: false, tab: "feed", feedGeneration: 0, feedOffset: 0, feedTotal: 0, feedBusy: false, editor: null, editorSnapshot: "", editorBusy: false, interestSnapshot: "", interestVersion: 0, interestBusy: false, share: null, shareBusy: false, importBusy: false};
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -175,7 +175,7 @@
     const card = element("article", "card");
     const body = element("div", "card-body");
     const meta = element("div", "card-meta");
-    if (item.topic_label || item.topic) meta.append(element("span", "badge", item.topic_label || item.topic));
+    if (item.topic_label || item.topic) meta.append(element("span", "badge", state.topicLabels[item.topic] || item.topic_label || item.topic));
     if (item.is_archive) meta.append(element("span", "badge archive", t("Arşiv kaydı")));
     const heading = element("h3");
     heading.append(link(item.title || t("Başlıksız gelişme"), item.url));
@@ -618,7 +618,8 @@
   async function initialize() {
     message("global-error", "");
     try {
-      await refreshRecords();
+      const [, labels] = await Promise.all([refreshRecords(), UI?.loadTopicLabels?.()]);
+      state.topicLabels = labels || {};
       state.ready = true;
       for (const id of ["interest-open", "provider-open", "new-project", "new-research"]) byId(id).disabled = false;
       setImportBusy(false);

@@ -5,14 +5,19 @@ const path = require("node:path");
 const vm = require("node:vm");
 const {test} = require("node:test");
 const {safeURL, parsePacket, validatePacket, filterCards} = require("../radar/static/community.js");
-const {BRAND, EN, createTranslator, provenanceFacts} = require("../radar/static/ui-text.js");
+const {BRAND, EN, createTranslator, provenanceFacts, loadTopicLabels} = require("../radar/static/ui-text.js");
 const source = fs.readFileSync(path.join(__dirname, "../radar/static/community.js"), "utf8");
 const html = fs.readFileSync(path.join(__dirname, "../radar/static/community.html"), "utf8");
 const copy = value => JSON.parse(JSON.stringify(value));
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const packet = () => ({schema: "ufuk-share", schema_version: 1, kind: "research", title: "İklim araştırması", summary: "Kaynaklı özet", body: "Araştırma ayrıntıları", url: "", tags: ["İklim"], sources: [{title: "Makale", url: "https://example.org/article"}], author: "Test Author", license: "CC-BY-4.0", created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-02T00:00:00+00:00"});
+const topicDefinitions = [
+  {id: "software", label_tr: "Yazılım geliştirme", label_en: "Software development"},
+  {id: "jarvis", label_tr: "Ev otomasyonu", label_en: "Home automation"},
+  {id: "data", label_tr: "Veri ve veritabanları", label_en: "Data and databases"}
+];
 
-function harness({authenticated = false, role = "contributor", malicious = false, provenance = null} = {}) {
+function harness({authenticated = false, role = "contributor", malicious = false, provenance = null, language = "en", feedItems = [], topicStatus = 200} = {}) {
   let document;
   class Node {
     constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.listeners = new Map(); this.attributes = {}; this.dataset = {}; this.value = ""; this.hidden = false; this.disabled = false; this.open = false; this._text = ""; this.className = ""; }
@@ -64,10 +69,11 @@ function harness({authenticated = false, role = "contributor", malicious = false
     fixture.requests.push({url, options: copy(options), body});
     let response;
     let status = 200;
-    if (url === "/api/community/session") response = session();
+    if (url === "/api/topics") { response = topicDefinitions; status = topicStatus; }
+    else if (url === "/api/community/session") response = session();
     else if (url === "/api/community/login") { fixture.authenticated = true; response = session(); }
     else if (url === "/api/community/logout") { fixture.authenticated = false; response = {ok: true}; }
-    else if (url.startsWith("/api/community/feed?")) response = {items: [], total: 0, offset: 0, limit: 24};
+    else if (url.startsWith("/api/community/feed?")) response = {items: feedItems, total: feedItems.length, offset: 0, limit: 24};
     else if (url === "/api/community/mine" || url === "/api/community/review") response = {items: [card]};
     else if (url.startsWith("/api/community/cards?")) response = {items: [card], total: 1};
     else if (url === "/api/community/cards/card-one") response = {...card, moderation_version: 11};
@@ -78,10 +84,38 @@ function harness({authenticated = false, role = "contributor", malicious = false
     return {ok: status === 200, status, json: async () => copy(response)};
   };
   const window = {addEventListener() {}, confirm: () => true};
-  vm.runInNewContext(source, {document, window, fetch, URL, URLSearchParams, TextEncoder, Intl, Date, Set, console, crypto: {randomUUID: () => `TEST-REQUEST-${++fixture.uuidCount}`}, UfukUI: {language: "en", brand: BRAND, t: createTranslator("en"), provenanceFacts, initialize() {}}});
+  vm.runInNewContext(source, {document, window, fetch, URL, URLSearchParams, TextEncoder, Intl, Date, Set, console, crypto: {randomUUID: () => `TEST-REQUEST-${++fixture.uuidCount}`}, UfukUI: {language, brand: BRAND, t: createTranslator(language), provenanceFacts, loadTopicLabels: () => loadTopicLabels(language, fetch), initialize() {}}});
   const flatten = root => [root, ...root.children.flatMap(flatten)];
   return {fixture, document, byId: document.getElementById, ready: async () => { await turn(); await turn(); }, findButton: label => flatten(document.getElementById("community-list")).find(item => item.tagName === "BUTTON" && item.textContent === label), flatten};
 }
+
+test("ortak haberlerin konu dili API kaydından gelir; arşiv işareti yerine yayın ve görülme tarihleri kalır", async () => {
+  const feedItems = topicDefinitions.map(topic => ({id: topic.id, topic: topic.id, topic_label: topic.label_tr,
+    title: "Original source title", excerpt: "Original source description", url: "https://example.org/news", source_name: "Example",
+    is_archive: true, published_at: "2026-11-04T10:00:00Z", last_seen_at: "2026-11-04T11:00:00Z"}));
+  for (const language of ["en", "tr"]) {
+    const app = harness({language, feedItems}); await app.ready();
+    const list = app.byId("community-list");
+    for (const topic of topicDefinitions) assert.ok(list.textContent.includes(topic[language === "en" ? "label_en" : "label_tr"]));
+    assert.match(list.textContent, language === "en" ? /Published:/ : /Yayın:/);
+    assert.match(list.textContent, language === "en" ? /Last seen:/ : /Son görüldü:/);
+    assert.doesNotMatch(list.textContent, /Archived record|Arşiv kaydı/);
+    assert.ok(app.flatten(list).every(node => !node.className.split(" ").includes("archive")));
+    assert.ok(list.textContent.includes("Original source title"));
+    assert.equal(app.fixture.requests.filter(request => request.url === "/api/topics").length, 1);
+    assert.equal(app.fixture.requests.filter(request => request.options.method === "POST").length, 0);
+    assert.ok(feedItems.every(item => item.is_archive));
+  }
+});
+
+test("konu listesi alınamazsa ortak haberler önceki API etiketiyle okunabilir", async () => {
+  const app = harness({topicStatus: 503, feedItems: [{topic: "software", topic_label: "Yazılım geliştirme",
+    title: "Still available", url: "https://example.org/news", is_archive: true}]});
+  await app.ready();
+  assert.ok(app.byId("community-list").textContent.includes("Still available"));
+  assert.ok(app.byId("community-list").textContent.includes("Yazılım geliştirme"));
+  assert.equal(app.byId("community-error").hidden, true);
+});
 
 test("paylaşım dosyası biçimi, boyutu ve lisans koşulları doğrulanır", () => {
   assert.deepEqual(parsePacket(JSON.stringify(packet())), packet());

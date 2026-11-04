@@ -2,6 +2,16 @@
 
 Prepared 2026-11-04. Adds NVIDIA source-based research, model provenance and social/news claim context.
 
+## Public alpha preview
+
+The MIT source is published at [nihatbirbudak/devtrellis](https://github.com/nihatbirbudak/devtrellis), with an English/Turkish community preview at [devtrellis.org](https://devtrellis.org). Reading and search are public; contributor accounts remain invitation-only.
+
+On 2026-11-04, the isolated Ubuntu host passed dependency checks, 21 community tests, service restart, consistent database backup and restoration to a new file. External HTTPS checks passed for certificate validation, secure cookies, Host/Origin boundaries, private-data exclusion, body size limits and HTTP redirection. The initial bounded collection checked 12 of 61 configured sources successfully and stored 257 records; 49 sources were not yet checked. These counts do not establish complete coverage or factual accuracy.
+
+Daily database backups and certificate renewal are configured. A certificate renewal dry run succeeded. Automatic model research is not running; production-compatible provider access and the separate research worker remain pending. The hosted preview has no external adoption evidence yet.
+
+The release also fixes Windows CI comparisons of short and canonical temporary-directory paths, localizes topic badges in both feed interfaces, and removes the ambiguous archive badge from the public feed while preserving personal archive behavior. Dates remain visible.
+
 - NVIDIA can be selected for research as well as summaries/screening. All its calls share the local NVIDIA budget; quota/auth failures do not switch providers. Response model identity and report generation time are saved with the result.
 - English/Turkish guide includes free NVIDIA prototype access, account/key steps and provider terms. A hidden-input helper uses Windows Credential Manager or a temporary process environment.
 - Research accepts a public HTTPS URL, a claim and optional description/transcript. Bounded HTML access respects robots, DNS/IP checks, TLS, redirects and size/time limits. A post is untrusted context; independent sources remain necessary. Video/audio are not analyzed. Discovery remains limited to the developer catalogue and academic indexes.
@@ -14,7 +24,7 @@ The clean exported Python run discovered **661 tests**: 651 passed, 9 opt-in Win
 
 Browser checks covered NVIDIA settings, report metadata, sharing draft creation/editing, a separate re-research request, restricted social-link feedback and both guide/interface languages. Model responses and social-link failures in those checks were synthetic fixtures. A separate real-network read of NVIDIA's public API quickstart returned HTTP 200 and visible HTML text. These checks do not measure model accuracy.
 
-No real NVIDIA model request was made: the application's own credential lookup reported no accessible key. Social login/video processing and a production server deployment are outside the tested scope. Automated checks cover provider/budget errors, untrusted link context, request/cache separation, safe fetches, schema migration and packet compatibility. Raw user-supplied descriptions/transcripts are not copied into sharing metadata; the question, claim and source URL are visible in the draft for review.
+No real NVIDIA model request was made: the application's own credential lookup reported no accessible key. Social login/video processing is outside the tested scope. The local acceptance below preceded the public host checks recorded above. Automated checks cover provider/budget errors, untrusted link context, request/cache separation, safe fetches, schema migration and packet compatibility. Raw user-supplied descriptions/transcripts are not copied into sharing metadata; the question, claim and source URL are visible in the draft for review.
 
 ## Previous alpha.1 acceptance
 
@@ -47,9 +57,9 @@ The exported candidate passed **607 Python tests** in the standard run (616 disc
 
 A feed containing HTML DOCTYPE text inside XML CDATA exposed a parser false positive; XML declarations are now checked structurally before parsing. Actual DTD/entity declarations are still rejected. A browser download issue was corrected with a version-checked attachment endpoint. A Codex nonfatal SDK notification was incorrectly treated as a tool request and is now classified correctly.
 
-## Limits before public operation
+## Pilot limitations
 
-- The real server, operating system, domain, TLS proxy, service restart and off-host restoration have not been validated. Windows localhost tests do not establish production readiness for another host.
+- The selected host, domain, TLS proxy, service restart and restoration to a new local file were validated. Backups currently remain on that host; an off-host backup destination and recovery exercise are pending.
 - Community mode supports a small moderated pilot with one application process. There is no self-service registration, account email recovery or large-scale operating evidence.
 - The local app and community exchange files explicitly. Automatic server synchronization and semantic research deduplication are future work.
 - Codex's live probe validates the connection and one evidence check; it is not an evaluation of full research quality. Provider quotas and availability remain the user's responsibility.

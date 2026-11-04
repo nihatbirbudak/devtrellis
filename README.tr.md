@@ -4,6 +4,8 @@
 
 [English](README.md) · [MIT lisansı](LICENSE) · [Araştırma ve ücretsiz NVIDIA rehberi](GUIDE.tr.md) · [Topluluk sunucusu](COMMUNITY.md)
 
+**[Canlı topluluk önizlemesi: devtrellis.org](https://devtrellis.org)** — herkes okuyup arayabilir; alfa pilotunda katkı hesapları davetle açılır.
+
 DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes için açık bir teknoloji bilgi topluluğu kurmayı hedefliyor: yeni çalışmaları takip et, kaynaklarıyla araştır, önceki araştırmaları kullan ve projeni paylaş. Uzun vadede günlük gelişmelerin kalıcı konu sayfalarına bağlandığı, toplulukla güncellenen bir teknoloji ansiklopedisi olacak. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları açıklıyor.
 
 Bugün kişisel alan bilgisayarında çalışır. Ayrı topluluk hizmeti yalnız seçilip gönderilen kartları sunar. Hazır araştırmayı okumak için katkı yapman veya model hesabın olması gerekmez. Yaşayan konu sayfaları, yayından sonra saatlik topluluk araştırmacısı ve yayıncı API/MCP bağlantıları geliştirme planındadır. Otomatik kamusal araştırma için kullanıma izin veren sağlayıcı erişimi gerekir; NVIDIA deneme erişimi tek başına yeterli değildir.

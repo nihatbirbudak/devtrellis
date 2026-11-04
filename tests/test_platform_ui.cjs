@@ -1,7 +1,48 @@
 // Paylaşım önizlemesindeki bağlantı güvenliğini, dosya sınırlarını ve kullanıcı girdisi denetimlerini doğrular.
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const {test} = require("node:test");
 const {safeURL, parseTags, parseSources, parsePacket, dateLabel, entryMatches, errorMessage} = require("../radar/static/platform.js");
+const {createTranslator, loadTopicLabels} = require("../radar/static/ui-text.js");
+
+test("kişisel haber etiketleri konu kaydının dilini kullanır; kişisel arşiv rozeti korunur", async () => {
+  const definitions = [{id: "software", label_tr: "Yazılım geliştirme", label_en: "Software development"},
+    {id: "data", label_tr: "Veri ve veritabanları", label_en: "Data and databases"},
+    {id: "future_topic", label_tr: "Yeni konu", label_en: "New topic from registry"}];
+  const source = fs.readFileSync(path.join(__dirname, "../radar/static/platform.js"), "utf8");
+  const start = source.indexOf("  function feedCard(");
+  const end = source.indexOf("  function pagination(", start);
+  assert.ok(start >= 0 && end > start);
+  const element = (tag, className, text = "") => ({tag, className, text, children: [],
+    append(...children) { this.children.push(...children); }, get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }});
+  for (const language of ["en", "tr"]) {
+    const calls = [];
+    const labels = await loadTopicLabels(language, async (url, options) => { calls.push({url, options}); return {ok: true, json: async () => definitions}; });
+    assert.deepEqual(calls.map(call => call.url), ["/api/topics"]);
+    const context = vm.createContext({state: {topicLabels: labels}, element, link: text => element("a", "", text),
+      t: createTranslator(language), dateLabel: value => value});
+    vm.runInContext(source.slice(start, end), context);
+    for (const topic of definitions) {
+      const item = {topic: topic.id, topic_label: topic.label_tr, is_archive: true, title: "Original title", published_at: "2026-11-04", last_seen_at: "2026-11-05"};
+      const card = context.feedCard(item);
+      assert.ok(card.textContent.includes(topic[language === "en" ? "label_en" : "label_tr"]));
+      assert.ok(card.textContent.includes(language === "en" ? "Archived record" : "Arşiv kaydı"));
+      assert.ok(card.textContent.includes("Original title"));
+      assert.ok(card.textContent.includes("2026-11-04"));
+      assert.ok(card.textContent.includes("2026-11-05"));
+      assert.equal(item.is_archive, true);
+    }
+  }
+});
+
+test("konu yükleme hatası veya bozuk cevap boş haritayla mevcut etikete dönüş sağlar", async () => {
+  for (const fetcher of [async () => { throw new Error("offline"); }, async () => ({ok: false}),
+    async () => ({ok: true, json: async () => null}), async () => ({ok: true, json: async () => [null, {id: "missing-label"}]})]) {
+    assert.deepEqual(Object.keys(await loadTopicLabels("en", fetcher)), []);
+  }
+});
 
 test("yalnız kimlik bilgisi içermeyen http(s) bağlantıları açılır", () => {
   assert.equal(safeURL("https://example.org/research?q=robotik#sources"), "https://example.org/research?q=robotik#sources");

@@ -43,7 +43,7 @@
   if (typeof document === "undefined") return;
   UI?.initialize();
   const byId = id => document.getElementById(id);
-  const state = {session: null, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, reviewBusy: false};
+  const state = {session: null, topicLabels: {}, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, reviewBusy: false};
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -183,8 +183,7 @@
     const article = node("article", "card");
     const body = node("div", "card-body");
     const meta = node("div", "card-meta");
-    if (item.topic_label || item.topic) meta.append(node("span", "badge", item.topic_label || item.topic));
-    if (item.is_archive) meta.append(node("span", "badge archive", t("Arşiv kaydı")));
+    if (item.topic_label || item.topic) meta.append(node("span", "badge", state.topicLabels[item.topic] || item.topic_label || item.topic));
     const heading = node("h3");
     heading.append(link(item.title, item.url));
     body.append(meta, heading, node("p", "summary", item.excerpt || ""), link(`${item.source_name || t("Kaynak")} ↗`, item.url, "card-source"));
@@ -441,7 +440,11 @@
     byId(id).close();
   }
   async function initialize() {
-    try { await loadSession(); await loadRecords(); }
+    try {
+      const [, labels] = await Promise.all([loadSession(), UI?.loadTopicLabels?.()]);
+      state.topicLabels = labels || {};
+      await loadRecords();
+    }
     catch (error) {
       byId("community-count").textContent = t("Topluluk başlatılamadı.");
       byId("community-list").setAttribute("aria-busy", "false");
