@@ -26,13 +26,17 @@ Anahtar/kota sorunu görünür hata olarak bildirilir; ücretli sağlayıcıya k
 
 ## Model, kanıt ve yeniden araştırma
 
+Yeni model işi başlatmadan önce araştırma formundaki **Toplulukta hazır araştırma ara** seçeneğini kullan. Yalnız açıkça gönderdiğin arama metni topluluk sunucusuna gider. Sonucu okumak ve yerel kütüphanene almak model çağırmaz. **Bunu temel alarak araştır** önceki raporu güvenilmeyen başlangıç bağlamı olarak yeni, düzenlenebilir bir isteğe taşır. Yeni isteği başlatmak seçtiğin sağlayıcının limitlerini kullanır.
+
 Raporlarda kaydedilmiş model adı, dil, tarih, kaynaklar ve kanıt denetimi görünür. Sağlayıcıyı değiştirmek eski raporun modelini değiştirmez. Modeli kaydedilmemiş eski raporlarda tahmin yapılmaz.
 
 Model adı veya fiyatı doğruluk puanı değildir. Asıl kaynakları, tarihleri, alıntıları, desteklenmeyen iddiaları ve sınırlamaları incele. Otomatik kanıt denetimi bağımsız insan doğrulaması anlamına gelmez.
 
 **Yeniden araştır**, ayrı istek açar. Farklı model istiyorsan önce sağlayıcıyı değiştir; soruyu gözden geçirip gönder. Önceki rapor korunur. Yeni araştırma kendi limitlerini kullanır ve yine yetersiz kanıtla sonuçlanabilir.
 
-**Paylaşım taslağı oluştur**, tamamlanan raporu ayrı yerel karta kopyalar. Gözden geçir; yazar adını ve içerik iznini ekleyip önizle/indir. Rapor metni değişirse eski kanıt denetimi doğrulanmamış olarak işaretlenir. Ortak kartın model bilgisi katkıcının beyanıdır; imzalı sertifika değildir. Bu bilgi sürüm 2 paylaşım dosyasında taşınır; eski sürüm 1 dosyaları da açılır. Topluluk kartını indirip kendi uygulamana aktararak yeniden araştırabilirsin.
+Rapor hazır olunca **Yerelde tut** seçimi onu özel bırakır. **Önizle ve paylaş**, dosya taşımadan ve hesap açmadan araştırmayı, kaynakları, kayıtlı modeli ve tarihi hazırlar. Yazar etiketi varsayılan olarak anonimdir. Metni gözden geçirip gerekirse düzenle; araştırma metninin CC BY 4.0 ile paylaşılmasına açıkça izin verdiğinde incelemeye gönderilir. Kaynakların kendi hakları korunur. Diğer kayıtlar, ham sohbetler, özel araştırma bağlamı ve API bilgileri eklenmez. Yaygın e-posta/anahtar/dosya yolu kalıpları önizlemeden önce kaldırılır; bütün kişisel bilgileri bulduğu iddia edilmez. Metindeki adları ve özel ayrıntıları kontrol et. Anonim yazar etiketi ağ anonimliği sağlamaz; sunucu ve ağ sağlayıcıları bağlantıyı görebilir.
+
+Gönderi takibi ve geri çekme **Gönderimlerim** alanındadır. İşlem anahtarı işletim sisteminin güvenli kasasına kaydedilir; Windows Credential Manager, macOS Keychain veya Linux Secret Service/KWallet gerekir. Düz metin dosyaya anahtar yazılmaz. Başarısız gönderimi yeniden denemek aynı katkıyı tekrar oluşturmaz. Paylaşılan metin düzenlenirse eski kanıt denetimi doğrulanmamış olur. Eski sürüm 1/2 dosyaları gelişmiş seçenek olarak kullanılabilir. [Uyumlu asistanını MCP ile bağla](MCP.tr.md).
 
 ## Sosyal medya veya haber bağlantısını incele
 

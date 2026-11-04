@@ -26,13 +26,17 @@ The [API trial terms](https://assets.ngc.nvidia.com/products/api-catalog/legal/N
 
 ## Models, evidence and repeat research
 
+Before starting a new model job, use **Find existing community research** in the research form. Only the search text you explicitly submit is sent to the community. Reading a result and importing it into your library do not call a model. **Research from this** opens a new editable request, with the earlier report treated as untrusted background. Starting that new request uses your chosen provider and limits.
+
 Reports show the saved model, language, date, sources and evidence checks. Changing providers does not rewrite a past report's model. Older reports without recorded model information remain unknown.
 
 Model name and price are context, not a truth score. Read original sources, dates, quoted passages, unsupported claims and limitations. Automated evidence checks are not independent human verification.
 
 **Research again** opens a separate request. Select another provider first if desired, review the question and submit. The original stays intact; the new request uses your limits and may still find insufficient evidence.
 
-**Create sharing draft** copies a completed report into a local card. Review it, add your author name/content permission, then preview/export. Editing report text marks its old evidence check unverified. Shared metadata is contributor-supplied, not a signed attestation. Version 2 cards carry model metadata; version 1 cards still import. Import a downloaded community card locally to research it again.
+After a report is ready, **Keep local** leaves it private. **Preview and share** prepares the research, sources, saved model and date without moving files or creating an account. The author label defaults to anonymous. Inspect/edit the preview, then explicitly accept CC BY 4.0 for the research text and send it for moderation. Sources keep their own rights. Other records, raw chats, request context and API credentials are excluded. Common email/key/path patterns are removed before preview, but this is not complete personal-information detection: review names and sensitive facts in the report. Network providers and the server can still observe connection information; anonymous attribution is not anonymous networking.
+
+The app keeps a per-submission management key in the OS credential vault so you can refresh status or withdraw under **My submissions**. Windows Credential Manager, macOS Keychain, Secret Service or KWallet must be available; no plaintext secret fallback is used. A failed delivery can be retried without creating another contribution. Editing the shared text marks its earlier evidence check unverified. Version 1/2 files remain an optional compatibility path. [Connect a compatible assistant with MCP](MCP.md).
 
 ## Investigate a social post or news link
 

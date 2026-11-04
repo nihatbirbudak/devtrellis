@@ -4,11 +4,13 @@
 
 [Türkçe](README.tr.md) · [MIT license](LICENSE) · [Research & free NVIDIA setup](GUIDE.md) · [Community service](COMMUNITY.md)
 
-**[Live community preview: devtrellis.org](https://devtrellis.org)** — public reading and search; contributions are by invitation during the alpha pilot.
+**[Live community: devtrellis.org](https://devtrellis.org)** — search existing research without an account; optionally share your own completed research from the app, without uploading files or registering.
 
 DevTrellis is building an open technology knowledge community for hobbyists and professional developers: follow new work, investigate it with sources, reuse research, and share projects. The long-term goal is a living, community-maintained reference that connects daily developments to lasting topic pages. See the [product vision and roadmap](PLATFORM.md) for what exists and what is planned.
 
-Today, your personal workspace runs on your computer. A separate community service hosts explicitly submitted research and project cards. Reading shared work does not require contributing or having a model account. Living topic pages, an hourly community researcher after public deployment, and publisher API/MCP connections are planned features. Public automated research depends on provider access that permits the intended use; NVIDIA trial access alone is insufficient.
+Your personal workspace runs on your computer. Search the community before starting a model job: an existing report may already answer your question. Read its sources, date and model, or use it as context for fresh research. Reading and importing do not call a model. When your own report is ready, choose **Keep local** or **Preview and share**. The latter sends only the approved research snapshot, anonymously by default, for moderation. No community account or file transfer is required.
+
+An optional [MCP connection](MCP.md) lets compatible assistants search/read the library and offer a reviewed contribution from their own research. Reuse can avoid repeated model work; it does not guarantee a particular token saving or train anyone's model. Living topic pages, an hourly community researcher and publisher connectors remain planned. Public automated research requires provider access that permits the intended use; NVIDIA trial access alone is insufficient.
 
 This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment variables, database keys and the `ufuk-share` format remain compatible. The community service must be installed and operated separately.
 
@@ -18,7 +20,7 @@ This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment varia
 | --- | --- |
 | Follow sources and save interests, projects and research locally | Browse published research, projects and developments |
 | Use your own optional model provider | Read without a model account or contribution requirement |
-| Preview and export selected cards; preview before importing | Invited contributors submit; moderators review publication |
+| Preview and send selected research directly; keep everything else local | Receive account-free contributions; moderators review publication |
 | Keep private research on your computer | Version corrections and withdraw publications |
 
 The developer space, advanced workspace and community screens offer English and Turkish. Source and contributor text keeps its original language; interface language does not rewrite other people's work. Model report language is a separate provider setting.

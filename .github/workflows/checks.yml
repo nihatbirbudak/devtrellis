@@ -46,3 +46,24 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_*.py'
       - name: JavaScript tests
         run: node --test tests/*.cjs
+
+  mcp:
+    name: Optional MCP protocol
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install optional SDK separately
+        run: python -m pip install -r requirements-mcp.txt
+      - name: Check SDK and protocol
+        run: |
+          python -m pip check
+          python -m unittest tests.test_community_mcp

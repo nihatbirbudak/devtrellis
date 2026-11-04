@@ -6,10 +6,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from radar.gelistirici_alani import GelistiriciAlani, PlatformSurumCatismasi
+from radar.topluluk_baglantisi import ToplulukBaglantisi, ToplulukBaglantiHatasi
 
 
-def router_olustur(depo, csrf_token, workflow=None):
+def router_olustur(depo, csrf_token, workflow=None, community=None):
     area = GelistiriciAlani(depo)
+    community = community if community is not None else ToplulukBaglantisi(depo, workflow)
     router = APIRouter(prefix="/api/platform")
 
     def mutation_guard(request: Request):
@@ -22,12 +24,54 @@ def router_olustur(depo, csrf_token, workflow=None):
             return operation(*args, **kwargs)
         except PlatformSurumCatismasi as exc:
             raise HTTPException(409, str(exc)) from exc
+        except ToplulukBaglantiHatasi as exc:
+            raise HTTPException(502, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(404, "İstenen kayıt bulunamadı.") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     guarded = [Depends(mutation_guard)]
+
+    @router.get("/community/session")
+    def community_session():
+        return {"csrf_token": csrf_token, "destination": "https://devtrellis.org"}
+
+    @router.post("/community/search", dependencies=guarded)
+    def community_search(payload: dict = Body(...)):
+        return execute(community.ara, payload)
+
+    @router.get("/community/cards/{entry_id}")
+    def community_card(entry_id: str):
+        return execute(community.oku, entry_id)
+
+    @router.post("/community/cards/{entry_id}/import", dependencies=guarded)
+    def community_import(entry_id: str, payload: dict = Body(...)):
+        if payload:
+            raise HTTPException(422, "Yalnız seçilen yayımlanmış kayıt alınır.")
+        return execute(community.ice_aktar, entry_id)
+
+    @router.post("/community/preview", dependencies=guarded)
+    def community_preview(payload: dict = Body(...)):
+        return execute(community.onizle, payload)
+
+    @router.post("/community/send", dependencies=guarded)
+    def community_send(payload: dict = Body(...)):
+        return execute(community.gonder, payload)
+
+    @router.get("/community/submissions")
+    def community_submissions():
+        return execute(community.listele)
+
+    @router.post("/community/submissions/{local_id}/refresh", dependencies=guarded)
+    def community_refresh(local_id: str, payload: dict = Body(...)):
+        if payload:
+            raise HTTPException(422, "Yalnız seçilen gönderinin durumu okunur.")
+        return execute(community.yonet, local_id)
+
+    @router.post("/community/submissions/{local_id}/withdraw", dependencies=guarded)
+    def community_withdraw(local_id: str, payload: dict = Body(...)):
+        return execute(community.yonet, local_id, payload)
 
     @router.get("")
     def snapshot():

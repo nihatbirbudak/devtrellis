@@ -229,6 +229,37 @@ class ToplulukTestleri(unittest.TestCase):
         self.assertEqual(response["coverage"]["checked_sources"], 0)
         self.assertNotEqual(feed_depo.path, self.store.path)
 
+    def test_arama_kelimelerin_sirasindan_bagimsiz_normalize_and_eslesmesi_kullanir(self):
+        self.login()
+        moderator = self.login("reviewer", self.client_for())
+        wanted = self.review(self.submit(self.packet(title="Python mimarisi", body="ÖLÇÜMLER güvenilir kaynaklardan.")),
+                             client=moderator)
+        self.review(self.submit(self.packet(title="Yalnız Python", body="Ayrı bir konu."), key="search-one-word-0001"),
+                    client=moderator)
+        for query in ("ölçümler python", "PYTHON   ÖLÇÜMLER", "python ölçümler python"):
+            response = self.client.get("/api/community/cards", params={"query": query, "kind": "research"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["total"], 1)
+            self.assertEqual(response.json()["items"][0]["id"], wanted["id"])
+        self.assertEqual(self.client.get("/api/community/cards", params={"query": "python missing"}).json()["total"], 0)
+
+    def test_arama_and_eslesmesi_yayindaki_kartin_ozel_yeni_surumunu_sizdirmaz(self):
+        self.login()
+        published = self.review(self.submit(self.packet(title="Python raporu", body="Kamusal ölçümler.")))
+        pending = self.post(f'/api/community/submissions/{published["id"]}', {
+            "packet": self.packet(title="Python raporu", body="Gizli nebula araştırması."),
+            "expected_version": published["version"], "idempotency_key": "private-query-revision-0001"})
+        self.assertEqual(pending.status_code, 200, pending.text)
+        self.submit(self.packet(title="Özel Python nebula raporu"), key="private-query-new-0001")
+        anonymous = self.client_for()
+        for query in ("nebula python", "python gizli"):
+            result = anonymous.get("/api/community/cards", params={"query": query, "kind": "research"}).json()
+            self.assertEqual(result["total"], 0)
+            self.assertEqual(result["items"], [])
+        public = anonymous.get("/api/community/cards", params={"query": "ölçümler python"}).json()
+        self.assertEqual(public["total"], 1)
+        self.assertEqual(public["items"][0]["packet"]["body"], "Kamusal ölçümler.")
+
     def test_oturum_suresi_ve_giris_istek_siniri(self):
         self.login()
         token = self.client.cookies.get(COOKIE)
@@ -363,6 +394,201 @@ class ToplulukTestleri(unittest.TestCase):
                              {"expected_version": published["version"], "note": "Kendi kaynağımda hata buldum."}, moderator)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["card"]["status"], "hidden")
+
+    def inbox_headers(self, token="A" * 43, **extra):
+        return {"X-DevTrellis-Inbox": "1", "Authorization": f"Bearer {token}", **extra}
+
+    def inbox_payload(self, **changes):
+        value = {"packet": self.packet(author="Anonymous contributor"), "consent": True,
+                 "idempotency_key": "anonymous-delivery-0001"}
+        value.update(changes)
+        return value
+
+    def inbox_post(self, payload=None, token="A" * 43):
+        return self.client_for().post("/api/community/inbox", json=payload or self.inbox_payload(),
+                                      headers=self.inbox_headers(token))
+
+    def test_hesapsiz_teslim_yalniz_moderasyonla_acilir_ve_kimlik_dogrulamasi_sayilmaz(self):
+        response = self.inbox_post()
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertNotIn("set-cookie", response.headers)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        submission = response.json()["submission"]
+        self.assertEqual(submission["status"], "pending")
+        self.assertEqual(submission["version"], 1)
+        self.assertNotIn("packet", submission)
+        entry_id = submission["id"]
+        anonymous = self.client_for()
+        self.assertEqual(anonymous.get(f"/api/community/cards/{entry_id}").status_code, 404)
+        self.assertEqual(anonymous.get("/api/community/cards").json()["total"], 0)
+        moderator = self.login("reviewer", self.client_for())
+        review = moderator.get("/api/community/review").json()["items"][0]
+        self.assertEqual(review["submission_type"], "anonymous")
+        self.assertEqual(review["owner"], {"username": None, "display_name": "Hesapsız katkı", "verified": False})
+        self.review(review, client=moderator)
+        published = anonymous.get(f"/api/community/cards/{entry_id}").json()
+        self.assertEqual(published["packet"]["author"], "Anonymous contributor")
+        self.assertFalse(published["owner"]["verified"])
+        self.assertNotIn("moderation_note", published)
+        self.assertNotIn("capability", json.dumps(published))
+        self.assertEqual(anonymous.get(f"/api/community/cards/{entry_id}/packet").json(), self.inbox_payload()["packet"])
+        status = anonymous.get(f"/api/community/inbox/{entry_id}", headers=self.inbox_headers())
+        self.assertEqual(status.json()["submission"]["status"], "published")
+
+    def test_hesapsiz_teslim_tarayici_ve_mevcut_mutasyon_sinirlarini_acmaz(self):
+        path = "/api/community/inbox"
+        client = self.client_for()
+        for forbidden in ({"Origin": ORIGIN}, {"Origin": "https://evil.example"}, {"Cookie": "anything=1"},
+                          {"Sec-Fetch-Site": "same-origin"}, {"Sec-Fetch-Mode": "cors"}):
+            response = client.post(path, json=self.inbox_payload(), headers=self.inbox_headers(**forbidden))
+            self.assertEqual(response.status_code, 403, response.text)
+        self.assertEqual(client.post(path, json=self.inbox_payload()).status_code, 403)
+        self.assertEqual(client.post(path, json=self.inbox_payload(), headers={"X-DevTrellis-Inbox": "1"}).status_code, 401)
+        preflight = client.options(path, headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
+        self.assertEqual(preflight.status_code, 403)
+        self.assertNotIn("access-control-allow-origin", preflight.headers)
+        self.assertEqual(client.post("/api/community/submissions", json={"packet": self.packet(), "expected_version": 0,
+            "idempotency_key": "no-session-0001"}, headers=self.inbox_headers()).status_code, 403)
+        self.assertEqual(client.post("/api/community/logout", json={}, headers=self.inbox_headers()).status_code, 403)
+        self.assertEqual(client.get("/api/community/inbox/invalid", headers=self.inbox_headers(Origin=ORIGIN)).status_code, 403)
+        self.assertEqual(client.post(path, json=self.inbox_payload(), headers=self.inbox_headers(Host="evil.example")).status_code, 403)
+        self.assertEqual(client.post("http://community.example.org" + path, json=self.inbox_payload(),
+                                     headers=self.inbox_headers()).status_code, 400)
+
+    def test_hesapsiz_gecersiz_riza_paket_ve_buyuk_govde_hicbir_kayit_acmaz(self):
+        invalid = [self.inbox_payload(consent=False), self.inbox_payload(consent=1),
+                   self.inbox_payload(packet=self.packet(url="http://127.0.0.1/private")),
+                   self.inbox_payload(packet=self.packet(owner={"id": "reviewer"})),
+                   self.inbox_payload(packet=self.packet(sources=[{"title": "x", "url": "https://example.org", "secret": "x"}])),
+                   self.inbox_payload(packet=self.packet(body="界" * 12000)),
+                   self.inbox_payload(owner="reviewer"), self.inbox_payload(idempotency_key="bad")]
+        for payload in invalid:
+            response = self.inbox_post(payload)
+            self.assertEqual(response.status_code, 422, response.text)
+            self.now[0] += 61
+        self.now[0] += 61
+        response = self.client_for().post("/api/community/inbox", content=b"x" * 65537,
+            headers=self.inbox_headers(**{"Content-Type": "application/json"}))
+        self.assertEqual(response.status_code, 413)
+        with self.store.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_entries").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_inbox").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_accounts").fetchone()[0], 3)
+
+    def test_hesapsiz_tekrar_dedup_surum_ve_yonetim_yetkisi(self):
+        first = self.inbox_post().json()["submission"]
+        duplicate = self.inbox_post(self.inbox_payload(idempotency_key="new-retry-key-0001"))
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertTrue(duplicate.json()["duplicate"])
+        self.assertEqual(duplicate.json()["submission"], first)
+        changed = self.inbox_post(self.inbox_payload(packet=self.packet(title="Başka araştırma")))
+        self.assertEqual(changed.status_code, 409)
+        client = self.client_for()
+        path = f'/api/community/inbox/{first["id"]}'
+        self.assertEqual(client.get(path, headers=self.inbox_headers("B" * 43)).status_code, 404)
+        self.assertEqual(client.get(path).status_code, 403)
+        self.assertEqual(client.post(path + "/withdraw", json={"expected_version": 1},
+                                     headers=self.inbox_headers("B" * 43)).status_code, 404)
+        self.assertEqual(client.post(path + "/withdraw", json={"expected_version": 0},
+                                     headers=self.inbox_headers()).status_code, 409)
+        self.assertEqual(client.post(path + "/withdraw", json={"expected_version": 1},
+                                     headers=self.inbox_headers()).json()["submission"]["status"], "withdrawn")
+        duplicate = self.inbox_post().json()
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(duplicate["submission"]["status"], "withdrawn")
+        with self.store.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_entries").fetchone()[0], 1)
+
+    def test_hesapsiz_yayin_geri_cekilir_moderasyon_notu_yalniz_yonetim_anahtarina_acilir(self):
+        submission = self.inbox_post().json()["submission"]
+        moderator = self.login("reviewer", self.client_for())
+        reviewed = self.review(submission, note="Özel inceleme notu", client=moderator)
+        path = f'/api/community/inbox/{submission["id"]}'
+        anonymous = self.client_for()
+        public = anonymous.get(f'/api/community/cards/{submission["id"]}').json()
+        self.assertNotIn("Özel inceleme notu", json.dumps(public, ensure_ascii=False))
+        status = anonymous.get(path, headers=self.inbox_headers()).json()["submission"]
+        self.assertEqual(status["moderation_note"], "Özel inceleme notu")
+        result = anonymous.post(path + "/withdraw", json={"expected_version": reviewed["version"]},
+                                headers=self.inbox_headers())
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertIsNone(result.json()["submission"]["published_version"])
+        self.assertEqual(anonymous.get(f'/api/community/cards/{submission["id"]}/packet').status_code, 404)
+        self.assertEqual(anonymous.get("/api/community/cards").json()["total"], 0)
+
+    def test_hesapsiz_kuyruk_siniri_atomik_ve_tekrar_teslim_dolu_kuyrukta_guvenli(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with patch("radar.topluluk_depo.INBOX_PENDING_LIMIT", 1):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: self.store.inbox_gonder("A" * 43, self.inbox_payload()), range(2)))
+            self.assertEqual(sorted(result["duplicate"] for result in results), [False, True])
+            full = self.inbox_post(token="B" * 43)
+            self.assertEqual(full.status_code, 503, full.text)
+            first = results[0]["submission"]
+            self.store.inbox_geri_cek("A" * 43, first["id"], {"expected_version": 1})
+            with patch("radar.topluluk_depo.INBOX_TOTAL_LIMIT", 1):
+                self.assertEqual(self.inbox_post(token="B" * 43).status_code, 503)
+            accepted = self.inbox_post(token="B" * 43)
+            self.assertEqual(accepted.status_code, 201, accepted.text)
+        with self.store.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_inbox").fetchone()[0], 2)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_entries").fetchone()[0], 2)
+
+    def test_hesapsiz_ip_dakika_gun_siniri_ve_proxy_basligini_kendisi_guvenilir_saymaz(self):
+        client = self.client_for()
+        for index in range(4):
+            self.assertIn(self.inbox_post().status_code, (200, 201))
+        blocked = client.post("/api/community/inbox", json=self.inbox_payload(),
+                              headers=self.inbox_headers(**{"X-Forwarded-For": "203.0.113.99"}))
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(blocked.headers["retry-after"], "60")
+        for batch in range(4):
+            self.now[0] += 61
+            for index in range(4):
+                self.assertEqual(self.inbox_post().status_code, 200)
+        self.now[0] += 61
+        daily = self.inbox_post()
+        self.assertEqual(daily.status_code, 429)
+        self.assertEqual(daily.headers["retry-after"], "86400")
+        self.assertEqual(client.get("/api/community/cards").status_code, 200)
+        self.now[0] += 86400
+        self.assertEqual(self.inbox_post().status_code, 200)
+
+    def test_hesapsiz_yonetim_anahtari_gizli_kalir_ve_yedekten_durum_korunur(self):
+        token = "S" * 43
+        packet = self.packet(schema_version=2, author="Anonymous contributor", provenance={
+            "model": "example-recorded-model", "provider": "nvidia", "generated_at": None,
+            "question": "An independent question", "topic": "ai", "source_url": "",
+            "evidence_status": "unverified", "language": "en", "modified": True})
+        response = self.inbox_post(self.inbox_payload(packet=packet), token)
+        self.assertEqual(response.status_code, 201, response.text)
+        submission = response.json()["submission"]
+        self.assertNotIn(token, response.text)
+        with self.store.baglanti() as connection:
+            saved = connection.execute("SELECT * FROM community_inbox").fetchone()
+            dump = "\n".join(connection.iterdump())
+            account = connection.execute("SELECT * FROM community_accounts WHERE id='!devtrellis-inbox'").fetchone()
+            self.assertEqual(account["active"], 0)
+            self.assertNotIn(token, dump)
+            self.assertNotIn("anonymous-delivery-0001", dump)
+            self.assertEqual(len(saved["capability_hash"]), 64)
+        backup, restored = self.root / "inbox-backup.sqlite3", self.root / "inbox-restored.sqlite3"
+        self.store.yedekle(backup)
+        veritabani_kopyala(backup, restored, restore=True)
+        reopened = ToplulukDeposu(restored, clock=lambda: self.now[0])
+        self.assertEqual(reopened.inbox_oku(token, submission["id"])["submission"], submission)
+        with reopened.baglanti() as connection:
+            self.assertEqual(reopened.kart(connection, submission["id"])["packet"], packet)
+
+    def test_eski_topluluk_verisi_hesapsiz_tablo_eklenirken_korunur(self):
+        self.login()
+        original = self.review(self.submit())
+        with self.store.baglanti(write=True) as connection:
+            connection.execute("DROP TABLE community_inbox")
+        reopened = ToplulukDeposu(self.store.path, clock=lambda: self.now[0])
+        self.assertEqual(reopened.yayini_oku(original["id"])["packet"], self.packet())
+        self.assertEqual(reopened.kimlik_dogrula("author", PASSWORD)["id"], self.author["id"])
+        self.assertEqual(reopened.inbox_gonder("A" * 43, self.inbox_payload())["submission"]["status"], "pending")
 
 
 if __name__ == "__main__":

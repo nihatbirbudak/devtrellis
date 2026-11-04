@@ -17,9 +17,9 @@ def satir(value):
         if label is not None:
             if target.startswith("https://"):
                 destination = target
-            elif target.split("#")[0] in {"README.md", "README.tr.md", "GUIDE.md", "GUIDE.tr.md"}:
+            elif target.split("#")[0] in {"README.md", "README.tr.md", "GUIDE.md", "GUIDE.tr.md", "MCP.md", "MCP.tr.md"}:
                 language = "tr" if ".tr.md" in target else "en"
-                document = "installation" if target.startswith("README") else "research"
+                document = "installation" if target.startswith("README") else "mcp" if target.startswith("MCP") else "research"
                 destination = f"/guide?language={language}&document={document}"
             else:
                 destination = None
@@ -36,7 +36,8 @@ def satir(value):
 
 def rehber_html(language="en", document="research"):
     paths = {("en", "research"): "GUIDE.md", ("tr", "research"): "GUIDE.tr.md",
-             ("en", "installation"): "README-OSS.md", ("tr", "installation"): "README.tr.md"}
+             ("en", "installation"): "README-OSS.md", ("tr", "installation"): "README.tr.md",
+             ("en", "mcp"): "MCP.md", ("tr", "mcp"): "MCP.tr.md"}
     path = ROOT / paths[(language, document)]
     if not path.exists() and language == "en" and document == "installation":
         path = ROOT / "README.md"

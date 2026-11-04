@@ -1,4 +1,23 @@
-# DevTrellis 0.1.0-alpha.2
+# DevTrellis 0.1.0-alpha.3
+
+## Research first, optional contribution
+
+- Find and read existing community research from the personal research form before starting a model job. Importing a suitable report does not call a model; a new request can use it as explicitly untrusted background.
+- Completed reports offer **Keep local** or **Preview and share**. Sharing sends an exact, approved snapshot to moderation without a community account or manual file transfer. Original research stays local. An anonymous author is the default; models, sources and dates remain visible.
+- Common credential/email/path patterns are redacted before preview. Report, question and claim can be reviewed and edited; private context and other records are excluded. This is not a guarantee that every personal detail is detected.
+- Per-submission management keys live in the OS credential vault. Retry after a lost response reuses the same submission; status and withdrawal are available in the personal workspace. Public intake has bounded payloads, request limits and persistent queue limits.
+- Optional MCP tools let compatible assistants search, read, preview and submit after explicit user approval. No model runs inside the MCP server. The SDK installs separately; see [MCP setup](MCP.md).
+- Public navigation now explains how to research and contribute. Moderator sign-in and legacy file transfer are secondary options. EN/TR UI and existing personal/community data remain supported.
+
+Reuse avoids another model job when the saved report is sufficient; token savings depend on the host and task. Published research and model names do not certify factual accuracy. Automated hourly research, semantic deduplication, automatic moderation and shared model training are not included.
+
+## Validation of alpha.3
+
+The Python regression run passed 681 tests, with 10 optional tests skipped (691 discovered). Two additional privacy tests passed after that run. All 157 JavaScript tests and all 9 optional MCP tests with the real SDK passed. Tests use isolated data and synthetic model results; no paid model or live contribution was used.
+
+Browser checks covered an anonymous preview, keeping a report local with no outbound request, explicit submission to a local review queue, and importing a published report without a model call. Editing the question and removing a claim preserve the original local research; the submitted packet excludes private context and raw transcripts. These checks do not establish model accuracy or complete detection of personal information.
+
+## Previous release: 0.1.0-alpha.2
 
 Prepared 2026-11-04. Adds NVIDIA source-based research, model provenance and social/news claim context.
 

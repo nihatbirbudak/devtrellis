@@ -7,6 +7,7 @@
 
   window.UFUKWorkflowFactory = function UFUKWorkflowFactory(context) {
     const {element, post, request, state, formatDate, sourceLink, toast, refreshAfterMutation, render, changeView, findItem, topics} = context;
+    const sharing = window.DevTrellisShareFactory?.({element, post, formatDate});
     const labels = {queued: t("Sırada"), reading: t("Kaynaklar okunuyor"), analyzing: t("Araştırılıyor"), ready: t("Rapor hazır"), blocked: t("Devam etmek için bekliyor"), failed: t("Yeniden deneme gerekiyor"), cancelled: t("Durduruldu")};
     const activeStatuses = new Set(["queued", "reading", "analyzing"]);
     const decisions = {develop: t("Geliştirmeye alındı"), watch: t("İzleniyor"), dismiss: t("Pas geçildi")};
@@ -30,7 +31,7 @@
     const tasks = () => Array.isArray(data().tasks) ? data().tasks : [];
     const id = value => encodeURIComponent(String(value));
     const taskById = value => tasks().find(task => String(task.id) === String(value));
-    const busy = () => Boolean(session?.dialog.open || operations);
+    const busy = () => Boolean(session?.dialog.open || operations || sharing?.busy());
     const visible = () => !disposed && document.visibilityState !== "hidden";
     const ready = task => Boolean(task?.status === "ready" && !task.stale && task.result);
     const evidenceVerified = task => task?.result?.evidence_quality?.status === "verified" && task.result.evidence_quality.coverage_complete === true;
@@ -221,6 +222,7 @@
       if (task.kind === "screen" && ready(task)) actions.append(researchButton(findItem(task.item_id) || {id: task.item_id, revision: task.source_revision}, `task-${task.id}`));
       if (task.decision === "develop" && ready(task) && task.kind === "deep" && !task.coverage?.limited && evidenceVerified(task)) actions.append(downloadLink(task, "handoff", t("Devir planını indir")));
       card.append(actions, element("small", "", `${topics[task.profile_topic] || t("Gelişme")} · ${formatDate(task.updated_at || task.created_at, true)}`));
+      if (sharing && task.kind === "deep" && task.status === "ready" && (task.result || task.report_text)) card.append(sharing.prompt({task_id: task.id}, true));
       return card;
     }
 
@@ -440,10 +442,13 @@
         }, false, "workflow-new-research"));
       }
       if (task.kind === "deep" && task.status === "ready" && (task.result || task.report_text)) {
-        actions.append(button(t("Paylaşım taslağı oluştur"), async () => {
+        if (sharing) body.append(sharing.prompt({task_id: task.id}));
+        const advancedShare = element("details", "workflow-advanced-transfer"); advancedShare.append(element("summary", "", t("Gelişmiş dosya aktarımı")));
+        advancedShare.append(button(t("Paylaşım taslağı oluştur"), async () => {
           const result = await mutation(`/api/platform/research/${id(task.id)}/draft`, {}, t("Yerel paylaşım taslağı hazır. Yazar ve metin iznini tamamlayıp önizleyebilirsin."), () => {});
           if (result?.entry?.id) window.location.assign(`/platform?entry=${encodeURIComponent(result.entry.id)}`);
         }, false, "workflow-share-draft"));
+        actions.append(advancedShare);
       }
       if (["screen", "review"].includes(task.kind) && ready(task)) actions.append(researchButton(findItem(task.item_id) || {id: task.item_id, revision: task.source_revision}, "report"));
       if (task.kind === "deep" && ready(task)) {

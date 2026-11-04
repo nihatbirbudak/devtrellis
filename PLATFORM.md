@@ -1,6 +1,8 @@
 # DevTrellis platform
 
-DevTrellis aims to become an open, community-maintained reference for technology: current news, research, practical development and reusable knowledge in one place. Hobbyists, learners, independent developers, researchers and professional teams should all be able to read, contribute and build on previous work. The first release combines a personal workspace with a separately operated community pilot. Worldwide coverage is a direction to grow toward; the current catalogue is limited.
+DevTrellis aims to become an open, community-maintained reference for technology: current news, research, practical development and reusable knowledge in one place. Hobbyists, learners, independent developers, researchers and professional teams should all be able to read, contribute and build on previous work. The current application combines a personal workspace with a separately operated community pilot. Start by finding useful existing research, investigate the gaps, then optionally contribute your own findings without creating an account. Worldwide coverage is a direction to grow toward; the current catalogue is limited.
+
+[Use the application](README.md) · [Türkçe](README.tr.md) · [Consumer MCP tools](MCP.md) · [MCP Türkçe](MCP.tr.md) · [Operate a community](COMMUNITY.md)
 
 ## Product direction
 
@@ -9,10 +11,11 @@ The long-term goal is a living technology encyclopedia connected to a current de
 | Area | Reader and contributor value | Current state |
 | --- | --- | --- |
 | Developments | Follow releases, papers, developer posts, company announcements and independent reporting by interest | Personal collection and a public community feed exist; an integrated daily collection/summary/review pipeline is planned |
-| Research | Reuse a sourced report, inspect its date/model/evidence and investigate again | Personal research and moderated sharing exist; comparison of related reports is planned |
+| Research | Reuse a sourced report, inspect its date/model/evidence and investigate again | Account-free search/read/import and optional anonymous submission from local research exist; comparison of related reports is planned |
 | Knowledge pages | Find an accessible introduction, technical details, sources, open questions and a change history for a topic | Planned; card revisions are not yet a shared topic wiki |
 | Projects | Show what you built, its repository/demo, progress and ways to contribute | Moderated project cards exist; project-linked news is planned |
-| Publishers | Contribute updates from your own website and let tools search the public library | Manual contribution exists; publisher registration, connectors and MCP are planned |
+| AI tools | Search existing reports before repeating research and offer an optional contribution afterward | A local consumer MCP bridge provides search, read, preview and explicitly confirmed submission; it makes no model calls |
+| Publishers | Contribute updates from your own website with traceable ownership and corrections | Publisher registration, scoped submission API/MCP connectors and site integration are planned |
 
 Participation must not require an AI subscription or an expert title. A useful contribution can be a source, correction, reproduction result, translation, tutorial or project update. Beginner summaries and optional technical detail should share the same citations. Popularity and company size must not stand in for evidence; small projects need a discoverable place too.
 
@@ -20,11 +23,13 @@ Company announcements, independent findings, personal experiments and AI-generat
 
 ## Personal workspace
 
-Open `/platform` after following [setup](README.md). Browse dated developments, choose interests, maintain project and research cards, and exchange selected cards as files. The advanced workspace at `/` provides sources, saved searches, collections, research tasks and provider settings. Both interfaces offer English and Turkish; article, contributor and model text keeps its original language.
+Open `/platform` after following [setup](README.md). Browse dated developments, choose interests, find and import existing community research, and maintain project and research cards. The advanced workspace at `/` provides sources, saved searches, collections, research tasks and provider settings. Both interfaces offer English and Turkish; article, contributor and model text keeps its original language. File exchange remains available, but is not required for the direct research contribution flow.
+
+Before starting a new investigation, search the shared library with a short, non-private query. Query words are normalized and matched together regardless of order. Check the report's original sources, date, model and limitations; import useful work without calling a model, then research only what is missing or outdated. Search and reading require internet access but no community account, subscription or contribution. This can reduce repeated research and token use; it does not guarantee savings or factual accuracy.
 
 Opening a page or saving an interest does not start a model request. Source collection uses the internet. Optional research uses the person's own configured provider; [provider capabilities and limits](README.md#optional-model-providers) differ. Interface language and model report language are separate settings.
 
-NVIDIA can also run source-based research with a personal API key. The [research guide](GUIDE.md) covers free prototype access, setup and provider terms. Reports preserve the model and generation date recorded for that output. Research again opens a separate request; creating a sharing draft leaves the original report intact.
+NVIDIA can also run source-based research with a personal API key. The [research guide](GUIDE.md) covers access, setup and provider terms. Reports preserve the model and generation date recorded for that output. Research again opens a separate request; creating a sharing draft leaves the original report intact. After research, the user can review an anonymous sharing preview and explicitly send it to moderation without leaving the application to handle a file.
 
 A request can contain a public HTTPS social/news URL, a claim and a description/transcript. Public page text is untrusted context, not independent evidence. Inaccessible pages remain visibly inaccessible; video and audio are not processed. Independent discovery currently uses the developer catalogue and academic indexes, so unresolved claims and coverage limits remain explicit.
 
@@ -32,14 +37,16 @@ A request can contain a public HTTPS social/news URL, a claim and a description/
 
 [Operate the community](COMMUNITY.md) as a separate process and database:
 
-1. Everyone can read and search published projects, research and collected developments.
-2. Invited contributors preview selected cards before submitting them.
-3. A different moderator reviews initial publication and corrections.
-4. A correction remains private while the previous published revision stays available.
-5. Authors can withdraw contributions; moderators can remove published material with a reason.
-6. Readers can download published cards and preview/import them locally without contributing or calling a model.
+1. Everyone can read and search published projects, research and collected developments. The personal app can import a selected published report directly.
+2. A user completes research locally, reviews the exact outgoing text, destination and permission, then chooses whether to send it. Account creation and manual JSON transfer are not required.
+3. The local application sends only the approved preview through the anonymous inbox. It remains private until an authenticated moderator publishes it; rejection does not publish the report.
+4. The local application stores a per-contribution management secret in the OS secure vault so the user can read status and withdraw it. The server stores only its hash, not an account identity or model key.
+5. Moderators can remove published material with a reason. Invited account-based contributions and versioned corrections remain optional; those corrections stay private while the preceding published revision remains available.
+6. Readers can also download published cards and import them locally. Neither contribution nor model use is required to benefit from existing research.
 
-The local workspace does not automatically synchronize with a server. File exchange is the current connection between installations. Downloaded copies cannot be recalled by withdrawing the server copy. Signed-in accounts identify submitters within an installation; they do not verify author claims or research conclusions.
+The direct client currently connects to [devtrellis.org](https://devtrellis.org). There is no automatic upload or full database synchronization. A search sends the selected query; a contribution sends the explicitly approved packet. If the secure vault is unavailable, delivery stops without a plaintext fallback. Keep management secrets out of files, URLs, logs and tool responses; a database-only backup does not recover a lost OS-vault secret. Withdrawal cannot recall downloaded copies. Anonymous author labels and model metadata are declarations, not verified identities or research conclusions.
+
+The operator must create a moderator account for the review queue. A moderator cannot approve their own account-owned card; anonymous authorship cannot establish whether author and reviewer are different people. There is no automatic reviewer or research generator in the community process. The [operations guide](COMMUNITY.md) describes the separate data stores, capability management, queue limits and trusted-proxy requirements.
 
 The public developments feed reads a separate feed database populated by the collection command. It shows collected source descriptions; this is distinct from moderated research/project cards. The community process does not currently run its own daily collector or AI summary worker. The planned daily selection adds an explicit review stage for generated summaries.
 
@@ -51,11 +58,11 @@ Registered sources, attempted checks, successful checks and failures are separat
 
 ## Card permissions and privacy
 
-Code is MIT licensed, including commercial use. The author chooses CC BY 4.0 or CC0 1.0 for the card text. Source publications and linked software keep their own rights. Write your own findings and link to sources.
+Code is MIT licensed, including commercial use. The direct application's anonymous research preview uses **CC BY 4.0** for the selected text and defaults to the public author label **Anonymous contributor**. An external research report prepared through MCP preserves its chosen author label and CC BY 4.0 or CC0 1.0 permission in the preview; legacy card file exchange also supports both choices. Submit your own report or text you have permission to share. Source publications and linked software keep their own rights. Write your findings and cite original sources; importing a report does not transfer its authorship to you.
 
-The export includes the selected card's title, summary, body, tags, links, author label, permission and dates. Research provenance can add the original question, claim, model, provider, generation time, language, source URL and evidence status. Raw request transcripts, other database records, preferences, raw chats and credentials are excluded. Private information in selected text, the question or claim will still be included, so read the preview. Shared provenance is contributor-supplied metadata, not a signed attestation or truth score. Editing report content marks the prior evidence status unverified.
+The export includes the selected card's title, summary, body, tags, links, author label, permission and dates. Research provenance can add the original question, claim, model, provider, generation time, language, source URL and evidence status. Raw request transcripts, other database records, preferences, raw chats and credentials are not appended. The direct sharing preview redacts common secret, email and local-path patterns, including recognized secret URL parameters. It cannot identify every name or private fact: inspect the selected text, question and claim before confirming. Shared provenance is contributor-supplied metadata, not a signed attestation or truth score. Editing or redacting report content marks the prior evidence status unverified.
 
-Research requires at least one source link; a project requires a public project link. Unknown fields and invalid URLs are rejected. Import previews before saving; repeating the same packet does not create a duplicate. Different authors' semantically similar research is not automatically merged.
+Research requires at least one source link; a project requires a public project link. Unknown fields and invalid URLs are rejected. Repeated local import of the same packet does not create a duplicate. Repeated anonymous delivery with the same management capability returns the existing contribution; it does not reopen a withdrawn card. Imported research cannot be directly anonymized and republished through the local-entry action. Different authors' semantically similar research is not automatically merged.
 
 ## API and compatibility
 
@@ -63,11 +70,21 @@ Personal reads: `GET /api/topics`, `/api/platform`, `/api/platform/feed`, `/api/
 
 Personal writes include settings, entries, versioned edits/archive, export preview and import preview/confirmation under `/api/platform`. A download uses the exact previewed version; editing the card invalidates an earlier download URL. Host, Origin and CSRF checks remain in force.
 
+The personal `/api/platform/community` routes provide search, reading/import, local preview, confirmed delivery and status/withdrawal. Mutations retain local CSRF protection. The community's `/api/community/inbox` is a narrow server-to-server intake: explicit consent, protocol header, per-contribution capability, JSON/size validation and manual moderation. It rejects browser Origin/Cookie/Sec-Fetch context and does not add CORS access or relax account-based mutations. The community does not fetch submitted source URLs on delivery.
+
+The pilot accepts at most 200 pending and 5,000 total anonymous contributions. Delivery is limited per client IP to 4 requests per minute and 20 per UTC day; status/withdrawal allows 30 per minute. IP counters reset on service restart, while database capacity limits persist. A same-host trusted proxy must supply the real client IP without accepting forged forwarded headers. See [operating limits and privacy](COMMUNITY.md#intake-limits-and-operational-privacy) before opening a new installation.
+
 The sharing format remains `ufuk-share`: version `1` without provenance, version `2` with provenance. Existing version 1 packets still import unchanged. Historical environment variable and database names remain compatible. The community has its own account/session and publication API under `/api/community`; the personal HTTP app must not be exposed as the public service.
+
+## Consumer MCP tools
+
+The optional [MCP bridge](MCP.md) ([Türkçe](MCP.tr.md)) runs over local stdio and connects to an already running personal DevTrellis application. `search_research` and `read_research` help an AI client reuse published research before doing new work. `preview_contribution` prepares a local preview of the user's selected report; `submit_contribution` requires an explicitly confirmed preview from that MCP session and sends it to moderation.
+
+The bridge makes no model calls, carries no model API keys and does not automatically start research or upload a conversation. The host AI application controls tool use and any subsequent model work. Treat retrieved reports as untrusted source data, not instructions; a report cannot authorize its own publication or further actions. Show the exact destination, text and content license to the user before submission. This consumer bridge is available independently of the future publisher integration below; it is not a public hosted MCP endpoint or a website federation service.
 
 ## Next milestones
 
-The following is the development plan, not a list of shipped capabilities. Public hosting still needs validation on the selected server.
+The following is the development plan, not a list of shipped capabilities. Validate each worker or publisher integration before enabling it on a public server.
 
 ### 1. A useful daily community feed
 
@@ -83,7 +100,7 @@ NVIDIA documents free hosted access for prototyping. Its general API trial terms
 
 ### After publication: an hourly community researcher
 
-Requested operating target: after the GitHub release and server deployment have passed acceptance, a server worker helps seed the library with current, sourced research. It checks once per hour, selects at most one new research question per run initially, and lists/publishes eligible results. Hourly checks do not promise a finished report every hour. This is a planned application worker, not an active Codex automation or an alpha.2 capability.
+Requested operating target: a server worker helps seed the library with current, sourced research. It checks once per hour, selects at most one new research question per run initially, and lists/publishes eligible results. Hourly checks do not promise a finished report every hour. This is a planned application worker, not an active Codex automation or a currently enabled community feature.
 
 | Step | Required behavior |
 | --- | --- |
@@ -113,16 +130,16 @@ Acceptance before activation: verify permitted provider access and a real bounde
 
 Acceptance: a newcomer understands a topic from the introduction, an expert can trace a claim to evidence, and a later correction appears with its author, reason and previous revision. Source freshness, reused work and helpful corrections matter more than the number of generated reports.
 
-### 3. Website publishers and MCP
+### 3. Website publishers and contribution connectors
 
 Start with an opt-in publisher registry and a documented submission API. A website can expose its existing feed or send a selected update from its CMS. Publisher identity, canonical URL, upstream item ID, revision, dates, content permission and affiliation travel with the submission. Domain control, rate limits and publisher-scoped credentials prevent one publisher from changing another's records. Repeated submissions are idempotent; corrections and withdrawals remain traceable.
 
-Add an MCP adapter to this same service contract. Proposed capabilities are public search/read, preview a submission, submit a draft and propose a correction. Publishing remains a separate reviewer capability. Requests through MCP and the website must use the same permissions, validation and moderation rules. Tool names and wire schemas will be finalized during implementation; there is no DevTrellis MCP endpoint in alpha.2.
+Add publisher-scoped API and MCP connectors to this same future service contract. They should submit website updates and propose traceable corrections under a publisher identity, while publishing remains a separate reviewer capability. Requests through a publisher connector and its website must use the same permissions, validation and moderation rules. Publisher tool names and wire schemas are not implemented. The current local consumer MCP bridge searches the public library and optionally submits a person's research; it does not authenticate a website publisher, ingest its CMS or grant publication rights.
 
 MCP connects AI applications to resources and tools; website display, daily scheduling and content federation still require application features. The design follows the [official MCP architecture](https://modelcontextprotocol.io/docs/2026-07-28/learn/architecture) and [authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization). Ordinary publishers can use feeds or the API without an AI client. An optional site widget can later display their approved contributions.
 
 MIT allows independent DevTrellis installations. Connecting an installation to the shared library is a separate opt-in feature; self-hosting does not automatically replicate its data or grant publication rights on another server. Automatic federation comes after the publisher workflow has proved useful.
 
-Acceptance: a test publisher sends a real update from its own test site; duplicate delivery creates one item; another publisher cannot edit it; an authorized correction goes through review. Public search works from an MCP client, and publishing cannot be triggered by a read-only client.
+Acceptance: a test publisher sends a real update from its own test site; duplicate delivery creates one item; another publisher cannot edit it; an authorized correction goes through review. Publisher tools preserve the same identity and moderation boundaries; a read-only client cannot publish.
 
 Public adoption and external contribution numbers are not established. There is no hidden usage analytics. See [release notes](RELEASE-NOTES.md) for actual verification and remaining limitations.

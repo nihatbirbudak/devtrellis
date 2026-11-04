@@ -1,4 +1,4 @@
-"""Davetli hesapları, inceleme sırasını ve yayımlanmış kartların sürümlerini ayrı depoda korur."""
+"""Hesaplı ve açık rızalı hesapsız katkıları, incelemeyi ve yayımlanan sürümleri ayrı depoda korur."""
 
 import hashlib
 import hmac
@@ -14,6 +14,11 @@ from pathlib import Path
 
 from radar.gelistirici_alani import (alanlari_dogrula, arama_metni, metin, paket_dogrula,
                                     paket_metni, surumu_dogrula)
+
+
+INBOX_PENDING_LIMIT = 200
+INBOX_TOTAL_LIMIT = 5000
+INBOX_OWNER = "!devtrellis-inbox"
 
 
 class ToplulukHatasi(ValueError):
@@ -87,6 +92,11 @@ class ToplulukDeposu:
                 );
                 CREATE INDEX IF NOT EXISTS community_owner ON community_entries(owner_id,updated_at);
                 CREATE INDEX IF NOT EXISTS community_queue ON community_entries(status,updated_at);
+                CREATE TABLE IF NOT EXISTS community_inbox (
+                    entry_id TEXT PRIMARY KEY REFERENCES community_entries(id),
+                    capability_hash TEXT NOT NULL UNIQUE, request_key_hash TEXT NOT NULL,
+                    packet_hash TEXT NOT NULL, consent_at INTEGER NOT NULL
+                );
             """)
         self.dummy_hash = "pbkdf2_sha256$600000$" + "00" * 16 + "$" + "00" * 32
 
@@ -184,8 +194,9 @@ class ToplulukDeposu:
             connection.execute("DELETE FROM community_sessions WHERE token_hash=?", (self.oturum_izi(token),))
 
     def kart(self, connection, entry_id, *, public=False, moderator=False):
-        row = connection.execute("SELECT e.*,a.username,a.display_name FROM community_entries e JOIN community_accounts a "
-                                 "ON a.id=e.owner_id WHERE e.id=?", (entry_id,)).fetchone()
+        row = connection.execute("SELECT e.*,a.username,a.display_name,i.entry_id AS inbox_id FROM community_entries e "
+                                 "JOIN community_accounts a ON a.id=e.owner_id "
+                                 "LEFT JOIN community_inbox i ON i.entry_id=e.id WHERE e.id=?", (entry_id,)).fetchone()
         if row is None or (public and row["published_revision"] is None):
             raise ToplulukHatasi("Kart bulunamadı.", 404)
         revision = row["published_revision"] if public else row["latest_revision"]
@@ -196,11 +207,92 @@ class ToplulukDeposu:
                 "packet": json.loads(saved["packet"]), "created_at": tarih_metni(row["created_at"]),
                 "updated_at": tarih_metni(saved["created_at"] if public else row["updated_at"]),
                 "published_version": row["published_revision"]}
+        if row["inbox_id"]:
+            card["owner"] = {"username": None, "display_name": "Hesapsız katkı", "verified": False}
+            card["submission_type"] = "anonymous"
         if not public:
             card["moderation_note"] = row["moderation_note"]
         elif moderator:
             card["moderation_version"] = row["version"]
         return card
+
+    @staticmethod
+    def inbox_token_izi(token):
+        if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            raise ToplulukHatasi("Geçerli gönderim yönetim anahtarı gerekli.", 401)
+        return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+    @staticmethod
+    def inbox_gorunumu(row):
+        return {key: row[key] for key in ("id", "status", "version", "moderation_note")} | {
+            "published_version": row["published_revision"], "created_at": tarih_metni(row["created_at"]),
+            "updated_at": tarih_metni(row["updated_at"])}
+
+    def inbox_satiri(self, connection, entry_id, capability_hash):
+        row = connection.execute("SELECT e.* FROM community_entries e JOIN community_inbox i ON i.entry_id=e.id "
+                                 "WHERE e.id=? AND i.capability_hash=?", (entry_id, capability_hash)).fetchone()
+        if row is None:
+            raise ToplulukHatasi("Gönderim bulunamadı.", 404)
+        return row
+
+    def inbox_gonder(self, token, payload):
+        """Tek yönetim anahtarını tek katkıya bağlar; tekrar teslim yeni yayın veya yetki üretmez."""
+        capability_hash = self.inbox_token_izi(token)
+        alanlari_dogrula(payload, {"packet", "consent", "idempotency_key"}, {"packet", "consent", "idempotency_key"})
+        if payload["consent"] is not True:
+            raise ValueError("Topluluğa göndermek için açık paylaşım onayı gerekli.")
+        request_key = payload["idempotency_key"]
+        if not isinstance(request_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", request_key):
+            raise ValueError("Gönderim kimliği 8–128 harf, sayı, tire veya alt çizgi olmalı.")
+        packet = paket_dogrula(payload["packet"])
+        packet_text = paket_metni(packet)
+        packet_hash = hashlib.sha256(packet_text.encode("utf-8")).hexdigest()
+        request_hash = hashlib.sha256(request_key.encode("ascii")).hexdigest()
+        now = int(self.clock())
+        with self.baglanti(write=True) as connection:
+            previous = connection.execute("SELECT entry_id,packet_hash FROM community_inbox WHERE capability_hash=?",
+                                          (capability_hash,)).fetchone()
+            if previous:
+                if previous["packet_hash"] != packet_hash:
+                    raise ToplulukHatasi("Bu yönetim anahtarı başka bir gönderime bağlı.", 409)
+                row = self.inbox_satiri(connection, previous["entry_id"], capability_hash)
+                return {"submission": self.inbox_gorunumu(row), "duplicate": True}
+            total = connection.execute("SELECT COUNT(*) FROM community_inbox").fetchone()[0]
+            pending = connection.execute("SELECT COUNT(*) FROM community_inbox i JOIN community_entries e "
+                                         "ON e.id=i.entry_id WHERE e.status='pending'").fetchone()[0]
+            if total >= INBOX_TOTAL_LIMIT or pending >= INBOX_PENDING_LIMIT:
+                raise ToplulukHatasi("Hesapsız gönderim sırası dolu; daha sonra tekrar deneyin.", 503)
+            # Giriş yapamayan iç sahip yalnız mevcut yabancı anahtar şemasını korur; kamu kimliği değildir.
+            connection.execute("INSERT OR IGNORE INTO community_accounts(id,username,display_name,role,password_hash,active,created_at) "
+                               "VALUES(?,?,?,'contributor',?,0,?)",
+                               (INBOX_OWNER, INBOX_OWNER, "Hesapsız katkı", self.dummy_hash, now))
+            entry_id = uuid.uuid4().hex
+            connection.execute("INSERT INTO community_entries(id,owner_id,version,latest_revision,status,created_at,updated_at) "
+                               "VALUES(?,?,1,1,'pending',?,?)", (entry_id, INBOX_OWNER, now, now))
+            search_text = " ".join([packet["title"], packet["summary"], packet["body"], *packet["tags"], packet["author"]])
+            connection.execute("INSERT INTO community_revisions VALUES(?,1,?,?,?,?)",
+                               (entry_id, packet_text, packet["kind"], arama_metni(search_text), now))
+            connection.execute("INSERT INTO community_inbox VALUES(?,?,?,?,?)",
+                               (entry_id, capability_hash, request_hash, packet_hash, now))
+            row = self.inbox_satiri(connection, entry_id, capability_hash)
+            return {"submission": self.inbox_gorunumu(row), "duplicate": False}
+
+    def inbox_oku(self, token, entry_id):
+        capability_hash = self.inbox_token_izi(token)
+        with self.baglanti() as connection:
+            return {"submission": self.inbox_gorunumu(self.inbox_satiri(connection, entry_id, capability_hash))}
+
+    def inbox_geri_cek(self, token, entry_id, payload):
+        capability_hash = self.inbox_token_izi(token)
+        alanlari_dogrula(payload, {"expected_version"}, {"expected_version"})
+        with self.baglanti(write=True) as connection:
+            row = self.inbox_satiri(connection, entry_id, capability_hash)
+            self.surum_kontrol(row, payload["expected_version"])
+            if row["status"] != "withdrawn":
+                connection.execute("UPDATE community_entries SET status='withdrawn',published_revision=NULL,version=version+1,"
+                                   "updated_at=? WHERE id=?", (int(self.clock()), entry_id))
+            row = self.inbox_satiri(connection, entry_id, capability_hash)
+            return {"submission": self.inbox_gorunumu(row)}
 
     @staticmethod
     def surum_kontrol(row, expected):
@@ -326,8 +418,9 @@ class ToplulukDeposu:
             conditions.append("e.owner_id=?")
             values.append(user["id"])
         if query:
-            conditions.append("instr(r.search_text,?)>0")
-            values.append(arama_metni(query))
+            for term in dict.fromkeys(arama_metni(query).split()):
+                conditions.append("instr(r.search_text,?)>0")
+                values.append(term)
         if kind:
             conditions.append("r.kind=?")
             values.append(kind)

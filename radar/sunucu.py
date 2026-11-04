@@ -341,7 +341,7 @@ def uygulama(db_path=None, sources=None, seed=True, collector=None, port=8781, a
         return FileResponse(ROOT / "static" / "platform.html")
 
     @app.get("/guide", response_class=HTMLResponse)
-    def guide(language: Literal["en", "tr"] = "en", document: Literal["research", "installation"] = "research"):
+    def guide(language: Literal["en", "tr"] = "en", document: Literal["research", "installation", "mcp"] = "research"):
         return rehber_html(language, document)
 
     @app.get("/api/health")

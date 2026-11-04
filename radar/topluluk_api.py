@@ -1,6 +1,7 @@
-"""DevTrellis topluluk kartlarını davetli oturum ve ayrı moderatör onayıyla sunar."""
+"""DevTrellis katkılarını dar hesapsız teslim protokolü, güvenli oturum ve moderatör onayıyla sunar."""
 
 import hashlib
+import re
 import secrets
 import threading
 import time
@@ -29,17 +30,18 @@ class IstekSiniri:
         self.buckets = {}
         self.lock = threading.Lock()
 
-    def izin(self, address, category, limit):
-        minute = int(self.clock()) // 60
+    def izin(self, address, category, limit, period=60):
+        now = int(self.clock())
+        expires = (now // period + 1) * period
         key = (address, category)
         with self.lock:
             if len(self.buckets) > 2048:
-                self.buckets = {saved_key: value for saved_key, value in self.buckets.items() if value[0] == minute}
+                self.buckets = {saved_key: value for saved_key, value in self.buckets.items() if value[0] > now}
             if key not in self.buckets and len(self.buckets) >= 4096:
                 return False
-            previous_minute, count = self.buckets.get(key, (minute, 0))
-            count = count + 1 if previous_minute == minute else 1
-            self.buckets[key] = (minute, count)
+            previous_expires, count = self.buckets.get(key, (expires, 0))
+            count = count + 1 if previous_expires == expires else 1
+            self.buckets[key] = (expires, count)
             return count <= limit
 
 
@@ -93,15 +95,29 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         supplied_origin = request.headers.get("origin")
         if supplied_origin is not None and supplied_origin != origin:
             return JSONResponse({"detail": "Başka siteden erişim reddedildi."}, status_code=403)
+        inbox_create = request.method == "POST" and request.url.path == "/api/community/inbox"
+        inbox_control = ((request.method == "GET" and re.fullmatch(r"/api/community/inbox/[^/]+", request.url.path)) or
+                         (request.method == "POST" and re.fullmatch(r"/api/community/inbox/[^/]+/withdraw", request.url.path)))
+        inbox_call = inbox_create or inbox_control
+        if inbox_call:
+            # Yalnız yerel sunucu istemcisi: tarayıcı çerezlerini/bağlamını bu istisnaya taşıma.
+            if ("origin" in request.headers or "cookie" in request.headers or
+                    any(name.startswith("sec-fetch-") for name in request.headers) or
+                    request.headers.get("x-devtrellis-inbox") != "1"):
+                return JSONResponse({"detail": "Bu teslim yolu yerel uygulamanın sunucu bağlantısını gerektirir."}, status_code=403)
         mutation = request.method not in {"GET", "HEAD", "OPTIONS"}
-        category = "login" if request.url.path == "/api/community/login" else "write" if mutation else "read"
-        limit = {"login": 6, "write": 40, "read": 240}[category]
+        category = ("inbox" if inbox_create else "inbox-control" if inbox_control else
+                    "login" if request.url.path == "/api/community/login" else "write" if mutation else "read")
+        limit = {"login": 6, "write": 40, "read": 240, "inbox": 4, "inbox-control": 30}[category]
         address = request.client.host if request.client else "unknown"
         if not limiter.izin(address, category, limit):
             return JSONResponse({"detail": "İstek sınırına ulaşıldı; bir dakika sonra tekrar deneyin."},
                                 status_code=429, headers={"Retry-After": "60"})
+        if inbox_create and not limiter.izin(address, "inbox-daily", 20, period=86400):
+            return JSONResponse({"detail": "Günlük gönderim sınırına ulaşıldı; daha sonra tekrar deneyin."},
+                                status_code=429, headers={"Retry-After": "86400"})
         if mutation:
-            if supplied_origin != origin or request.headers.get("sec-fetch-site") == "cross-site":
+            if not inbox_call and (supplied_origin != origin or request.headers.get("sec-fetch-site") == "cross-site"):
                 return JSONResponse({"detail": "Aynı hizmet adresinden gönderim gerekli."}, status_code=403)
             if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                 return JSONResponse({"detail": "JSON gövdesi gerekli."}, status_code=415)
@@ -147,6 +163,14 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     def observer(request):
         state = store.oturum_oku(request.cookies.get(COOKIE))
         return state["user"] if state else None
+
+    def inbox_token(request):
+        authorization = request.headers.get("authorization", "")
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(401, "Geçerli gönderim yönetim anahtarı gerekli.")
+        token = authorization[7:]
+        store.inbox_token_izi(token)
+        return token
 
     @app.get("/")
     def home():
@@ -232,6 +256,20 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     def submit(request: Request, payload: dict = Body(...)):
         token, user = session(request, mutate=True)
         return store.gonder(user, payload)
+
+    @app.post("/api/community/inbox")
+    def inbox_submit(request: Request, response: Response, payload: dict = Body(...)):
+        result = store.inbox_gonder(inbox_token(request), payload)
+        response.status_code = 200 if result["duplicate"] else 201
+        return result
+
+    @app.get("/api/community/inbox/{entry_id}")
+    def inbox_status(entry_id: str, request: Request):
+        return store.inbox_oku(inbox_token(request), entry_id)
+
+    @app.post("/api/community/inbox/{entry_id}/withdraw")
+    def inbox_withdraw(entry_id: str, request: Request, payload: dict = Body(...)):
+        return store.inbox_geri_cek(inbox_token(request), entry_id, payload)
 
     @app.post("/api/community/submissions/{entry_id}")
     def update(entry_id: str, request: Request, payload: dict = Body(...)):

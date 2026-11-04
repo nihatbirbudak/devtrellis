@@ -10,13 +10,15 @@
   <link rel="icon" href="/static/ufuk.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/platform.css">
   <script src="/static/ui-text.js" defer></script>
+  <link rel="stylesheet" href="/static/community-share.css">
+  <script src="/static/community-share.js" defer></script>
   <script src="/static/platform.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#platform-content">İçeriğe geç</a>
   <header class="site-header">
     <a class="brand" href="/platform" aria-label="UFUK geliştirici alanı"><img src="/static/ufuk.svg" width="42" height="42" alt=""><span>UFUK<small>Geliştirici alanı</small></span></a>
-    <span class="local-label"><span aria-hidden="true">●</span> Yerel önizleme · Paylaşım dosyalarıyla çalışır</span>
+    <span class="local-label"><span aria-hidden="true">●</span> Araştırman yerelde · Paylaşmak senin seçimin</span>
     <div class="header-tools"><label class="language-label"><span class="sr-only">Dil</span><select data-language aria-label="Dil"><option value="en">EN</option><option value="tr">TR</option></select></label><a class="back-link" href="/">Ana çalışma alanı <span aria-hidden="true">↗</span></a></div>
   </header>
   <main id="platform-content" tabindex="-1">
@@ -58,16 +60,17 @@
 
     <section id="panel-project" class="panel" role="tabpanel" aria-labelledby="tab-project" hidden>
       <div class="section-heading"><div><h2>Projelerinin anlatılacak bir tarafı var.</h2><p>Ne geliştirdiğini, ne işe yaradığını ve nereden başlanacağını bir kartta topla.</p></div><button id="new-project" type="button" class="button" disabled>+ Proje kartı oluştur</button></div>
-      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Projelerimde ara</span><input id="project-query" type="search" maxlength="200" placeholder="Proje adı, konu veya yazar ara…"></label><label><input id="project-archived" type="checkbox"> Arşivlenenleri göster</label><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></div>
+      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Projelerimde ara</span><input id="project-query" type="search" maxlength="200" placeholder="Proje adı, konu veya yazar ara…"></label><label><input id="project-archived" type="checkbox"> Arşivlenenleri göster</label><details class="file-options"><summary>Gelişmiş dosya aktarımı</summary><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></details></div>
       <div id="project-list" class="card-grid"></div>
     </section>
 
     <section id="panel-research" class="panel" role="tabpanel" aria-labelledby="tab-research" hidden>
-      <div class="section-heading"><div><h2>Bir kez araştır, yeniden yararlan.</h2><p>Kaynaklı notlarını sakla; seçtiğin araştırmayı dosya olarak paylaş veya kütüphanene ekle.</p></div><button id="new-research" type="button" class="button" disabled>+ Araştırma ekle</button></div>
-      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Araştırma kütüphanesinde ara</span><input id="research-query" type="search" maxlength="200" placeholder="Araştırma, kaynak veya konu ara…"></label><label><input id="research-archived" type="checkbox"> Arşivlenenleri göster</label><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></div>
+      <div class="section-heading"><div><h2>Bir kez araştır, yeniden yararlan.</h2><p>Hazır araştırmalardan yararlan. Kendi sonucunu yerelde tut veya önizleyip topluluğa gönder.</p></div><button id="new-research" type="button" class="button" disabled>+ Araştırma ekle</button></div>
+      <div class="collection-tools"><label class="collection-search"><span class="sr-only">Araştırma kütüphanesinde ara</span><input id="research-query" type="search" maxlength="200" placeholder="Araştırma, kaynak veya konu ara…"></label><label><input id="research-archived" type="checkbox"> Arşivlenenleri göster</label><details class="file-options"><summary>Gelişmiş dosya aktarımı</summary><button type="button" class="text-button import-open" disabled>Paylaşım dosyası al</button></details></div>
       <div id="research-list" class="card-grid"></div>
     </section>
-    <footer><strong>UFUK</strong><span>Bugün kişisel çalışma alanın. Birlikte büyüyen bir bilgi kütüphanesine doğru.</span><span>Bu sürümde ortak sunucu bağlantısı yoktur.</span></footer>
+    <section id="community-submissions" class="community-submissions" aria-labelledby="community-submissions-title"><h2 id="community-submissions-title">Topluluğa gönderdiğin kopyalar</h2><p>Özgün yerel kayıtların korunur. Uzak durum yalnız yenilemeyi seçtiğinde kontrol edilir.</p><button id="community-submissions-load" type="button" class="button secondary">Gönderimlerimi göster</button><div id="community-submissions-list"></div><p id="community-submissions-error" class="notice error" role="alert" hidden></p></section>
+    <footer><strong>UFUK</strong><span>Bugün kişisel çalışma alanın. Birlikte büyüyen bir bilgi kütüphanesine doğru.</span><span>Topluluğa yalnız açık onayınla içerik gönderilir.</span></footer>
   </main>
 
   <dialog id="interest-dialog" aria-labelledby="interest-title">

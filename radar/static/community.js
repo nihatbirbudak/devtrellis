@@ -208,11 +208,13 @@
       body.append(node("p", "entry-note", t("Kaynak araştırmanın modeli: {model}", {model: !packet.provenance.model || packet.provenance.model === "unknown" ? t("Model kaydedilmemiş") : packet.provenance.model})));
       body.append(node("p", "entry-note", packet.provenance.generated_at ? t("Araştırma tarihi: {date}", {date: dateLabel(packet.provenance.generated_at)}) : t("Üretim tarihi kaydedilmemiş")));
     }
-    body.append(node("p", "submission-owner", `${t("Gönderen hesap")}: ${card.owner?.display_name || card.owner?.username || t("Belirtilmedi")}`));
+    body.append(node("p", "submission-owner", `${t("Yazar beyanı")}: ${packet.author || t("Belirtilmedi")}`));
+    if (card.submission_type === "anonymous" || card.owner?.verified === false) body.append(node("p", "entry-note", t("Hesapsız katkı · Yazar kimliği doğrulanmamış")));
     if (privateView && card.published_version && ["pending", "rejected"].includes(card.status)) body.append(node("p", "private-version-note", t("Yayımlanan sürüm: {version}. Bu taslak onaylanana kadar önceki sürüm görünür kalır.", {version: card.published_version})));
     if (privateView && (card.moderation_note || card.review_note || card.note)) body.append(node("p", "private-version-note", t("İnceleme notu: {note}", {note: card.moderation_note || card.review_note || card.note})));
     const actions = node("div", "card-actions community-card-actions");
     actions.append(button(t("Oku"), event => openCard(card, "read", event.currentTarget)));
+    if (!privateView) actions.append(button(t("Kendi modelimle araştır"), () => openResearchApp(card)));
     if (state.tab === "mine") {
       actions.append(button(t("Düzelt"), () => openComposer(card.packet, card)));
       if (card.status !== "withdrawn") actions.append(button(t("Geri çek"), event => withdraw(card, event.currentTarget)));
@@ -259,7 +261,9 @@
       const latest = privateView ? card : await request(`/cards/${encodeURIComponent(card.id)}`);
       state.detail = latest.card || latest;
       byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title"));
+      if (!privateView) byId("card-content").append(button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button"));
       byId("card-download").hidden = privateView;
+      byId("card-file-options").hidden = privateView;
       if (!privateView) byId("card-download").href = `/api/community/cards/${encodeURIComponent(card.id)}/packet`;
       state.detailMode = mode;
       byId("review-controls").hidden = mode === "read";
@@ -279,6 +283,24 @@
     finally { trigger.disabled = false; }
   }
   function openLogin() { message("login-error", ""); byId("login-password").value = ""; byId("login-dialog").showModal(); byId("login-username").focus(); }
+  function openResearchApp(card = null) {
+    const dialog = node("dialog", "local-app-dialog");
+    const heading = node("h2", "", t("Kendi bilgisayarında araştır"));
+    heading.id = "local-app-title";
+    dialog.setAttribute("aria-labelledby", heading.id);
+    const header = node("div", "dialog-header"); header.append(heading);
+    const body = node("div", "dialog-body");
+    body.append(node("p", "", t("Yerel uygulamayı çalıştır; ardından aşağıdaki bağlantıyı aç. Hesap gerekmez. Model ve API kullanımını kendi ayarların belirler.")));
+    if (card) body.append(node("p", "notice", t("Bu bağlantı yalnız bir kayıt seçer. Yerel uygulama içeriği getirmeden önce sorar; model kendiliğinden çalışmaz.")), node("p", "", card.packet.title));
+    const address = new URL("http://127.0.0.1:8781/");
+    if (card) address.searchParams.set("community_card", card.id);
+    const actions = node("div", "dialog-actions");
+    actions.append(link(t("Çalışan yerel uygulamamı aç"), address.href, "button"), link(t("Kurulum adımlarını aç"), "https://github.com/nihatbirbudak/devtrellis#installation", "button secondary"), button(t("Kapat"), () => dialog.close(), "button secondary"));
+    body.append(node("p", "field-help", t("Varsayılan yerel adres: 127.0.0.1:8781. Uygulama açılmıyorsa önce kurulum adımlarını tamamla ve programı çalıştır.")));
+    dialog.append(header, body, actions);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog); dialog.showModal();
+  }
   async function login(event) {
     event.preventDefault();
     if (state.loginBusy || !byId("login-form").reportValidity()) return;
@@ -468,6 +490,7 @@
   document.querySelectorAll("[data-close]").forEach(trigger => trigger.addEventListener("click", () => closeDialog(trigger.dataset.close)));
   document.querySelectorAll("dialog").forEach(dialog => dialog.addEventListener("cancel", event => { event.preventDefault(); closeDialog(dialog.id); }));
   byId("login-open").addEventListener("click", openLogin);
+  byId("community-start").addEventListener("click", () => openResearchApp());
   byId("login-form").addEventListener("submit", login);
   byId("logout").addEventListener("click", logout);
   byId("community-search").addEventListener("submit", event => { event.preventDefault(); loadRecords(); });

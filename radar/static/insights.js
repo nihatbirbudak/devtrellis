@@ -19,7 +19,7 @@ window.UFUKInsightsFactory = function (context) {
   function working(data) { return ["okunuyor", "calisiyor"].includes(data?.status); }
   function modelStatus(mode) {
     const ai = state.data.ai || {};
-    const provider = ai.deep_provider === "codex" ? "Codex" : "Claude";
+    const provider = {codex: "Codex", nvidia: "NVIDIA", claude: "Claude"}[ai.deep_provider] || "Claude";
     return mode === "research" ? {configured: ai.deep_configured, daily_remaining: ai.deep_daily_remaining, budget_resets_at: ai.deep_budget_resets_at || ai.budget_resets_at, model: ai.deep_model || provider, provider}
       : {...ai, provider: "NVIDIA"};
   }

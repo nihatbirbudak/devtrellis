@@ -4,11 +4,13 @@
 
 [English](README.md) · [MIT lisansı](LICENSE) · [Araştırma ve ücretsiz NVIDIA rehberi](GUIDE.tr.md) · [Topluluk sunucusu](COMMUNITY.md)
 
-**[Canlı topluluk önizlemesi: devtrellis.org](https://devtrellis.org)** — herkes okuyup arayabilir; alfa pilotunda katkı hesapları davetle açılır.
+**[Canlı topluluk: devtrellis.org](https://devtrellis.org)** — hesap açmadan hazır araştırmaları bul; kendi araştırman bitince istersen uygulamadan doğrudan paylaş. Dosya taşıman veya kayıt olman gerekmez.
 
 DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes için açık bir teknoloji bilgi topluluğu kurmayı hedefliyor: yeni çalışmaları takip et, kaynaklarıyla araştır, önceki araştırmaları kullan ve projeni paylaş. Uzun vadede günlük gelişmelerin kalıcı konu sayfalarına bağlandığı, toplulukla güncellenen bir teknoloji ansiklopedisi olacak. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları açıklıyor.
 
-Bugün kişisel alan bilgisayarında çalışır. Ayrı topluluk hizmeti yalnız seçilip gönderilen kartları sunar. Hazır araştırmayı okumak için katkı yapman veya model hesabın olması gerekmez. Yaşayan konu sayfaları, yayından sonra saatlik topluluk araştırmacısı ve yayıncı API/MCP bağlantıları geliştirme planındadır. Otomatik kamusal araştırma için kullanıma izin veren sağlayıcı erişimi gerekir; NVIDIA deneme erişimi tek başına yeterli değildir.
+Kişisel alan bilgisayarında çalışır. Yeni model işi başlatmadan önce toplulukta hazır araştırmayı ara. Yeterliyse kaynakları, tarihi ve model bilgisiyle oku; değilse yeni araştırmana başlangıç bağlamı olarak kullan. Okuma ve içe alma model çağırmaz. Kendi raporun hazır olunca **Yerelde tut** veya **Önizle ve paylaş** seç: yalnız onayladığın araştırma kopyası, varsayılan olarak anonim biçimde incelemeye gider. Topluluk hesabı ve dosya aktarımı gerekmez.
+
+İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulmasını ve kendi araştırmalarından açık onayla katkı sunmasını sağlar. Önceki çalışmayı kullanmak tekrarlanan model işini azaltabilir; belirli bir token tasarrufu veya model eğitimi vaat edilmez. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır. Otomatik kamusal araştırma için kullanıma izin veren sağlayıcı erişimi gerekir; NVIDIA deneme erişimi tek başına yeterli değildir.
 
 Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir.
 
@@ -58,7 +60,7 @@ Veri, yedek, günlük, anahtar ve özel araştırmalar yayın paketine konmaz. Y
 
 ## Paylaşım ve katkı
 
-Kartı kaydet, yazar adını ve içerik iznini seç, önizlemeyi oku ve dosyayı indir. İçe alma da kayıt öncesi önizleme yapar. Topluluk sunucusuna gönderim ayrı ve isteğe bağlıdır.
+Araştırma bittiğinde **Toplulukla paylaşmak ister misin?** önerisi görünür. **Yerelde tut** hiçbir araştırma metnini göndermez. **Önizle ve paylaş** seçeneğinde tam metni ve kaynakları görüp gerekirse düzenlersin; CC BY 4.0 metin iznini açıkça kabul edince incelemeye gönderilir. Gönderi takibi ve geri çekme uygulamadaki **Gönderimlerim** alanındadır. Yönetim anahtarı işletim sisteminin güvenli kasasında tutulur; Linux'ta çalışan bir Secret Service/KWallet gerekir. Dosya içe/dışa aktarma gelişmiş seçenek olarak korunur.
 
 Yazılım **MIT** lisanslıdır; ticari kullanım da serbesttir. Kartın sahibi kendi metni için **CC BY 4.0** veya **CC0 1.0** seçer. Bu, kaynak makalenin veya bağlantı verilen projenin haklarını değiştirmez. Hesap açılması raporun doğrulandığı anlamına gelmez.
 

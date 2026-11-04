@@ -8,6 +8,14 @@ const translations = require("../radar/static/ui-text.js");
 translations.register(require("../radar/static/legacy-text.js"));
 const source = fs.readFileSync(path.join(__dirname, "../radar/static/app.js"), "utf8");
 
+test("kamu kayıt bağlantısı onay penceresine geçer ve başlangıçta içerik veya model istemez", async () => {
+  const code = source.slice(source.indexOf("  async function openResearchEntry()"), source.indexOf("  Promise.all([refreshState(), initialTopics])"));
+  const requests = [], intents = [], drafts = [];
+  const context = vm.createContext({URLSearchParams, window: {location: {search: "?community_card=card-one"}}, state: {data: {}}, request: async url => { requests.push(url); }, discovery: {communityIntent(id) {intents.push(id);}, open(_opener, draft) {drafts.push(draft);}}, document: {getElementById: () => ({})}});
+  vm.runInContext(code, context); await context.openResearchEntry();
+  assert.deepEqual(requests, []); assert.deepEqual(intents, ["card-one"]); assert.deepEqual(drafts, []);
+});
+
 test("kütüphaneden yeniden araştırma yalnız yerel kaydı okuyup yeni formu ön doldurur", async () => {
   const code = source.slice(source.indexOf("  async function openResearchEntry()"), source.indexOf("  Promise.all([refreshState(), initialTopics])"));
   const entry = {id: "entry-one", kind: "research", title: "Original card", body: "Keep this report", provenance: {question: "Is this true?", claim_text: "The original claim <img> UFUK", topic: "security", source_url: "https://example.org/original"}};

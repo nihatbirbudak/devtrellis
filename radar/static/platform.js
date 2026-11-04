@@ -77,6 +77,7 @@
   UI?.initialize();
   const byId = id => document.getElementById(id);
   const state = {token: "", topicLabels: {}, settings: {interests: [], version: 0}, entries: [], ready: false, tab: "feed", feedGeneration: 0, feedOffset: 0, feedTotal: 0, feedBusy: false, editor: null, editorSnapshot: "", editorBusy: false, interestSnapshot: "", interestVersion: 0, interestBusy: false, share: null, shareBusy: false, importBusy: false};
+  const sharing = window.DevTrellisShareFactory?.({element, post: request, formatDate: dateLabel});
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -290,7 +291,8 @@
     const actions = element("div", "card-actions");
     actions.append(button(t("Oku"), () => openDetail(entry)));
     if (entry.origin === "local") actions.append(button(t("Düzenle"), () => openEditor(entry.kind, entry)));
-    actions.append(button(t("Paylaşım dosyası"), event => openShare(entry, event.currentTarget)));
+    if (sharing && entry.origin === "local") actions.append(button(t("Toplulukla paylaş"), event => sharing.open({entry_id: entry.id}, event.currentTarget), "button"));
+    const advanced = element("details", "entry-transfer"); advanced.append(element("summary", "", t("Dosya seçenekleri")), button(t("Paylaşım dosyası"), event => openShare(entry, event.currentTarget))); actions.append(advanced);
     if (entry.kind === "research") {
       const research = element("a", "text-button", t("Yeniden araştır")); research.href = `/?research_entry=${encodeURIComponent(entry.id)}`; actions.append(research);
     }
@@ -615,6 +617,38 @@
     byId(id).close();
   }
 
+  async function loadSubmissions() {
+    const control = byId("community-submissions-load"); if (control.disabled) return;
+    control.disabled = true; message("community-submissions-error", "");
+    try {
+      const data = await request("/api/platform/community/submissions");
+      const list = byId("community-submissions-list"); list.replaceChildren();
+      if (!data.items?.length) list.append(element("p", "", t("Henüz topluluğa gönderilmiş bir kopyan yok. Araştırmaların yerelde duruyor.")));
+      for (const record of data.items || []) {
+        const row = element("article"), heading = element("h3", "", record.title || t("Araştırma")); heading.tabIndex = -1;
+        const submission = record.submission;
+        const names = {pending: "İnceleme bekliyor", published: "Yayımlandı", rejected: "Reddedildi", withdrawn: "Geri çekildi", hidden: "Yayından kaldırıldı"};
+        row.append(heading, element("p", "", t("Son alınan durum: {status}", {status: t(names[submission?.status] || "Henüz doğrulanmadı")})));
+        if (submission?.moderation_note) row.append(element("p", "", t("İnceleme notu: {note}", {note: submission.moderation_note})));
+        const actions = element("div", "community-share-actions");
+        async function action(kind) {
+          if (refresh.disabled) return;
+          if (kind === "withdraw" && !window.confirm(t("Topluluğa gönderdiğin bu kopyayı geri çekmek istiyor musun? Yerel raporun korunur."))) return;
+          refresh.disabled = true; withdraw.disabled = true; message("community-submissions-error", "");
+          try {
+            await request(`/api/platform/community/submissions/${encodeURIComponent(record.local_id)}/${kind}`, kind === "withdraw" ? {expected_version: submission.version} : {});
+            await loadSubmissions();
+          } catch (error) { message("community-submissions-error", errorMessage(error)); }
+          finally { refresh.disabled = false; withdraw.disabled = !submission || submission.status === "withdrawn"; }
+        }
+        const refresh = button(t("Topluluktaki durumu yenile"), () => action("refresh"), "button secondary");
+        const withdraw = button(t("Kopyayı geri çek"), () => action("withdraw"), "button secondary"); withdraw.disabled = !submission || submission.status === "withdrawn";
+        actions.append(refresh, withdraw); row.append(actions); list.append(row);
+      }
+    } catch (error) { message("community-submissions-error", errorMessage(error)); }
+    finally { control.disabled = false; }
+  }
+
   async function initialize() {
     message("global-error", "");
     try {
@@ -669,6 +703,7 @@
   byId("provider-open").addEventListener("click", openProviders);
   byId("provider-select").addEventListener("change", providerAvailability);
   byId("provider-form").addEventListener("submit", saveProviders);
+  byId("community-submissions-load").addEventListener("click", loadSubmissions);
   byId("import-file").addEventListener("change", previewImport);
   byId("share-confirm").addEventListener("click", confirmShare);
   window.addEventListener("beforeunload", event => {

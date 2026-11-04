@@ -9,6 +9,7 @@
     let dialog = null, posting = false, requestKey = null;
     const emptyDraft = topic => ({question: "", need: "", topic: topic || Object.keys(topics)[0] || "ai", source_url: "", claim_text: "", context_text: ""});
     let draft = emptyDraft();
+    const library = window.DevTrellisLibraryFactory?.({element, request: context.request, post, sourceLink: context.sourceLink, formatDate, toast});
     const hasDraft = () => ["question", "need", "source_url", "claim_text", "context_text"].some(key => draft[key].trim());
     const statuses = {awaiting_sources: t("Kaynak aranıyor"), discovering: t("Kaynaklar taranıyor"), no_sources: t("Uygun kaynak bulunamadı"), queued: t("Araştırma sırasında"), running: t("Araştırılıyor"), ready: t("Rapor hazır"), partial: t("Kısmi sonuç"), failed: t("İşlem tamamlanamadı"), cancelled: t("İptal edildi"), interrupted: t("Keşif yarıda kaldı"), completed: t("Keşif tamamlandı"), blocked: t("Devam etmek için bekliyor")};
     function button(text, action, primary = false) {
@@ -29,6 +30,11 @@
       const bar = element("div", "reader-toolbar"), heading = element("h2", "", t("Bir konuyu araştır")); heading.id = "discovery-heading";
       bar.append(heading, button(t("Kapat"), () => { if (!posting) panel.close(); }));
       const form = element("form", "discovery-form");
+      const communitySearch = library?.searchBox({initialQuery: draft.question, onResearch: seed => {
+        if (hasDraft() && !window.confirm?.(t("Mevcut araştırma taslağını bırakıp bu araştırmanın bilgileriyle yeni bir taslak açmak istiyor musun?"))) return;
+        draft = emptyDraft(draft.topic); panel.close(); open(returnTo, seed);
+      }});
+      if (communitySearch) form.append(communitySearch);
       form.append(element("p", "workspace-help", t("Sorunu yaz. UFUK ilgili yayınları bulup bir derin araştırma hazırlasın. Geliştirme kararını rapordan sonra verirsin.")));
       if (prefill) form.append(element("p", "workflow-notice", t("Yeni bir araştırma isteği hazırlıyorsun. Özgün rapor ve önceki kararların korunur; yalnız başlatınca yeni işlem yapılır.")));
       const provider = {nvidia: "NVIDIA", codex: "Codex", claude: "Claude"}[state.data.ai?.deep_provider] || "Claude";
@@ -73,7 +79,7 @@
       });
       panel.addEventListener("cancel", event => { if (posting) event.preventDefault(); });
       panel.addEventListener("close", () => { panel.remove(); dialog = null; if (returnTo?.isConnected) returnTo.focus(); });
-      panel.append(bar, form); document.body.append(panel); dialog = panel; panel.showModal(); question.focus();
+      panel.append(bar, form); document.body.append(panel); dialog = panel; panel.showModal(); if (!prefill && communitySearch) communitySearch.focusSearch(); else question.focus();
     }
     async function cancel(row, control) {
       if (posting) return; posting = true; control.disabled = true;
@@ -144,8 +150,8 @@
     window.addEventListener("beforeunload", event => {
       if (posting || hasDraft()) { event.preventDefault(); event.returnValue = ""; }
     });
-    return {open, renderRequests, renderDiscovery, start: startDiscovery, entry: () => {
+    return {open, renderRequests, renderDiscovery, start: startDiscovery, communityIntent: (id, opener) => library?.intent(id, seed => open(opener, seed), opener), entry: () => {
       const control = button(t("Bir konu araştır"), event => open(event.currentTarget)); control.classList.add("discovery-entry"); return control;
-    }, busy: () => Boolean(dialog || posting)};
+    }, busy: () => Boolean(dialog || posting || library?.busy())};
   };
 })();

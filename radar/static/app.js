@@ -1561,7 +1561,10 @@
   window.addEventListener("pagehide", () => { disposed = true; clearTimeout(pollTimer); pollTimer = null; clearTimeout(toastTimer); clearTimeout(searchTimer); });
   window.addEventListener("pageshow", event => { if (event.persisted) { disposed = false; refreshAfterMutation(true); } });
   async function openResearchEntry() {
-    const entryId = new URLSearchParams(window.location.search).get("research_entry");
+    const intent = new URLSearchParams(window.location.search);
+    const communityCard = intent.get("community_card");
+    if (communityCard && communityCard.length <= 100 && state.data && discovery) { discovery.communityIntent?.(communityCard, document.getElementById("view-title")); return; }
+    const entryId = intent.get("research_entry");
     if (!entryId || !state.data || !discovery) return;
     try {
       const platform = await request("/api/platform");

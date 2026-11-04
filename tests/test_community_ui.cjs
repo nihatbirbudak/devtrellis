@@ -178,6 +178,33 @@ test("anonim okuma XSS metnini HTML'e çevirmeden gösterir ve güvensiz kaynak 
   assert.equal(app.fixture.requests.filter(item => item.options.method === "POST").length, 0);
 });
 
+test("araştırmaya başla hesap istemez ve yerel uygulamaya kendiliğinden bağlanmaz", async () => {
+  for (const language of ["en", "tr"]) {
+    const app = harness({language}); await app.ready();
+    const before = app.fixture.requests.length;
+    await app.byId("community-start").dispatch("click");
+    assert.equal(app.fixture.requests.length, before);
+    assert.equal(app.byId("login-dialog").open, false);
+    const links = app.flatten(app.document.body).filter(node => node.tagName === "A");
+    assert.ok(links.some(node => node.href === "http://127.0.0.1:8781/"));
+    assert.match(app.document.body.textContent, language === "en" ? /No account is required/ : /Hesap gerekmez/);
+  }
+});
+
+test("kamu araştırmasının yerel geçişi yalnız niyet bağlantısı oluşturur; yeni çağrı yapmaz", async () => {
+  const app = harness(); await app.ready();
+  app.fixture.card.owner = {username:null, display_name:"Hesapsız katkı", verified:false};
+  app.fixture.card.submission_type = "anonymous";
+  await app.byId("community-tab-research").dispatch("click");
+  assert.match(app.byId("community-list").textContent,/Author as stated: Test Author/);
+  assert.match(app.byId("community-list").textContent,/Author identity unverified/);
+  const before=app.fixture.requests.length;
+  await app.findButton("Research with my model").dispatch("click");
+  assert.equal(app.fixture.requests.length,before);
+  assert.ok(app.flatten(app.document.body).some(node=>node.href==="http://127.0.0.1:8781/?community_card=card-one"));
+  assert.match(app.document.body.textContent,/no model starts automatically/);
+});
+
 test("giriş eski CSRF ile yapılır; sonraki açık gönderim yeni CSRF ve aynı tekrar anahtarını kullanır", async () => {
   const app = harness();
   await app.ready();

@@ -1,0 +1,2 @@
+# İsteğe bağlı stdio MCP adaptörünün resmi Python SDK bağımlılığı; ana uygulama için gerekli değildir.
+mcp==2.3.0
