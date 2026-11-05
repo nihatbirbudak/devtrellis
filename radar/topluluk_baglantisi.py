@@ -12,7 +12,7 @@ import httpx
 
 from radar.depo import simdi, tarih
 from radar.gelistirici_alani import (
-    GelistiriciAlani, KAYIT_ALANLARI, alanlari_dogrula, metin, paket_dogrula, paket_metni,
+    GelistiriciAlani, KAYIT_ALANLARI, alanlari_dogrula, metin, paket_dogrula, paket_metni, surumu_dogrula,
 )
 from radar.paylasim_gizliligi import kamu_kopyasi, sorguyu_dogrula
 
@@ -68,6 +68,7 @@ class ToplulukBaglantisi:
         self.vault = vault if vault is not None else IsletimSistemiKasasi()
         self.clock = clock or time.time
         self.previews = {}
+        self.usage_events = {}
         self.lock = threading.RLock()
         self.namespace = hashlib.sha256(str(depo.path.resolve()).encode()).hexdigest()[:24]
         with depo.baglanti(write=True) as connection:
@@ -76,8 +77,10 @@ class ToplulukBaglantisi:
                 title TEXT NOT NULL, remote_id TEXT, response TEXT, created_at TEXT NOT NULL
             )""")
 
-    def request(self, method, path, *, payload=None, token=None, params=None):
+    def request(self, method, path, *, payload=None, token=None, params=None, event=False):
         headers = {"Accept": "application/json", "Accept-Encoding": "identity", "User-Agent": "DevTrellis-community-client"}
+        if event:
+            headers["X-DevTrellis-Client"] = "1"
         if token:
             headers.update({"X-DevTrellis-Inbox": "1", "Authorization": "Bearer " + token})
         try:
@@ -122,18 +125,104 @@ class ToplulukBaglantisi:
         items, total = result.get("items"), result.get("total")
         if not isinstance(items, list) or len(items) > limit or type(total) is not int or total < len(items):
             raise ToplulukBaglantiHatasi("Topluluk arama yanıtı geçersiz.")
-        return {"items": [self.kart_dogrula(item) for item in items], "total": total,
-                "limit": limit, "offset": 0, "destination": COMMUNITY_URL}
+        response = {"items": [self.kart_dogrula(item) for item in items], "total": total,
+                    "limit": limit, "offset": 0, "destination": COMMUNITY_URL}
+        if "library" in result:
+            library = result["library"]
+            amount = library.get("published_research_total") if isinstance(library, dict) else None
+            if type(amount) is not int or not 0 <= amount <= 9223372036854775807 or amount < total:
+                raise ToplulukBaglantiHatasi("Topluluk kütüphane sayımı geçersiz.")
+            response["library"] = {"published_research_total": amount}
+        return response
 
-    def oku(self, entry_id):
-        result = self.request("GET", "/api/community/cards/" + self.identifier(entry_id))
-        return self.kart_dogrula(result)
+    def oku(self, entry_id, version=None):
+        if version is not None:
+            surumu_dogrula(version)
+            if version == 0:
+                raise ValueError("Araştırma sürümü pozitif olmalı.")
+        result = self.request("GET", "/api/community/cards/" + self.identifier(entry_id),
+                              params=None if version is None else {"version": version})
+        card = self.kart_dogrula(result)
+        if version is not None and card["version"] != version:
+            raise ToplulukBaglantiHatasi("İstenen araştırma sürümü alınamadı.")
+        return card
+
+    def mcp_oku(self, entry_id, version=None):
+        card = self.oku(entry_id, version)
+        try:
+            self.olay_bildir(entry_id, card["version"], "mcp_read", secrets.token_hex(16))
+        except (ValueError, ToplulukBaglantiHatasi):
+            card["access_counted"] = False
+        else:
+            card["access_counted"] = True
+        return card
+
+    def olay_bildir(self, entry_id, version, kind, event_id):
+        result = self.request("POST", "/api/community/cards/" + self.identifier(entry_id) + "/events",
+                              payload={"kind": kind, "version": version, "event_id": event_id}, event=True)
+        return {"engagement": self.etkilesimi_dogrula(result.get("engagement")),
+                "duplicate": result.get("duplicate") is True}
+
+    def kullanimi_bildir(self, entry_id, payload):
+        entry_id = self.identifier(entry_id)
+        alanlari_dogrula(payload, {"version"}, {"version"})
+        surumu_dogrula(payload["version"])
+        if payload["version"] == 0:
+            raise ValueError("Araştırma sürümü pozitif olmalı.")
+        identity = (entry_id, payload["version"])
+        with self.lock:
+            if identity not in self.usage_events:
+                if len(self.usage_events) >= 1000:
+                    raise ValueError("Bu oturumun kullanım bildirimi sınırına ulaşıldı.")
+                self.usage_events[identity] = secrets.token_hex(16)
+            event_id = self.usage_events[identity]
+        return self.olay_bildir(entry_id, payload["version"], "used_in_research", event_id)
+
+    @staticmethod
+    def etkilesimi_dogrula(value):
+        fields = {"web_views", "mcp_reads", "helpful", "used_in_research", "needs_update", "disputed"}
+        if not isinstance(value, dict) or set(value) != fields:
+            raise ValueError("Araştırma kullanım sayımları geçersiz.")
+        if any(type(number) is not int or not 0 <= number <= 9223372036854775807 for number in value.values()):
+            raise ValueError("Araştırma kullanım sayımları geçersiz.")
+        return dict(value)
 
     def kart_dogrula(self, result):
         try:
             if not isinstance(result, dict) or result.get("status") != "published":
                 raise ValueError("published card expected")
-            return {**self.durum_dogrula(result), "packet": paket_dogrula(result["packet"])}
+            card = {**self.durum_dogrula(result), "packet": paket_dogrula(result["packet"])}
+            if "engagement" in result:
+                card["engagement"] = self.etkilesimi_dogrula(result["engagement"])
+            if "relationships" in result:
+                relations = result["relationships"]
+                if not isinstance(relations, dict) or not isinstance(relations.get("parents"), list) or not isinstance(relations.get("children"), list):
+                    raise ValueError("Araştırma ilişkileri geçersiz.")
+                if len(relations["parents"]) > 5 or len(relations["children"]) > 100:
+                    raise ValueError("Araştırma ilişkileri sınırı aşıldı.")
+                safe = {"parents": [], "children": [], "children_total": relations.get("children_total")}
+                if type(safe["children_total"]) is not int or safe["children_total"] < len(relations["children"]):
+                    raise ValueError("Araştırma ilişkileri sayısı geçersiz.")
+                for group in ("parents", "children"):
+                    for item in relations[group]:
+                        entry = {"id": self.identifier(item["id"]), "version": item["version"]}
+                        surumu_dogrula(entry["version"])
+                        if entry["version"] == 0:
+                            raise ValueError("Kaynak sürümü geçersiz.")
+                        if group == "parents":
+                            if type(item.get("available")) is not bool:
+                                raise ValueError("Kaynak görünürlüğü geçersiz.")
+                            entry["available"] = item["available"]
+                        if group == "children" or entry["available"]:
+                            entry["title"] = metin(item["title"], "Araştırma başlığı", 160, required=True)
+                            for field in ("author", "license"):
+                                if field in item:
+                                    entry[field] = metin(item[field], field, 100)
+                        else:
+                            entry["title"] = None
+                        safe[group].append(entry)
+                card["relationships"] = safe
+            return card
         except (ValueError, KeyError, TypeError) as exc:
             raise ToplulukBaglantiHatasi("Topluluk kartı geçersiz.") from exc
 
@@ -268,6 +357,15 @@ class ToplulukBaglantisi:
         submission = result.get("submission", result)
         safe = self.durum_dogrula(submission)
         with self.depo.baglanti(write=True) as connection:
+            previous = connection.execute("SELECT remote_id,response FROM community_deliveries WHERE local_id=?",
+                                          (local_id,)).fetchone()
+            if previous is None or (previous["remote_id"] and previous["remote_id"] != safe["id"]):
+                raise ToplulukBaglantiHatasi("Topluluk yanıtı seçilen gönderimle eşleşmiyor.")
+            if previous["response"]:
+                current = self.durum_dogrula(json.loads(previous["response"]))
+                # Farklı oturumlardan gelen gecikmiş yanıtlar yeni geri çekme durumunu geri alamaz.
+                if current["version"] > safe["version"]:
+                    safe = current
             connection.execute("UPDATE community_deliveries SET remote_id=?,response=? WHERE local_id=?",
                                (safe["id"], paket_metni(safe), local_id))
         return {"local_id": local_id, "submission": safe, "duplicate": result.get("duplicate") is True}
@@ -298,25 +396,42 @@ class ToplulukBaglantisi:
         except (ValueError, KeyError, TypeError) as exc:
             raise ToplulukBaglantiHatasi("Topluluk gönderim yanıtı geçersiz.") from exc
 
-    def listele(self):
+    def listele(self, *, offset=0, limit=25):
+        if type(offset) is not int or not 0 <= offset <= 9223372036854775807:
+            raise ValueError("Sayfa başlangıcı geçersiz.")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Sayfa sınırı 1–100 olmalı.")
         with self.depo.baglanti() as connection:
-            rows = connection.execute("SELECT * FROM community_deliveries ORDER BY created_at DESC LIMIT 100").fetchall()
+            connection.execute("BEGIN")
+            total = connection.execute("SELECT COUNT(*) FROM community_deliveries").fetchone()[0]
+            rows = connection.execute("SELECT * FROM community_deliveries ORDER BY created_at DESC,local_id LIMIT ? OFFSET ?",
+                                      (limit, offset)).fetchall()
             return {"items": [{"local_id": row["local_id"], "title": row["title"],
                                "submission": json.loads(row["response"]) if row["response"] else None} for row in rows],
-                    "destination": COMMUNITY_URL}
+                    "destination": COMMUNITY_URL, "total": total, "offset": offset, "limit": limit}
 
     def yonet(self, local_id, payload=None):
         local_id = self.identifier(local_id)
+        if payload is not None:
+            alanlari_dogrula(payload, {"expected_version"}, {"expected_version"})
+            surumu_dogrula(payload["expected_version"])
+            if payload["expected_version"] == 0:
+                raise ValueError("Gönderi sürümü pozitif tam sayı olmalı.")
         with self.depo.baglanti() as connection:
             row = connection.execute("SELECT remote_id FROM community_deliveries WHERE local_id=?", (local_id,)).fetchone()
-        if row is None or not row["remote_id"]:
-            raise ValueError("Gönderimin alındığı henüz doğrulanmadı; aynı önizlemeden yeniden deneyin.")
+        if row is None:
+            raise ValueError("Yerel gönderim kaydı bulunamadı.")
+        if not row["remote_id"] and payload is not None:
+            raise ValueError("Gönderimin alındığı henüz doğrulanmadı; önce durumunu yenileyin.")
         token = self.vault.get(self.namespace + ":" + local_id)
         if not token:
             raise ValueError("Bu gönderinin yönetim anahtarı bu bilgisayarın kasasında bulunamadı.")
+        if not row["remote_id"]:
+            # Başarılı teslimin yanıtı kaybolmuşsa kaydı yalnız mevcut yönetim anahtarıyla bul.
+            # Bu salt okuma, oturum kapanmış olsa da raporu tekrar göndermez.
+            return self.kaydet(local_id, self.request("GET", "/api/community/inbox/status", token=token))
         path = "/api/community/inbox/" + self.identifier(row["remote_id"])
         if payload is not None:
-            alanlari_dogrula(payload, {"expected_version"}, {"expected_version"})
             result = self.request("POST", path + "/withdraw", token=token, payload=payload)
         else:
             result = self.request("GET", path, token=token)

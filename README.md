@@ -12,6 +12,8 @@ Your personal research stays on your computer. When it is ready, choose **Keep l
 
 ## Two ways to use it
 
+Research can develop through linked contributions: cite the exact earlier report version, explain new findings and keep its original sources. Readers can follow that history and report usefulness, actual reuse, outdated information or a disputed claim. Separate web and MCP access counters show approximate activity; popularity and model names do not establish correctness. [Research development and privacy](MCP.md).
+
 This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment variables, database keys and the `ufuk-share` format remain compatible. The community service is installed and operated separately. Living topic pages, an hourly community researcher and publisher connectors remain planned.
 
 | Personal workspace | Community service |

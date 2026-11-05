@@ -392,7 +392,7 @@
   {
     "id": "claude_agent_sdk",
     "name": "Claude Agent SDK Python",
-    "topic": "jarvis",
+    "topic": "ai",
     "url": "https://github.com/anthropics/claude-agent-sdk-python/releases",
     "fetch_url": "https://api.github.com/repos/anthropics/claude-agent-sdk-python/releases?per_page=30",
     "kind": "github_releases",
@@ -406,7 +406,7 @@
       "github.com"
     ],
     "evidence_type": "resmi_surum",
-    "benefit": "Ev otomasyonunun ajan katmanında yetki, araç çağrısı, oturum ve hata davranışını etkileyen sürümleri izler.",
+    "benefit": "Yapay zekâ ajanlarında yetki, araç çağrısı, oturum ve hata davranışını etkileyen sürümleri izler.",
     "publisher": "Anthropic",
     "source_type": "Açık kaynak",
     "branches": [

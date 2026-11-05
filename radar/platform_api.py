@@ -42,8 +42,18 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
         return execute(community.ara, payload)
 
     @router.get("/community/cards/{entry_id}")
-    def community_card(entry_id: str):
-        return execute(community.oku, entry_id)
+    def community_card(entry_id: str, version: int | None = Query(default=None, ge=1, le=9223372036854775807)):
+        return execute(community.oku, entry_id, version)
+
+    @router.post("/community/cards/{entry_id}/read", dependencies=guarded)
+    def community_mcp_read(entry_id: str, payload: dict = Body(...)):
+        if payload.keys() - {"version"}:
+            raise HTTPException(422, "Yalnız seçilen araştırma okunur.")
+        return execute(community.mcp_oku, entry_id, payload.get("version"))
+
+    @router.post("/community/cards/{entry_id}/use", dependencies=guarded)
+    def community_use(entry_id: str, payload: dict = Body(...)):
+        return execute(community.kullanimi_bildir, entry_id, payload)
 
     @router.post("/community/cards/{entry_id}/import", dependencies=guarded)
     def community_import(entry_id: str, payload: dict = Body(...)):
@@ -68,8 +78,9 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
         return execute(community.vazgec, payload)
 
     @router.get("/community/submissions")
-    def community_submissions():
-        return execute(community.listele)
+    def community_submissions(offset: int = Query(default=0, ge=0, le=9223372036854775807),
+                              limit: int = Query(default=25, ge=1, le=100)):
+        return execute(community.listele, offset=offset, limit=limit)
 
     @router.post("/community/submissions/{local_id}/refresh", dependencies=guarded)
     def community_refresh(local_id: str, payload: dict = Body(...)):

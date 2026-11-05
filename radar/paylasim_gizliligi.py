@@ -166,6 +166,9 @@ def kamu_kopyasi(packet):
         cleaned = kamusal_url(result["url"])
         redactions += int(cleaned != result["url"])
         result["url"] = cleaned
+        if result.get("lineage"):
+            result["lineage"]["change_summary"], count = _metni_temizle(result["lineage"]["change_summary"])
+            redactions += count
         if result.get("provenance"):
             provenance = result["provenance"]
             redactions += int(provenance["question"] != result["title"]) + int("claim_text" in provenance)

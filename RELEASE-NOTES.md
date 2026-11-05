@@ -1,3 +1,22 @@
+# DevTrellis 0.1.0-alpha.6
+
+## Research that builds on earlier work
+
+- Contributions can cite up to five exact public report versions and describe material new findings. The public reader and contribution preview show these relationships; earlier reports remain intact. Hidden and withdrawn revisions stay unavailable even after a later revision is published.
+- Web openings, MCP accesses, helpfulness, declared reuse, outdated-information reports and disputes have separate revision-scoped counters. These anonymous signals are approximate, rate limited and not reliability scores or unique-person counts.
+- MCP offers exact-version reads, optional reuse reporting and a direct local submission-history link. Local history now paginates beyond 100 records. The skill offers extensions for meaningful new findings and avoids offers for unchanged paraphrases.
+- A small explicit Turkish/English technical dictionary expands selected search terms. General semantic retrieval and measured token savings remain unproven.
+- Server operators can publish reviewed public report files using a SHA256-bound local command. It creates no enabled login and does not change the normal contribution-review controls. Editorial publication is not an independent accuracy certification.
+
+## Acceptance-test fixes
+
+- Community review and personal lists now search and paginate on the server, including records beyond the first 100.
+- A delivery whose response was lost can be recovered after a session restart with **Refresh status**, using its existing OS-vault management key. The check reads status without uploading the report again. This requires the new community inbox lookup endpoint on the server.
+- Delayed status responses cannot overwrite newer withdrawal state or attach a different remote submission. Withdrawal versions are validated before any network or vault access.
+- Local history offers status refresh for unconfirmed deliveries and stops showing a loading message after an initial load failure. English and Turkish guidance explains recovery and the limits of lexical search.
+
+Upgrade the community server and local MCP installation together for schema-3 development links and counters. Existing schema-1/2 reports remain readable. The full three-provider comparison depends on each user's provider access; controlled tests are not proof of real-world token savings.
+
 # DevTrellis 0.1.0-alpha.5
 
 ## Fixes from a real research pilot

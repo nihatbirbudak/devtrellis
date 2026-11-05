@@ -12,6 +12,8 @@ Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** vey
 
 ## Bugünkü kapsam
 
+Araştırmalar bağlantılı katkılarla gelişebilir: önceki raporun tam sürümünü belirt, yeni bulguları açıkla ve özgün kaynakları koru. Okurlar gelişim geçmişini izleyebilir; yararlılık, kullanım, eski bilgi ve itiraz bildirimi yapabilir. Ayrı web/MCP erişim sayımları yaklaşık etkinlik gösterir; popülerlik ve model adı doğruluğu kanıtlamaz. [Araştırma gelişimi ve gizlilik](MCP.tr.md).
+
 Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır.
 
 İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulup okumasını ve önizleme ile açık onay sonrasında katkı sunmasını sağlar. Asistana dönen rapor metni yine bağlam tokeni tüketebilir. Yeniden kullanım tekrarlanan model işini azaltabilir; henüz belirli bir token veya zaman tasarrufu ölçülmemiştir.

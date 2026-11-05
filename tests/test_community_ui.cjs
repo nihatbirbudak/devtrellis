@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const {test} = require("node:test");
-const {safeURL, parsePacket, validatePacket, filterCards, publicCardId} = require("../radar/static/community.js");
+const {safeURL, parsePacket, validatePacket, filterCards, publicCardId, publicCardVersion, createEventRegistry} = require("../radar/static/community.js");
 const {BRAND, EN, createTranslator, provenanceFacts, loadTopicLabels} = require("../radar/static/ui-text.js");
 const source = fs.readFileSync(path.join(__dirname, "../radar/static/community.js"), "utf8");
 const html = fs.readFileSync(path.join(__dirname, "../radar/static/community.html"), "utf8");
@@ -16,8 +16,10 @@ const topicDefinitions = [
   {id: "jarvis", label_tr: "Ev otomasyonu", label_en: "Home automation"},
   {id: "data", label_tr: "Veri ve veritabanları", label_en: "Data and databases"}
 ];
+const emptyMetrics = () => ({web_views: 0, mcp_reads: 0, helpful: 0, used_in_research: 0, needs_update: 0, disputed: 0});
+const memoryStorage = () => { const values = new Map(); return {values, getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value)}; };
 
-function harness({authenticated = false, role = "contributor", malicious = false, provenance = null, language = "en", feedItems = [], topicStatus = 200, cardId = "card-one", search = "", publicStatus = 200, kind = "research", fullBody = null} = {}) {
+function harness({authenticated = false, role = "contributor", malicious = false, provenance = null, language = "en", feedItems = [], topicStatus = 200, cardId = "card-one", search = "", publicStatus = 200, kind = "research", fullBody = null, privateItems = null, engagement = null, lineage = null, relationships = null, storage = null, sessionWait = null} = {}) {
   let document;
   class Node {
     constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.listeners = new Map(); this.attributes = {}; this.dataset = {}; this.value = ""; this.hidden = false; this.disabled = false; this.open = false; this._text = ""; this.className = ""; }
@@ -62,8 +64,11 @@ function harness({authenticated = false, role = "contributor", malicious = false
   const card = {id: cardId, owner: {username: "tester", display_name: "Test Contributor"}, version: 7, status: "pending", packet: {...packet(), kind}, published_version: 4, moderation_note: "Please clarify the source."};
   if (fullBody !== null) card.packet.body = fullBody;
   if (provenance) { card.packet.schema_version = 2; card.packet.provenance = provenance; }
+  if (lineage) { card.packet.schema_version = 3; card.packet.lineage = copy(lineage); }
+  if (engagement) card.engagement = copy(engagement);
+  if (relationships) card.relationships = copy(relationships);
   if (malicious) { card.packet.title = '<img src=x onerror="alert(1)">'; card.packet.body = "<script>alert(2)</script>"; card.packet.sources[0] = {title: "<svg onload=alert(3)>", url: "javascript:alert(4)"}; }
-  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0, history: []};
+  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0, history: [], eventReceipts: new Set(), dropEventResponse: false, eventWait: null};
   const session = () => ({authenticated: fixture.authenticated, user: fixture.authenticated ? {id: "user-one", username: "tester", display_name: "Test Contributor", role: fixture.role} : null, csrf_token: fixture.authenticated ? "TEST_AUTH_CSRF" : "TEST_ANON_CSRF"});
   const fetch = async (url, options) => {
     const body = options.body ? JSON.parse(options.body) : null;
@@ -71,21 +76,34 @@ function harness({authenticated = false, role = "contributor", malicious = false
     let response;
     let status = 200;
     if (url === "/api/topics") { response = topicDefinitions; status = topicStatus; }
-    else if (url === "/api/community/session") response = session();
+    else if (url === "/api/community/session") { if (sessionWait) await sessionWait; response = session(); }
     else if (url === "/api/community/login") { fixture.authenticated = true; response = session(); }
     else if (url === "/api/community/logout") { fixture.authenticated = false; response = {ok: true}; }
     else if (url.startsWith("/api/community/feed?")) response = {items: feedItems, total: feedItems.length, offset: 0, limit: 24};
-    else if (url === "/api/community/mine" || url === "/api/community/review") response = {items: [card]};
+    else if (/^\/api\/community\/(mine|review)(\?|$)/.test(url)) {
+      const params = new URL(url, "https://community.example").searchParams;
+      const records = filterCards(privateItems || [card], params.get("query") || "");
+      const offset = Number(params.get("offset") || 0), limit = Number(params.get("limit") || 100);
+      response = {items: records.slice(offset, offset + limit), total: records.length, offset, limit};
+    }
     else if (url.startsWith("/api/community/cards?")) response = {items: [card], total: 1};
-    else if (url === `/api/community/cards/${card.id}`) {status=publicStatus;response=status===200 ? {...card, status:"published", moderation_version:11} : {detail:"Not found"};}
+    else if (url === `/api/community/cards/${card.id}` || url.startsWith(`/api/community/cards/${card.id}?version=`)) {const requestedVersion=Number(new URL(url,"https://community.example").searchParams.get("version"))||card.version;status=publicStatus;response=status===200 ? {...card, version:requestedVersion, published_version:card.version, packet:{...card.packet, body:requestedVersion!==card.version?"EXACT_EARLIER_VERSION":card.packet.body}, status:"published", moderation_version:11} : {detail:"Not found"};}
+    else if (url === `/api/community/cards/${card.id}/events`) {
+      assert.equal(options.headers["X-Ufuk-CSRF"], fixture.authenticated ? "TEST_AUTH_CSRF" : "TEST_ANON_CSRF");
+      const duplicate = fixture.eventReceipts.has(body.event_id);
+      if (!duplicate) { const metric = {web_view: "web_views", mcp_read: "mcp_reads"}[body.kind] || body.kind; card.engagement[metric] = (card.engagement[metric] || 0) + 1; fixture.eventReceipts.add(body.event_id); }
+      if (fixture.eventWait) await fixture.eventWait;
+      if (fixture.dropEventResponse) throw new Error("Response lost after save");
+      response = {engagement: card.engagement, duplicate};
+    }
     else if (url.startsWith("/api/community/submissions/")) {
       if (fixture.conflict) { status = 409; response = {detail: "version conflict"}; }
       else { response = {card: {...card, version: 8, packet: body.packet || card.packet}}; }
     } else throw new Error(`Unexpected API call: ${url}`);
     return {ok: status === 200, status, json: async () => copy(response)};
   };
-  const window = {addEventListener() {}, confirm: () => true, location:new URL(`https://community.example/${search}`), history:{replaceState(_state,_title,address){fixture.history.push(address);window.location=new URL(address,window.location);}}};
-  vm.runInNewContext(source, {document, window, fetch, URL, URLSearchParams, TextEncoder, Intl, Date, Set, console, crypto: {randomUUID: () => `TEST-REQUEST-${++fixture.uuidCount}`}, UfukUI: {language, brand: BRAND, t: createTranslator(language), provenanceFacts, loadTopicLabels: () => loadTopicLabels(language, fetch), initialize() {}}});
+  const window = {sessionStorage:storage,addEventListener() {}, confirm: () => true, location:new URL(`https://community.example/${search}`), history:{replaceState(_state,_title,address){fixture.history.push(address);window.location=new URL(address,window.location);}}};
+  vm.runInNewContext(source, {document, window, fetch, URL, URLSearchParams, TextEncoder, Intl, Date, Set, console, crypto: {getRandomValues: values => require("node:crypto").webcrypto.getRandomValues(values), randomUUID: () => `TEST-REQUEST-${++fixture.uuidCount}`}, UfukUI: {language, brand: BRAND, t: createTranslator(language), provenanceFacts, loadTopicLabels: () => loadTopicLabels(language, fetch), initialize() {}}});
   const flatten = root => [root, ...root.children.flatMap(flatten)];
   return {fixture, document, window, byId: document.getElementById, ready: async () => { await turn(); await turn(); }, findButton: label => flatten(document.getElementById("community-list")).find(item => item.tagName === "BUTTON" && item.textContent === label), flatten};
 }
@@ -126,6 +144,104 @@ test("paylaşım dosyası biçimi, boyutu ve lisans koşulları doğrulanır", (
   assert.throws(() => validatePacket({...packet(), license: null}), /izni/);
   assert.throws(() => validatePacket({...packet(), sources: [{title: "x", url: "javascript:alert(1)"}]}), /Geçersiz bağlantı/);
   assert.equal(safeURL("https://user:password@example.org"), null);
+});
+
+test("araştırma ilişkileri ve kullanım sayıları iki dilde görünür; gizlenen kaynağın başlığı ve atfı açılmaz", async () => {
+  const id = "a".repeat(32), parent = "b".repeat(32), hidden = "c".repeat(32), child = "d".repeat(32);
+  for (const language of ["en", "tr"]) {
+    const app = harness({cardId: id, language, engagement: {...emptyMetrics(), mcp_reads: 12, helpful: 4},
+      lineage: {parents: [{research_id: parent, version: 2}, {research_id: hidden, version: 3}], change_summary: "Added <script>benchmark</script> and two public sources."},
+      relationships: {parents: [{id: parent, version: 2, title: "Earlier study", author: "Community author", license: "CC-BY-4.0", available: true}, {id: hidden, version: 3, title: "HIDDEN_TITLE", author: "HIDDEN_AUTHOR", license: "HIDDEN_LICENSE", available: false}], children: [{id: child, version: 1, title: "Extended study"}], children_total: 5}});
+    await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    assert.match(app.byId("community-list").textContent, language === "en" ? /Studies extending this: 5/ : /Geliştiren çalışmalar: 5/);
+    await app.findButton(language === "en" ? "Read research" : "Araştırmayı oku").dispatch("click");
+    const content = app.byId("card-content"), all = app.flatten(content);
+    assert.match(content.textContent, /Earlier study/); assert.match(content.textContent, /Community author/);
+    assert.doesNotMatch(content.textContent, /HIDDEN_TITLE|HIDDEN_AUTHOR|HIDDEN_LICENSE/);
+    assert.equal(all.some(item => item.href === `/?card=${hidden}`), false);
+    assert.ok(all.some(item => item.href === `/?card=${parent}&version=2`)); assert.ok(all.some(item => item.href === `/?card=${child}&version=1`));
+    assert.match(content.textContent, /Added <script>benchmark<\/script>/); assert.ok(all.every(item => item.tagName !== "SCRIPT"));
+    assert.match(content.textContent, language === "en" ? /not unique people or an accuracy score/ : /benzersiz kişi sayısı veya doğruluk puanı değildir/);
+    assert.match(content.textContent, language === "en" ? /AI\/MCP accesses/ : /AI\/MCP erişimi/);
+  }
+});
+
+test("anonim görüntüleme ve açık geri bildirim aynı sürümde birer kez gönderilir; MCP erişimi sayılmaz", async () => {
+  const id = "a".repeat(32), storage = memoryStorage();
+  const app = harness({cardId: id, engagement: emptyMetrics(), storage}); await app.ready();
+  await app.byId("community-tab-research").dispatch("click");
+  assert.equal(app.fixture.requests.some(row => row.url.endsWith("/events")), false);
+  await app.findButton("Read research").dispatch("click");
+  const eventCalls = () => app.fixture.requests.filter(row => row.url.endsWith("/events"));
+  assert.deepEqual(eventCalls().map(row => row.body.kind), ["web_view"]);
+  const helpful = app.flatten(app.byId("card-content")).find(item => item.tagName === "BUTTON" && item.textContent === "I found this helpful");
+  await helpful.dispatch("click"); await helpful.dispatch("click");
+  assert.deepEqual(eventCalls().map(row => row.body.kind), ["web_view", "helpful"]);
+  assert.equal(helpful.disabled, true); assert.match(app.byId("card-content").textContent, /feedback was saved/);
+  assert.equal(app.fixture.card.engagement.web_views, 1); assert.equal(app.fixture.card.engagement.helpful, 1); assert.equal(app.fixture.card.engagement.mcp_reads, 0);
+  app.byId("card-dialog").close(); await app.findButton("Read research").dispatch("click");
+  assert.equal(eventCalls().length, 2);
+  const reopened = harness({cardId: id, engagement: app.fixture.card.engagement, storage, search: `?card=${id}`}); await reopened.ready();
+  assert.equal(reopened.fixture.requests.some(row => row.url.endsWith("/events")), false);
+  assert.ok(eventCalls().every(row => /^[a-f0-9]{32}$/.test(row.body.event_id) && row.body.version === 7 && Object.keys(row.body).length === 3));
+});
+
+test("kaybolan bildirim yanıtı aynı kimlikle tekrar edilir; yanıt gelmeden sayaç iyimser artırılmaz", async () => {
+  const app = harness({cardId: "a".repeat(32), engagement: emptyMetrics()}); await app.ready(); await app.byId("community-tab-research").dispatch("click"); await app.findButton("Read research").dispatch("click");
+  const content = app.byId("card-content"), helpful = app.flatten(content).find(item => item.tagName === "BUTTON" && item.textContent === "I found this helpful");
+  const helpfulValue = () => app.flatten(content).find(item => item.className === "research-metric" && item.children[0].textContent === "Found helpful").children[1].textContent;
+  let finish; app.fixture.eventWait = new Promise(resolve => { finish = resolve; }); app.fixture.dropEventResponse = true;
+  const pending = helpful.dispatch("click"); await turn();
+  assert.equal(helpful.disabled, true); assert.equal(helpfulValue(), "0");
+  finish(); await pending; assert.equal(helpful.disabled, false); assert.equal(helpfulValue(), "0"); assert.match(content.textContent, /could not be saved/);
+  app.fixture.dropEventResponse = false; app.fixture.eventWait = null; await helpful.dispatch("click");
+  const attempts = app.fixture.requests.filter(row => row.body?.kind === "helpful");
+  assert.equal(attempts.length, 2); assert.deepEqual(attempts[0].body, attempts[1].body); assert.equal(helpfulValue(), "1"); assert.equal(app.fixture.card.engagement.helpful, 1);
+});
+
+test("oturum gecikince kalıcı araştırma bağlantısı güvenle bekler; özel taslak açılışı sayaç yazmaz", async () => {
+  const id = "a".repeat(32); let unlock;
+  const delayed = harness({cardId: id, engagement: emptyMetrics(), search: `?card=${id}`, sessionWait: new Promise(resolve => { unlock = resolve; })});
+  await delayed.ready(); assert.equal(delayed.fixture.requests.some(row => row.options.method === "POST"), false);
+  unlock(); await delayed.ready(); assert.equal(delayed.fixture.requests.filter(row => row.body?.kind === "web_view").length, 1);
+  const privateApp = harness({authenticated: true, cardId: id, engagement: emptyMetrics()}); await privateApp.ready(); await privateApp.byId("community-tab-mine").dispatch("click"); await privateApp.findButton("Read").dispatch("click");
+  assert.equal(privateApp.fixture.requests.some(row => row.url.endsWith("/events")), false);
+});
+
+test("olay kimliği yalnız rapor sürümü ve bildirim türüne bağlıdır; depolama engellense de tekrar aynı kalır", () => {
+  const random = require("node:crypto").webcrypto, storage = memoryStorage(), first = createEventRegistry(storage, random);
+  const id = "a".repeat(32), view = first(id, 1, "web_view");
+  assert.equal(first(id, 1, "web_view"), view);
+  assert.notEqual(first(id, 2, "web_view").event_id, view.event_id);
+  assert.notEqual(first(id, 1, "helpful").event_id, view.event_id);
+  assert.notEqual(first("b".repeat(32), 1, "web_view").event_id, view.event_id);
+  view.sent = true; view.save(); const resumed = createEventRegistry(storage, random)(id, 1, "web_view"); assert.equal(resumed.event_id, view.event_id); assert.equal(resumed.sent, true);
+  assert.ok([...storage.values.values()].every(value => Object.keys(JSON.parse(value)).join(",") === "event_id,sent"));
+  const denied = createEventRegistry({getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }}, random);
+  assert.equal(denied(id, 1, "helpful").event_id, denied(id, 1, "helpful").event_id);
+  assert.throws(() => first(id, 1, "mcp_read"));
+});
+
+test("v3 araştırma gelişimi düzeltme ve açık önizleme boyunca korunur", async () => {
+  const lineage = {parents: [{research_id: "b".repeat(32), version: 2}], change_summary: "Adds a new measurement."};
+  const app = harness({authenticated: true, lineage, provenance: {model: "test/model", modified: false}}); await app.ready(); await app.byId("community-tab-mine").dispatch("click"); await app.findButton("Revise").dispatch("click");
+  app.byId("compose-body").value = "New public findings"; await app.byId("compose-form").dispatch("submit");
+  const draft = JSON.parse(app.byId("compose-json").textContent); assert.equal(draft.schema_version, 3); assert.deepEqual(draft.lineage, lineage);
+  assert.match(app.byId("compose-preview-content").textContent, /Adds a new measurement/); assert.equal(app.fixture.requests.some(row => row.options.method === "POST"), false);
+  assert.equal(parsePacket(JSON.stringify(draft)).schema_version, 3);
+});
+
+test("sürüm bağlantısı tam araştırmayı okur ve indirir; bildirim o sürüme aittir, güncel metinle yeni model başlatılmaz", async () => {
+  const id="a".repeat(32),app=harness({cardId:id,search:`?card=${id}&version=2`,engagement:emptyMetrics()});await app.ready();
+  assert.ok(app.fixture.requests.some(row=>row.url===`/api/community/cards/${id}?version=2`));assert.match(app.byId("card-content").textContent,/EXACT_EARLIER_VERSION/);
+  assert.equal(app.window.location.search,`?card=${id}&version=2`);assert.equal(app.byId("card-download").href,`/api/community/cards/${id}/packet?version=2`);
+  const all=app.flatten(app.byId("card-content"));assert.ok(all.some(item=>item.href===`/?card=${id}&version=2`));assert.ok(all.some(item=>item.href===`/?card=${id}`&&item.textContent==="Open the currently published version"));
+  assert.ok(!all.some(item=>item.tagName==="BUTTON"&&/Research with my model/.test(item.textContent)));assert.match(app.byId("card-content").textContent,/Counts and feedback apply to this version/);
+  const helpful=all.find(item=>item.tagName==="BUTTON"&&item.textContent==="I found this helpful");await helpful.dispatch("click");
+  assert.deepEqual(app.fixture.requests.filter(row=>row.options.method).map(row=>({kind:row.body.kind,version:row.body.version})),[{kind:"web_view",version:2},{kind:"helpful",version:2}]);
+  app.byId("card-dialog").close();assert.equal(app.window.location.search,"");
+  assert.equal(publicCardVersion("?version=2"),2);
+  for(const version of ["0","-1","abc","1.5","9007199254740992","2&version=3"]){assert.equal(publicCardId(`?card=${id}&version=${version}`),null);const invalid=harness({cardId:id,search:`?card=${id}&version=${version}`});await invalid.ready();assert.ok(invalid.fixture.requests.every(row=>!row.url.startsWith(`/api/community/cards/${id}`)));}
 });
 
 test("arama Türkçe Unicode metni işler ve kullanıcı içeriğini değiştirmez", () => {
@@ -327,4 +443,25 @@ test("özel katkı görünümü kalıcı bağlantı üretmez ve mevcut taslağı
   const before=app.fixture.requests.length;await app.findButton("Read").dispatch("click");
   assert.equal(app.fixture.requests.length,before);assert.equal(app.fixture.history.length,0);
   assert.equal(app.flatten(app.byId("card-content")).some(item=>String(item.href).includes("?card=")),false);
+});
+
+test("kişisel ve moderasyon listelerinde yüzüncü kayıttan sonrası sayfalanır ve tüm kayıtlar aranır", async()=>{
+  const records=Array.from({length:105},(_,index)=>({id:index.toString(16).padStart(32,"0"),status:"pending",version:1,packet:{...packet(),title:index===104?"Özel sayfalama hedefi":`Araştırma ${index}`}}));
+  for(const tab of ["mine","review"]){
+    const app=harness({authenticated:true,role:"moderator",privateItems:records});await app.ready();
+    await app.byId("community-tab-"+tab).dispatch("click");
+    assert.match(app.byId("community-count").textContent,/105/);
+    assert.equal(app.byId("page-label").textContent,"1 / 5");
+    for(let page=1;page<5;page++)await app.byId("page-next").dispatch("click");
+    assert.match(app.byId("community-list").textContent,/Özel sayfalama hedefi/);
+    assert.equal(app.byId("page-next").disabled,true);
+    assert.equal(app.byId("page-label").textContent,"5 / 5");
+    assert.equal(new URL(app.fixture.requests.at(-1).url,"https://community.example").searchParams.get("offset"),"96");
+    app.byId("search-query").value="hedefi sayfalama";await app.byId("community-search").dispatch("submit");
+    assert.match(app.byId("community-list").textContent,/Özel sayfalama hedefi/);
+    assert.equal(app.byId("community-count").textContent,"1 records");
+    const query=new URL(app.fixture.requests.at(-1).url,"https://community.example").searchParams;
+    assert.equal(query.get("query"),"hedefi sayfalama");assert.equal(query.get("offset"),"0");assert.equal(query.get("limit"),"24");
+    assert.equal(app.fixture.requests.some(row=>row.options.method==="POST"),false);
+  }
 });

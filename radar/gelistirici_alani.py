@@ -14,7 +14,7 @@ from radar.konular import KONULAR
 
 
 TEMEL_ALANLAR = {"kind", "title", "summary", "body", "url", "tags", "sources", "author", "license"}
-KAYIT_ALANLARI = TEMEL_ALANLAR | {"provenance"}
+KAYIT_ALANLARI = TEMEL_ALANLAR | {"provenance", "lineage"}
 PAKET_ALANLARI = TEMEL_ALANLAR | {"schema", "schema_version", "created_at", "updated_at"}
 PAKET_SINIRI = 32768
 KONU_ADLARI = {profile["topic"]: profile["label"] for profile in profiller()}
@@ -131,6 +131,30 @@ def arastirma_kokeni(value):
     return result
 
 
+def arastirma_gelisimi(value):
+    """Yalnız kamusal kayıt ve sürüm kimliğini taşır; konuşma veya kullanıcı kimliği kabul etmez."""
+    if value is None:
+        return None
+    alanlari_dogrula(value, {"parents", "change_summary"}, {"parents", "change_summary"})
+    parents = value["parents"]
+    if not isinstance(parents, list) or not 1 <= len(parents) <= 5:
+        raise ValueError("Geliştirilen araştırma sayısı 1–5 olmalı.")
+    checked, seen = [], set()
+    for parent in parents:
+        alanlari_dogrula(parent, {"research_id", "version"}, {"research_id", "version"})
+        identifier, version = parent["research_id"], parent["version"]
+        if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{32}", identifier):
+            raise ValueError("Geliştirilen araştırmanın kimliği geçersiz.")
+        if type(version) is not int or not 1 <= version <= 9223372036854775807:
+            raise ValueError("Geliştirilen araştırmanın sürümü pozitif tam sayı olmalı.")
+        if identifier in seen:
+            raise ValueError("Aynı araştırma gelişim listesinde tekrarlanamaz.")
+        seen.add(identifier)
+        checked.append({"research_id": identifier, "version": version})
+    return {"parents": checked, "change_summary": metin(value["change_summary"], "Yeni katkının özeti", 600,
+                                                        required=True, multiline=True)}
+
+
 def kayit_dogrula(value):
     alanlari_dogrula(value, KAYIT_ALANLARI, {"kind", "title"})
     if value["kind"] not in ("project", "research"):
@@ -157,15 +181,22 @@ def kayit_dogrula(value):
         if value["kind"] != "research":
             raise ValueError("Model bilgisi yalnız araştırma kartına eklenebilir.")
         record["provenance"] = provenance
+    lineage = arastirma_gelisimi(value.get("lineage"))
+    if lineage is not None:
+        if value["kind"] != "research":
+            raise ValueError("Araştırma gelişim bilgisi yalnız araştırma kartına eklenebilir.")
+        record["lineage"] = lineage
     return record
 
 
 def paket_dogrula(value):
-    alanlari_dogrula(value, PAKET_ALANLARI | {"provenance"}, PAKET_ALANLARI)
-    if value["schema"] != "ufuk-share" or type(value["schema_version"]) is not int or value["schema_version"] not in {1, 2}:
+    alanlari_dogrula(value, PAKET_ALANLARI | {"provenance", "lineage"}, PAKET_ALANLARI)
+    if value["schema"] != "ufuk-share" or type(value["schema_version"]) is not int or value["schema_version"] not in {1, 2, 3}:
         raise ValueError("Bu paylaşım dosyasının biçimi veya sürümü desteklenmiyor.")
     if (value["schema_version"] == 1 and "provenance" in value) or (value["schema_version"] == 2 and not value.get("provenance")):
         raise ValueError("Model bilgisi için paylaşım biçimi 2 gerekli.")
+    if (value["schema_version"] != 3 and "lineage" in value) or (value["schema_version"] == 3 and not value.get("lineage")):
+        raise ValueError("Araştırma gelişim bilgisi için paylaşım biçimi 3 gerekli.")
     record = kayit_dogrula({key: value[key] for key in KAYIT_ALANLARI if key in value})
     if not record["author"] or not record["license"]:
         raise ValueError("Paylaşım için yazar adı ve içerik lisansı gerekli.")
@@ -293,6 +324,8 @@ class GelistiriciAlani:
                 raise ValueError("İçeri alınan paylaşımın yazar kaydı değiştirilemez; ayrı bir yerel taslak oluşturun.")
             if current.get("provenance") and "provenance" not in payload and content["kind"] == "research":
                 content["provenance"] = dict(current["provenance"])
+            if current.get("lineage") and "lineage" not in payload and content["kind"] == "research":
+                content["lineage"] = dict(current["lineage"])
             if content.get("provenance") and any(content.get(key) != current.get(key) for key in ("title", "summary", "body", "sources", "url")):
                 content["provenance"]["modified"] = True
                 content["provenance"]["evidence_status"] = "unverified"
@@ -324,7 +357,7 @@ class GelistiriciAlani:
         alanlari_dogrula(payload, {"expected_version"}, {"expected_version"})
         current = self.oku(entry_id)
         self.surum_eslestir(current, payload["expected_version"])
-        packet = {"schema": "ufuk-share", "schema_version": 2 if current.get("provenance") else 1,
+        packet = {"schema": "ufuk-share", "schema_version": 3 if current.get("lineage") else 2 if current.get("provenance") else 1,
                   **{key: current[key] for key in KAYIT_ALANLARI if key in current},
                   "created_at": current["created_at"], "updated_at": current["updated_at"]}
         return {"packet": paket_dogrula(packet), "notice": PAYLASIM_NOTU}

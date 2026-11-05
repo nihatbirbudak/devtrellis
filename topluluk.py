@@ -40,6 +40,10 @@ def main(argv=None):
     disable.add_argument("username")
     reset = sub.add_parser("password-reset", help="Gizli istemle parolayı değiştir ve önceki oturumları iptal et")
     reset.add_argument("username")
+    publish = sub.add_parser("publish-reviewed", help="Yöneticinin incelediği anonim kamu raporunu dosya özetiyle sabitleyerek yayımla")
+    publish.add_argument("packet", type=Path)
+    publish.add_argument("--sha256", required=True, help="İncelenen dosyanın SHA256 özeti")
+    publish.add_argument("--note", required=True, help="Kaynak incelemesinin kısa notu")
     backup = sub.add_parser("backup", help="Yeni dosyaya tutarlı SQLite yedeği al")
     backup.add_argument("target", type=Path)
     restore = sub.add_parser("restore", help="Yedeği yeni veritabanına aç; mevcut dosyayı değiştirme")
@@ -73,6 +77,12 @@ def main(argv=None):
                 raise ValueError("Topluluk veritabanı bulunamadı.")
             ToplulukDeposu(args.db).parola_yenile(args.username, gizli_parola_oku())
             print("Parola yenilendi ve önceki oturumlar iptal edildi.")
+        elif args.command == "publish-reviewed":
+            import json
+            from radar.editor_yayini import incelenen_dosyayi_yayinla
+            result = incelenen_dosyayi_yayinla(args.db, args.packet, args.sha256, args.note)
+            print(json.dumps({"id": result["card"]["id"], "version": result["card"]["version"],
+                              "status": result["card"]["status"], "duplicate": result["duplicate"]}))
         elif args.command == "backup":
             if not args.db.is_file():
                 raise ValueError("Topluluk veritabanı bulunamadı.")

@@ -6,9 +6,33 @@
   const MAX_BYTES = 32768;
   const PAGE_SIZE = 24;
   const validCardId = value => typeof value === "string" && /^[a-f0-9]{32}$/i.test(value);
+  const METRICS = {web_views: "Web görüntülemesi", mcp_reads: "AI/MCP erişimi", helpful: "Yararlı bulundu", used_in_research: "Araştırmada kullanıldı", needs_update: "Güncelleme bildirimi", disputed: "Doğruluk itirazı"};
+  const FEEDBACK = {helpful: "Yararlı buldum", used_in_research: "Araştırmamda kullandım", needs_update: "Güncelliğini yitirmiş", disputed: "Doğruluğuna itiraz et"};
+  const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  function publicCardVersion(search) {
+    const values = new URLSearchParams(search).getAll("version");
+    return values.length === 1 && /^[1-9][0-9]*$/.test(values[0]) && Number.isSafeInteger(Number(values[0])) ? Number(values[0]) : null;
+  }
+  function createEventRegistry(storage, random) {
+    const records = new Map();
+    return (id, version, kind) => {
+      if (!validCardId(id) || !Number.isSafeInteger(version) || version < 1 || !["web_view", ...Object.keys(FEEDBACK)].includes(kind)) throw new Error("Invalid research event");
+      const key = `devtrellis:event:${id.toLowerCase()}:${version}:${kind}`;
+      if (!records.has(key)) {
+        let saved;
+        try { saved = JSON.parse(storage?.getItem(key) || "null"); } catch { saved = null; }
+        const eventId = /^[a-f0-9]{32}$/.test(saved?.event_id || "") ? saved.event_id : Array.from(random.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join("");
+        const record = {event_id: eventId, sent: saved?.sent === true, busy: false, error: false};
+        record.save = () => { try { storage?.setItem(key, JSON.stringify({event_id: record.event_id, sent: record.sent})); } catch { /* Sekme belleğiyle devam edilir. */ } };
+        record.save(); records.set(key, record);
+      }
+      return records.get(key);
+    };
+  }
   function publicCardId(search) {
     const params = new URLSearchParams(search);
     const values = [...params.getAll("card"), ...params.getAll("research")];
+    if (params.has("version") && !publicCardVersion(search)) return null;
     return values.length === 1 && validCardId(values[0]) ? values[0].toLowerCase() : null;
   }
   const safeURL = value => {
@@ -19,7 +43,7 @@
     if (new TextEncoder().encode(text).length > MAX_BYTES) throw new Error(t("Paylaşım dosyası en fazla 32 KB olabilir."));
     let packet;
     try { packet = JSON.parse(text); } catch { throw new Error(t("Bu dosya geçerli bir JSON dosyası değil.")); }
-    if (!packet || Array.isArray(packet) || packet.schema !== "ufuk-share" || ![1, 2].includes(packet.schema_version) || !["project", "research"].includes(packet.kind)) throw new Error(t("Bu dosya desteklenen bir UFUK paylaşım paketi değil."));
+    if (!packet || Array.isArray(packet) || packet.schema !== "ufuk-share" || ![1, 2, 3].includes(packet.schema_version) || !["project", "research"].includes(packet.kind)) throw new Error(t("Bu dosya desteklenen bir UFUK paylaşım paketi değil."));
     return packet;
   }
   function validatePacket(packet) {
@@ -45,11 +69,15 @@
     if (error.status === 401 || error.status === 403) return t("Oturumun sona ermiş olabilir. Taslağını koruyup yeniden giriş yap.");
     return t(error.message || "İşlem tamamlanamadı. Yeniden deneyebilirsin.");
   }
-  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText, publicCardId};
+  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText, publicCardId, publicCardVersion, createEventRegistry};
   if (typeof document === "undefined") return;
   UI?.initialize();
   const byId = id => document.getElementById(id);
   const state = {session: null, topicLabels: {}, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, detailLoading: false, publicCardOpen: false, reviewBusy: false};
+  let eventStorage;
+  try { eventStorage = window.sessionStorage; } catch { eventStorage = null; }
+  const eventRecord = createEventRegistry(eventStorage, globalThis.crypto);
+  const eventBusy = new Set();
 
   function node(tag, className, text) {
     const item = document.createElement(tag);
@@ -72,11 +100,12 @@
     item.rel = "noopener noreferrer";
     return item;
   }
-  function setPermalink(id = null) {
+  function setPermalink(id = null, version = null) {
     if (!window.history?.replaceState || !window.location?.href) return;
     const url = new URL(window.location.href);
-    url.searchParams.delete("card"); url.searchParams.delete("research");
+    url.searchParams.delete("card"); url.searchParams.delete("research"); url.searchParams.delete("version");
     if (validCardId(id)) url.searchParams.set("card", id.toLowerCase());
+    if (validCardId(id) && Number.isSafeInteger(version) && version > 0) url.searchParams.set("version", String(version));
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
   function originalLinks(packet, compact = false) {
@@ -96,6 +125,91 @@
     block.append(list);
     if (compact && entries.length > 3) block.append(node("p", "field-help", t("Tüm kaynaklar tam metnin altında yer alır.")));
     return block;
+  }
+  function researchLink(item) {
+    const label = t("{title} · sürüm {version}", {title: item.title || t("Araştırma"), version: item.version});
+    if (item.available === false || !validCardId(item.id) || !Number.isSafeInteger(item.version) || item.version < 1) return node("span", "field-help", t("Önceki araştırma artık yayımlanmıyor · sürüm {version}", {version: item.version}));
+    const anchor = node("a", "", label);
+    anchor.href = `/?card=${item.id.toLowerCase()}&version=${item.version}`;
+    return anchor;
+  }
+  function lineagePanel(packet, relationships) {
+    const parents = relationships?.parents || packet.lineage?.parents?.map(parent => ({id: parent.research_id, version: parent.version, title: parent.research_id}));
+    const children = relationships?.children || [];
+    if (!parents?.length && !children.length && !packet.lineage?.change_summary) return null;
+    const section = node("section", "research-lineage");
+    section.append(node("h3", "", t("Araştırmanın gelişimi")));
+    if (parents?.length) {
+      section.append(node("h4", "", t("Temel alınan araştırmalar")));
+      const list = node("ul", "source-list");
+      for (const parent of parents) {
+        const row = node("li"); row.append(researchLink(parent));
+        if (parent.available !== false && (parent.author || parent.license)) row.append(node("p", "field-help", [parent.author, parent.license].filter(Boolean).join(" · ")));
+        list.append(row);
+      }
+      section.append(list, node("p", "field-help", t("Bağlantılar araştırmada kullanılan yayımlanmış sürümü açar.")));
+    }
+    if (packet.lineage?.change_summary) section.append(node("h4", "", t("Bu çalışmada eklenenler")), node("p", "lineage-summary", packet.lineage.change_summary));
+    if (children.length) {
+      section.append(node("h4", "", t("Bu araştırmayı geliştiren çalışmalar ({count})", {count: count(relationships?.children_total || children.length)})));
+      const list = node("ul", "source-list");
+      for (const child of children) { const row = node("li"); row.append(researchLink(child)); list.append(row); }
+      section.append(list);
+      if (relationships.children_total > children.length) section.append(node("p", "field-help", t("Son {count} çalışma gösteriliyor.", {count: children.length})));
+    }
+    return section;
+  }
+  function metricList(engagement, compact = false) {
+    const list = node("dl", compact ? "research-metrics compact" : "research-metrics");
+    for (const [key, label] of Object.entries(METRICS)) {
+      const fact = node("div", "research-metric");
+      fact.append(node("dt", "", t(label)), node("dd", "", count(engagement?.[key]))); list.append(fact);
+    }
+    return list;
+  }
+  function engagementPanel(card) {
+    if (!card.engagement || !validCardId(card.id) || !Number.isSafeInteger(card.version) || card.version < 1) return null;
+    const key = `${card.id}:${card.version}`, section = node("section", "research-engagement"), metrics = node("div"), actions = node("div", "engagement-actions");
+    const feedback = node("p", "field-help"); feedback.setAttribute("role", "status"); feedback.setAttribute("aria-live", "polite");
+    section.append(node("h3", "", t("Kullanım ve geri bildirim · sürüm {version}", {version: card.version})), metrics, node("p", "field-help", t("Bunlar benzersiz kişi sayısı veya doğruluk puanı değildir. AI erişimi, yararlanıldığı anlamına gelmez; bildirimler okuyucu beyanıdır.")), actions, feedback);
+    if (card.published_version && card.published_version !== card.version) {
+      const current = node("a", "", t("Güncel yayımlanmış sürümü aç")); current.href = `/?card=${card.id}`;
+      section.append(node("p", "notice", t("Önceki bir sürümü okuyorsun. Sayaçlar ve bildirimler bu sürüme aittir.")), current);
+    }
+    const controls = new Map();
+    for (const [kind, label] of Object.entries(FEEDBACK)) { const control = button(t(label), () => send(kind), "button secondary"); controls.set(kind, control); actions.append(control); }
+    const retry = button(t("Görüntüleme kaydını yeniden dene"), () => send("web_view"), "text-button"); retry.hidden = true; section.append(retry);
+    let lastKind = null;
+    function refresh() {
+      metrics.replaceChildren(metricList(card.engagement));
+      const busy = eventBusy.has(key);
+      for (const [kind, control] of controls) {
+        const record = eventRecord(card.id, card.version, kind);
+        control.disabled = busy || record.sent || !state.session?.csrf_token;
+        control.textContent = record.sent ? `${t(FEEDBACK[kind])} ✓` : record.busy ? t("Kaydediliyor…") : t(FEEDBACK[kind]);
+      }
+      const view = eventRecord(card.id, card.version, "web_view"); retry.hidden = !view.error; retry.disabled = busy;
+      if (lastKind) {
+        const record = eventRecord(card.id, card.version, lastKind);
+        feedback.textContent = record.busy ? t("Kaydediliyor…") : record.error ? (record.errorMessage || t("Bildirim kaydedilemedi. Yeniden denediğinde aynı bildirim kullanılır.")) : record.sent && lastKind !== "web_view" ? t("Bildirimin bu sürüm için kaydedildi.") : "";
+      }
+    }
+    async function send(kind) {
+      const record = eventRecord(card.id, card.version, kind);
+      if (record.sent || eventBusy.has(key)) return;
+      record.busy = true; record.error = false; eventBusy.add(key); lastKind = kind; refresh();
+      try {
+        const result = await request(`/cards/${encodeURIComponent(card.id)}/events`, {kind, version: card.version, event_id: record.event_id});
+        if (!result.engagement || typeof result.engagement !== "object") throw new Error("Invalid event response");
+        card.engagement = result.engagement; record.sent = true; record.save();
+        if (state.detail?.id === card.id && state.detail.version === card.version) state.detail.engagement = result.engagement;
+      } catch (error) { record.error = true; record.errorMessage = error.status === 409 ? t("Bu sürüme artık bildirim eklenemiyor. Kaydı yeniden açıp yayın durumunu kontrol et.") : null; }
+      finally { record.busy = false; eventBusy.delete(key); refresh(); if (state.engagementKey === key) state.refreshEngagement?.(); }
+    }
+    state.engagementKey = key; state.refreshEngagement = refresh;
+    refresh();
+    void send("web_view");
+    return section;
   }
   function message(id, text) { byId(id).textContent = text || ""; byId(id).hidden = !text; }
   function dateLabel(value) {
@@ -179,9 +293,7 @@
         params.set("interest", byId("search-interest").value.trim());
         data = await request(`/feed?${params}`);
       } else if (tab === "mine" || tab === "review") {
-        const result = await request(tab === "mine" ? "/mine" : "/review");
-        const records = filterCards(result.items || [], query);
-        data = {items: records.slice(offset, offset + PAGE_SIZE), total: records.length, offset};
+        data = await request(`/${tab}?${params}`);
       } else {
         params.set("kind", tab);
         data = await request(`/cards?${params}`);
@@ -242,6 +354,8 @@
       }); heading.append(titleLink);
     } else heading.append(button(packet.title, event => openCard(card, "read", event.currentTarget), "card-title-link"));
     body.append(meta, heading, node("p", "summary", packet.summary));
+    if (!privateView && card.engagement) body.append(metricList(card.engagement, true));
+    if (!privateView && card.relationships?.children_total) body.append(node("p", "entry-note", t("Geliştiren çalışmalar: {count}", {count: count(card.relationships.children_total)})));
     const sources = originalLinks(packet, true); if (sources) body.append(sources);
     if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", tag))); body.append(tags); }
     body.append(node("p", "entry-note", t("Güncellendi: {date}", {date: dateLabel(packet.updated_at)})));
@@ -265,13 +379,14 @@
     article.append(body, actions);
     return article;
   }
-  function packetContent(packet, titleId) {
+  function packetContent(packet, titleId, relationships = null) {
     const content = node("div");
     const heading = node("h2", "detail-title", packet.title);
     if (titleId) heading.id = titleId;
     content.append(node("p", "card-preview-kind", t(packet.kind === "project" ? "Proje" : "Araştırma")), heading, node("p", "detail-summary", packet.summary));
     content.append(node("h3", "reader-body-heading", t(packet.kind === "project" ? "Projenin ayrıntıları" : "Tam araştırma metni")), node("div", "detail-body", packet.body || t("Bu kayıtta ek metin bulunmuyor. Özet ve özgün kaynakları okuyabilirsin.")));
     const originals = originalLinks(packet); if (originals) content.append(originals);
+    const lineage = lineagePanel(packet, relationships); if (lineage) content.append(lineage);
     const meta = node("dl", "detail-meta");
     for (const [key, value] of [["Yazar", packet.author], ["Oluşturuldu", dateLabel(packet.created_at)], ["Güncellendi", dateLabel(packet.updated_at)], ["Metin izni", packet.license]]) meta.append(node("dt", "", t(key)), node("dd", "", value || t("Belirtilmedi")));
     content.append(meta);
@@ -287,25 +402,28 @@
     content.append(node("p", "field-help", t("Yalnız kart metni seçilen izinle paylaşılır; bağlantılı kod ve kaynak yayınları yeniden lisanslanmaz.")));
     return content;
   }
-  async function openCard(card, mode, trigger, publicOnly = false) {
+  async function openCard(card, mode, trigger, publicOnly = false, requestedVersion = null) {
     if (trigger.disabled || state.detailLoading) return;
     state.detailLoading = true;
     trigger.disabled = true;
     message("community-error", "");
     const privateView = !publicOnly && (state.tab === "mine" || state.tab === "review");
     try {
-      const latest = privateView ? card : await request(`/cards/${encodeURIComponent(card.id)}`);
+      const suffix = Number.isSafeInteger(requestedVersion) && requestedVersion > 0 ? `?version=${requestedVersion}` : "";
+      const latest = privateView ? card : await request(`/cards/${encodeURIComponent(card.id)}${suffix}`);
       state.detail = latest.card || latest;
-      byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title"));
+      byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title", state.detail.relationships));
       if (!privateView) {
+        const engagement = engagementPanel(state.detail); if (engagement) byId("card-content").append(engagement);
         const optional = node("section", "reader-optional");
-        optional.append(node("p", "field-help", t("Bu metni burada okumak için hesap, yerel uygulama veya yapay zekâ modeli gerekmez. Yeni bir araştırma yapmak istersen kendi modelini kullanabilirsin.")), button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button secondary"));
-        if (validCardId(card.id)) { const permalink = node("a", "reader-permalink", t("Bu kaydın kalıcı bağlantısı")); permalink.href = `/?card=${card.id}`; optional.append(permalink); }
+        optional.append(node("p", "field-help", t("Bu metni burada okumak için hesap, yerel uygulama veya yapay zekâ modeli gerekmez. Yeni bir araştırma yapmak istersen kendi modelini kullanabilirsin.")));
+        if (!state.detail.published_version || state.detail.published_version === state.detail.version) optional.append(button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button secondary"));
+        if (validCardId(card.id)) { const permalink = node("a", "reader-permalink", t("Bu kaydın kalıcı bağlantısı")); permalink.href = `/?card=${card.id}${requestedVersion ? `&version=${requestedVersion}` : ""}`; optional.append(permalink); }
         byId("card-content").append(optional);
       }
       byId("card-download").hidden = privateView;
       byId("card-file-options").hidden = privateView;
-      if (!privateView) byId("card-download").href = `/api/community/cards/${encodeURIComponent(card.id)}/packet`;
+      if (!privateView) byId("card-download").href = `/api/community/cards/${encodeURIComponent(card.id)}/packet${suffix}`;
       state.detailMode = mode;
       byId("review-controls").hidden = mode === "read";
       byId("review-publish").hidden = mode !== "review";
@@ -322,7 +440,7 @@
       byId("card-dialog").showModal();
       byId("card-dialog").scrollTop = 0;
       state.publicCardOpen = !privateView;
-      if (!privateView && validCardId(card.id)) setPermalink(card.id);
+      if (!privateView && validCardId(card.id)) setPermalink(card.id, requestedVersion);
     } catch (error) { message("community-error", !privateView && error.status === 404 ? t("Bu kayıt bulunamadı veya artık yayımlanmıyor.") : errorText(error)); }
     finally { trigger.disabled = false; state.detailLoading = false; }
   }
@@ -421,12 +539,14 @@
       return {title, url};
     });
     const packet = {schema: "ufuk-share", schema_version: 1, kind: original.kind, title: byId("compose-name").value.trim(), summary: byId("compose-summary").value.trim(), body: byId("compose-body").value.trim(), url: byId("compose-url").value.trim(), tags, sources, author: byId("compose-author").value.trim(), license: byId("compose-license").value, created_at: original.created_at, updated_at: new Date().toISOString()};
+    if (original.lineage) packet.lineage = {parents: original.lineage.parents.map(parent => ({research_id: parent.research_id, version: parent.version})), change_summary: original.lineage.change_summary};
     if (original.provenance) {
       const changed = ["title", "summary", "body", "url", "sources"].some(key => JSON.stringify(packet[key]) !== JSON.stringify(original[key]));
       packet.schema_version = 2;
       packet.provenance = {...original.provenance, modified: Boolean(original.provenance.modified || changed)};
       if (packet.provenance.modified) packet.provenance.evidence_status = "unverified";
     }
+    if (packet.lineage) packet.schema_version = 3;
     return validatePacket(packet);
   }
   function previewSubmission(event) {
@@ -511,7 +631,7 @@
       state.topicLabels = labels || {};
       await loadRecords();
       const id = publicCardId(window.location?.search || "");
-      if (id) await openCard({id}, "read", byId("community-main"), true);
+      if (id) await openCard({id}, "read", byId("community-main"), true, publicCardVersion(window.location.search));
     }
     catch (error) {
       byId("community-count").textContent = t("Topluluk başlatılamadı.");

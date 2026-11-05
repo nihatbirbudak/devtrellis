@@ -15,6 +15,8 @@
     missingModel:["Model kaydedilmemiş","Model not recorded"],missingDate:["Üretim tarihi kaydedilmemiş","Generation date not recorded"],
     unknown:["Bilinmiyor","Unknown"],sources:["Kaynaklar ve bağlantılar","Sources and links"],full:["Gönderilecek paketin tamamı","Complete packet to be sent"],
     modelNote:["Model bilgisi doğruluk kanıtı değildir. Tarihi, kaynakları ve raporun sınırlarını değerlendir.","Model details do not prove accuracy. Assess the dates, sources and report limitations."],
+    lineage:["Araştırmanın gelişimi","Research development"],parents:["Temel alınan araştırmalar","Research this builds on"],changes:["Bu çalışmada eklenenler","What this study adds"],version:["sürüm","version"],
+    lineageNote:["Bağlantılar araştırmada kullanılan yayımlanmış sürümü açar. Bu ilişki ve eklenen bulgular da paylaşılacak kopyaya dahildir.","Links open the published version used by this research. These relationships and added findings are included in the shared copy."],
     fallback:["Yerel inceleme sayfasını aç","Open the local review page"],
     noToken:["Bu istemcide güvenli onay hazır değil. Paylaşmak için yerel inceleme sayfasını aç.","Secure approval is unavailable in this client. Open the local review page to share."],
     invalid:["Önizleme alınamadı veya süresi doldu. Yeni bir önizleme hazırla.","The preview is unavailable or expired. Prepare a new preview."],
@@ -68,6 +70,16 @@
       facts.append(make("dt","",text(label)),make("dd","",value||text("unknown")));
     }
     root.append(facts,make("p","muted",text("modelNote")));
+    if(packet.lineage){
+      const lineage=make("section");lineage.append(make("h3","",text("lineage")),make("h4","",text("parents")));
+      const parents=make("ul","sources"),destination=safeURL(current.destination);
+      for(const parent of packet.lineage.parents||[]){
+        if(!/^[a-f0-9]{32}$/i.test(parent.research_id||"")||!Number.isSafeInteger(parent.version)||parent.version<1)continue;
+        const row=make("li"),address=new URL("/",destination);address.searchParams.set("card",parent.research_id.toLowerCase());address.searchParams.set("version",String(parent.version));
+        row.append(external(`${parent.research_id} · ${text("version")} ${parent.version}`,address.href));parents.append(row);
+      }
+      lineage.append(parents,make("h4","",text("changes")),make("p","report",packet.lineage.change_summary||""),make("p","muted",text("lineageNote")));root.append(lineage);
+    }
     const sources=make("ul","sources"),seen=new Set();
     for(const source of [...(packet.sources||[]),{title:packet.url,url:packet.url},{title:p.source_url,url:p.source_url}]){
       const url=safeURL(source.url);if(!url||seen.has(url.href))continue;seen.add(url.href);const row=make("li");row.append(external(source.title||url.href,url.href));sources.append(row);

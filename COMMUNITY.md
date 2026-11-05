@@ -4,7 +4,13 @@
 
 The community is a separate process and database. Its main flow is **find existing research, reuse useful findings, then optionally contribute new research anonymously**. Public search, reading and reuse need no account or model call. Research happens in the personal application or the user's AI tool, with their own provider access. Only an explicitly approved contribution is sent to the community for moderation.
 
-The service does not store model credentials, generate research or review submissions automatically. It supports **one application process** with SQLite and a small moderated pilot. An operator-created moderator account is required to publish contributions; reader and anonymous contributor accounts are not required. Invited accounts and manual file exchange remain optional paths.
+The service does not store model credentials, generate research or review submissions automatically. It supports **one application process** with SQLite and a small moderated pilot. An operator-created moderator account manages the normal review queue; reader and anonymous contributor accounts are not required. Invited accounts and manual file exchange remain optional paths.
+
+## Reviewed editorial reports
+
+An operator with direct server filesystem access can publish a source-checked public research file using `topluluk.py --db PATH publish-reviewed REPORT.json --sha256 REVIEWED_FILE_SHA256 --note "Review note"`. Review the exact file and its sources before running it. A mismatched hash or a packet requiring privacy redaction is rejected. The command uses disabled internal contributor/reviewer records for its two recorded stages; these cannot sign in and do not represent two independent human reviewers. Repeating the same file is idempotent, and a withdrawn or hidden report is not automatically republished. This local command is not exposed as an HTTP or model tool and does not automate the user's contribution controls.
+
+Schema-3 research contributions preserve parent report identifiers, exact public versions and a public change summary. Older hidden revisions remain inaccessible after a later version is published. Approximate version-scoped engagement counters use separate web/MCP access and declared-feedback categories; see [the measurement and privacy boundaries](MCP.md). Update the local MCP client and community service together for these features.
 
 ## Reader and contributor flow
 

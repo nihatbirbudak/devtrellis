@@ -100,6 +100,12 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         inbox_control = ((request.method == "GET" and re.fullmatch(r"/api/community/inbox/[^/]+", request.url.path)) or
                          (request.method == "POST" and re.fullmatch(r"/api/community/inbox/[^/]+/withdraw", request.url.path)))
         inbox_call = inbox_create or inbox_control
+        event_write = request.method == "POST" and re.fullmatch(r"/api/community/cards/[^/]+/events", request.url.path)
+        event_client = event_write and "x-devtrellis-client" in request.headers
+        if event_client and (request.headers.get("x-devtrellis-client") != "1" or
+                "origin" in request.headers or "cookie" in request.headers or
+                any(name.startswith("sec-fetch-") for name in request.headers)):
+            return JSONResponse({"detail": "İstemci etkileşimi tarayıcı oturumu veya bağlamı taşıyamaz."}, status_code=403)
         if inbox_call:
             # Yalnız yerel sunucu istemcisi: tarayıcı çerezlerini/bağlamını bu istisnaya taşıma.
             if ("origin" in request.headers or "cookie" in request.headers or
@@ -108,8 +114,8 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
                 return JSONResponse({"detail": "Bu teslim yolu yerel uygulamanın sunucu bağlantısını gerektirir."}, status_code=403)
         mutation = request.method not in {"GET", "HEAD", "OPTIONS"}
         category = ("inbox" if inbox_create else "inbox-control" if inbox_control else
-                    "login" if request.url.path == "/api/community/login" else "write" if mutation else "read")
-        limit = {"login": 6, "write": 40, "read": 240, "inbox": 4, "inbox-control": 30}[category]
+                    "event" if event_write else "login" if request.url.path == "/api/community/login" else "write" if mutation else "read")
+        limit = {"login": 6, "write": 40, "read": 240, "inbox": 4, "inbox-control": 30, "event": 60}[category]
         address = request.client.host if request.client else "unknown"
         if not limiter.izin(address, category, limit):
             return JSONResponse({"detail": "İstek sınırına ulaşıldı; bir dakika sonra tekrar deneyin."},
@@ -117,8 +123,12 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         if inbox_create and not limiter.izin(address, "inbox-daily", 20, period=86400):
             return JSONResponse({"detail": "Günlük gönderim sınırına ulaşıldı; daha sonra tekrar deneyin."},
                                 status_code=429, headers={"Retry-After": "86400"})
+        if event_write and (not limiter.izin(address, "event-daily", 2000, period=86400) or
+                            not limiter.izin("all", "event-total", 600)):
+            return JSONResponse({"detail": "Etkileşim sınırına ulaşıldı; daha sonra tekrar deneyin."},
+                                status_code=429, headers={"Retry-After": "60"})
         if mutation:
-            if not inbox_call and (supplied_origin != origin or request.headers.get("sec-fetch-site") == "cross-site"):
+            if not inbox_call and not event_client and (supplied_origin != origin or request.headers.get("sec-fetch-site") == "cross-site"):
                 return JSONResponse({"detail": "Aynı hizmet adresinden gönderim gerekli."}, status_code=403)
             if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                 return JSONResponse({"detail": "JSON gövdesi gerekli."}, status_code=415)
@@ -240,18 +250,25 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         return store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request))
 
     @app.get("/api/community/cards/{entry_id}")
-    def card(entry_id: str, request: Request):
-        return store.yayini_oku(entry_id, observer(request))
+    def card(entry_id: str, request: Request, version: int | None = Query(None, ge=1, le=9223372036854775807)):
+        return store.yayini_oku(entry_id, observer(request), version=version)
 
     @app.get("/api/community/cards/{entry_id}/packet")
-    def packet(entry_id: str):
-        result = store.yayini_oku(entry_id)
-        return JSONResponse(result["packet"], headers={"Content-Disposition": f'attachment; filename="devtrellis-{result["id"]}.json"'})
+    def packet(entry_id: str, version: int | None = Query(None, ge=1, le=9223372036854775807)):
+        result = store.yayini_oku(entry_id, version=version)
+        return JSONResponse(result["packet"], headers={"Content-Disposition": f'attachment; filename="devtrellis-{result["id"]}-v{result["version"]}.json"'})
+
+    @app.post("/api/community/cards/{entry_id}/events")
+    def event(entry_id: str, request: Request, payload: dict = Body(...)):
+        if request.headers.get("x-devtrellis-client") != "1":
+            session(request, authenticated=False, mutate=True)
+        return store.etkilesim_ekle(entry_id, payload)
 
     @app.get("/api/community/mine")
-    def mine(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100)):
+    def mine(request: Request, query: str = Query("", max_length=200),
+             offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(100, ge=1, le=100)):
         token, user = session(request)
-        return store.listele(user=user, offset=offset, limit=limit)
+        return store.listele(user=user, query=query, offset=offset, limit=limit)
 
     @app.post("/api/community/submissions", status_code=201)
     def submit(request: Request, payload: dict = Body(...)):
@@ -273,6 +290,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         response.status_code = 200 if result["duplicate"] else 201
         return result
 
+    @app.get("/api/community/inbox/status")
+    def inbox_recover(request: Request):
+        return store.inbox_bul(inbox_token(request))
+
     @app.get("/api/community/inbox/{entry_id}")
     def inbox_status(entry_id: str, request: Request):
         return store.inbox_oku(inbox_token(request), entry_id)
@@ -292,9 +313,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         return store.geri_cek(user, entry_id, payload)
 
     @app.get("/api/community/review")
-    def review(request: Request, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=100)):
+    def review(request: Request, query: str = Query("", max_length=200),
+               offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(100, ge=1, le=100)):
         token, user = session(request)
-        return store.listele(user=user, review=True, offset=offset, limit=limit)
+        return store.listele(user=user, review=True, query=query, offset=offset, limit=limit)
 
     @app.post("/api/community/submissions/{entry_id}/decision")
     def decision(entry_id: str, request: Request, payload: dict = Body(...)):

@@ -12,6 +12,7 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from radar.arastirma_arama import arama_gruplari
 from radar.gelistirici_alani import (alanlari_dogrula, arama_metni, metin, paket_dogrula,
                                     paket_metni, surumu_dogrula)
 
@@ -19,6 +20,10 @@ from radar.gelistirici_alani import (alanlari_dogrula, arama_metni, metin, paket
 INBOX_PENDING_LIMIT = 200
 INBOX_TOTAL_LIMIT = 5000
 INBOX_OWNER = "!devtrellis-inbox"
+EVENT_RECEIPT_LIMIT = 100000
+EVENT_RECEIPT_SECONDS = 7 * 86400
+EVENT_COUNTERS = {"web_view": "web_views", "mcp_read": "mcp_reads", "helpful": "helpful",
+                  "used_in_research": "used_in_research", "needs_update": "needs_update", "disputed": "disputed"}
 
 
 class ToplulukHatasi(ValueError):
@@ -97,6 +102,32 @@ class ToplulukDeposu:
                     capability_hash TEXT NOT NULL UNIQUE, request_key_hash TEXT NOT NULL,
                     packet_hash TEXT NOT NULL, consent_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS community_lineage (
+                    entry_id TEXT NOT NULL, version INTEGER NOT NULL,
+                    parent_id TEXT NOT NULL, parent_version INTEGER NOT NULL,
+                    PRIMARY KEY(entry_id,version,parent_id),
+                    FOREIGN KEY(entry_id,version) REFERENCES community_revisions(entry_id,version) ON DELETE CASCADE,
+                    FOREIGN KEY(parent_id,parent_version) REFERENCES community_revisions(entry_id,version) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS community_parent ON community_lineage(parent_id,parent_version);
+                CREATE TABLE IF NOT EXISTS community_public_revisions (
+                    entry_id TEXT NOT NULL, version INTEGER NOT NULL, visible INTEGER NOT NULL CHECK(visible IN (0,1)),
+                    PRIMARY KEY(entry_id,version),
+                    FOREIGN KEY(entry_id,version) REFERENCES community_revisions(entry_id,version) ON DELETE CASCADE
+                );
+                INSERT OR IGNORE INTO community_public_revisions(entry_id,version,visible)
+                    SELECT id,published_revision,1 FROM community_entries WHERE published_revision IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS community_engagement (
+                    entry_id TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL,
+                    total INTEGER NOT NULL CHECK(total>=0), PRIMARY KEY(entry_id,version,kind),
+                    FOREIGN KEY(entry_id,version) REFERENCES community_revisions(entry_id,version) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS community_event_receipts (
+                    receipt_hash TEXT PRIMARY KEY, entry_id TEXT NOT NULL, version INTEGER NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    FOREIGN KEY(entry_id,version) REFERENCES community_revisions(entry_id,version) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS community_receipt_expiry ON community_event_receipts(expires_at);
             """)
         self.dummy_hash = "pbkdf2_sha256$600000$" + "00" * 16 + "$" + "00" * 32
 
@@ -193,20 +224,32 @@ class ToplulukDeposu:
         with self.baglanti(write=True) as connection:
             connection.execute("DELETE FROM community_sessions WHERE token_hash=?", (self.oturum_izi(token),))
 
-    def kart(self, connection, entry_id, *, public=False, moderator=False):
+    def kart(self, connection, entry_id, *, public=False, moderator=False, requested_version=None):
         row = connection.execute("SELECT e.*,a.username,a.display_name,i.entry_id AS inbox_id FROM community_entries e "
                                  "JOIN community_accounts a ON a.id=e.owner_id "
                                  "LEFT JOIN community_inbox i ON i.entry_id=e.id WHERE e.id=?", (entry_id,)).fetchone()
         if row is None or (public and row["published_revision"] is None):
             raise ToplulukHatasi("Kart bulunamadı.", 404)
         revision = row["published_revision"] if public else row["latest_revision"]
+        if requested_version is not None:
+            if not public or type(requested_version) is not int or not 1 <= requested_version <= 9223372036854775807:
+                raise ValueError("İstenen yayın sürümü pozitif tam sayı olmalı.")
+            approved = connection.execute("SELECT 1 FROM community_public_revisions WHERE entry_id=? AND version=? "
+                                          "AND visible=1", (entry_id, requested_version)).fetchone()
+            if approved is None:
+                raise ToplulukHatasi("Yayımlanmış araştırma sürümü bulunamadı.", 404)
+            revision = requested_version
         saved = connection.execute("SELECT packet,created_at FROM community_revisions WHERE entry_id=? AND version=?",
                                    (entry_id, revision)).fetchone()
+        if saved is None:
+            raise ToplulukHatasi("Yayımlanmış araştırma sürümü bulunamadı.", 404)
         card = {"id": row["id"], "owner": {"username": row["username"], "display_name": row["display_name"]},
                 "version": revision if public else row["version"], "status": "published" if public else row["status"],
                 "packet": json.loads(saved["packet"]), "created_at": tarih_metni(row["created_at"]),
                 "updated_at": tarih_metni(saved["created_at"] if public else row["updated_at"]),
                 "published_version": row["published_revision"]}
+        card["relationships"] = self.iliski_gorunumu(connection, entry_id, card["packet"])
+        card["engagement"] = self.etkilesim_gorunumu(connection, entry_id, revision)
         if row["inbox_id"]:
             card["owner"] = {"username": None, "display_name": "Hesapsız katkı", "verified": False}
             card["submission_type"] = "anonymous"
@@ -215,6 +258,97 @@ class ToplulukDeposu:
         elif moderator:
             card["moderation_version"] = row["version"]
         return card
+
+    @staticmethod
+    def gelisimi_dogrula(connection, entry_id, packet):
+        """Gönderimde ve yayında aynı işlem içinde kamusal sürümü ve döngüsüz atfı denetler."""
+        for parent in packet.get("lineage", {}).get("parents", []):
+            parent_id, parent_version = parent["research_id"], parent["version"]
+            if parent_id == entry_id:
+                raise ToplulukHatasi("Araştırma kendi gelişim kaynağı olamaz.", 409)
+            saved = connection.execute(
+                "SELECT r.kind FROM community_entries e JOIN community_revisions r ON r.entry_id=e.id "
+                "WHERE e.id=? AND e.published_revision IS NOT NULL AND r.version=? "
+                "AND EXISTS(SELECT 1 FROM community_public_revisions p WHERE p.entry_id=e.id "
+                "AND p.version=r.version AND p.visible=1)", (parent_id, parent_version)).fetchone()
+            if saved is None or saved["kind"] != "research":
+                raise ToplulukHatasi("Geliştirilen araştırmanın yayımlanmış sürümü kullanılamıyor.", 409)
+            cycle = connection.execute(
+                "WITH RECURSIVE ancestors(id) AS (SELECT ? UNION "
+                "SELECT l.parent_id FROM community_lineage l JOIN ancestors a ON l.entry_id=a.id) "
+                "SELECT 1 FROM ancestors WHERE id=? LIMIT 1", (parent_id, entry_id)).fetchone()
+            if cycle:
+                raise ToplulukHatasi("Araştırma gelişim zinciri döngü içeremez.", 409)
+
+    @staticmethod
+    def gelisimi_kaydet(connection, entry_id, version, packet):
+        connection.executemany("INSERT INTO community_lineage(entry_id,version,parent_id,parent_version) VALUES(?,?,?,?)",
+            [(entry_id, version, parent["research_id"], parent["version"])
+             for parent in packet.get("lineage", {}).get("parents", [])])
+
+    @staticmethod
+    def iliski_gorunumu(connection, entry_id, packet):
+        parents = []
+        for parent in packet.get("lineage", {}).get("parents", []):
+            saved = connection.execute(
+                "SELECT r.packet FROM community_entries e JOIN community_revisions r ON r.entry_id=e.id "
+                "WHERE e.id=? AND e.published_revision IS NOT NULL AND r.version=? "
+                "AND EXISTS(SELECT 1 FROM community_public_revisions p WHERE p.entry_id=e.id "
+                "AND p.version=r.version AND p.visible=1)",
+                (parent["research_id"], parent["version"])).fetchone()
+            source = json.loads(saved["packet"]) if saved else None
+            parents.append({"id": parent["research_id"], "version": parent["version"], "available": saved is not None,
+                            "title": source["title"] if source else None, "author": source["author"] if source else None,
+                            "license": source["license"] if source else None})
+        selection = (" FROM community_lineage l JOIN community_entries e ON e.id=l.entry_id "
+                     "AND e.published_revision=l.version JOIN community_revisions r ON r.entry_id=e.id "
+                     "AND r.version=e.published_revision WHERE l.parent_id=?")
+        total = connection.execute("SELECT COUNT(*)" + selection, (entry_id,)).fetchone()[0]
+        children = connection.execute("SELECT e.id,r.version,r.packet" + selection +
+                                      " ORDER BY r.created_at DESC,e.id LIMIT 20", (entry_id,)).fetchall()
+        return {"parents": parents, "children": [{"id": child["id"], "version": child["version"],
+                 "title": json.loads(child["packet"])["title"]} for child in children], "children_total": total}
+
+    @staticmethod
+    def etkilesim_gorunumu(connection, entry_id, version):
+        result = dict.fromkeys(EVENT_COUNTERS.values(), 0)
+        for row in connection.execute("SELECT kind,total FROM community_engagement WHERE entry_id=? AND version=?",
+                                      (entry_id, version)):
+            if row["kind"] in EVENT_COUNTERS:
+                result[EVENT_COUNTERS[row["kind"]]] = row["total"]
+        return result
+
+    def etkilesim_ekle(self, entry_id, payload):
+        """Kimliksiz sayaç tutar; yedi günlük tekrar fişinde IP, oturum veya ham olay kimliği saklamaz."""
+        alanlari_dogrula(payload, {"kind", "version", "event_id"}, {"kind", "version", "event_id"})
+        kind, version, event_id = payload["kind"], payload["version"], payload["event_id"]
+        if not isinstance(kind, str) or kind not in EVENT_COUNTERS:
+            raise ValueError("Etkileşim türü geçersiz.")
+        if type(version) is not int or not 1 <= version <= 9223372036854775807:
+            raise ValueError("Etkileşim için yayımlanmış sürüm gerekli.")
+        if not isinstance(event_id, str) or not re.fullmatch(r"[a-f0-9]{32}", event_id):
+            raise ValueError("Etkileşim kimliği 32 haneli rastgele kimlik olmalı.")
+        now = int(self.clock())
+        receipt = hashlib.sha256(f"{entry_id}:{version}:{kind}:{event_id}".encode("utf-8")).hexdigest()
+        with self.baglanti(write=True) as connection:
+            row = connection.execute("SELECT published_revision FROM community_entries WHERE id=?", (entry_id,)).fetchone()
+            if row is None or row["published_revision"] is None:
+                raise ToplulukHatasi("Kart bulunamadı.", 404)
+            visible = connection.execute("SELECT 1 FROM community_public_revisions WHERE entry_id=? AND version=? AND visible=1",
+                                         (entry_id, version)).fetchone()
+            if visible is None:
+                raise ToplulukHatasi("Araştırma sürümü yayında değil; güncel yayını yeniden açın.", 409)
+            connection.execute("DELETE FROM community_event_receipts WHERE expires_at<=?", (now,))
+            duplicate = connection.execute("SELECT 1 FROM community_event_receipts WHERE receipt_hash=?", (receipt,)).fetchone() is not None
+            if not duplicate:
+                if connection.execute("SELECT COUNT(*) FROM community_event_receipts").fetchone()[0] >= EVENT_RECEIPT_LIMIT:
+                    raise ToplulukHatasi("Etkileşim kayıt alanı dolu; daha sonra tekrar deneyin.", 503)
+                connection.execute("INSERT INTO community_event_receipts VALUES(?,?,?,?)",
+                                   (receipt, entry_id, version, now + EVENT_RECEIPT_SECONDS))
+                connection.execute("INSERT INTO community_engagement VALUES(?,?,?,1) "
+                                   "ON CONFLICT(entry_id,version,kind) DO UPDATE SET total=MIN(total+1,9223372036854775807)",
+                                   (entry_id, version, kind))
+            return {"engagement": self.etkilesim_gorunumu(connection, entry_id, version), "duplicate": duplicate}
 
     @staticmethod
     def inbox_token_izi(token):
@@ -267,11 +401,13 @@ class ToplulukDeposu:
                                "VALUES(?,?,?,'contributor',?,0,?)",
                                (INBOX_OWNER, INBOX_OWNER, "Hesapsız katkı", self.dummy_hash, now))
             entry_id = uuid.uuid4().hex
+            self.gelisimi_dogrula(connection, entry_id, packet)
             connection.execute("INSERT INTO community_entries(id,owner_id,version,latest_revision,status,created_at,updated_at) "
                                "VALUES(?,?,1,1,'pending',?,?)", (entry_id, INBOX_OWNER, now, now))
             search_text = " ".join([packet["title"], packet["summary"], packet["body"], *packet["tags"], packet["author"]])
             connection.execute("INSERT INTO community_revisions VALUES(?,1,?,?,?,?)",
                                (entry_id, packet_text, packet["kind"], arama_metni(search_text), now))
+            self.gelisimi_kaydet(connection, entry_id, 1, packet)
             connection.execute("INSERT INTO community_inbox VALUES(?,?,?,?,?)",
                                (entry_id, capability_hash, request_hash, packet_hash, now))
             row = self.inbox_satiri(connection, entry_id, capability_hash)
@@ -282,6 +418,16 @@ class ToplulukDeposu:
         with self.baglanti() as connection:
             return {"submission": self.inbox_gorunumu(self.inbox_satiri(connection, entry_id, capability_hash))}
 
+    def inbox_bul(self, token):
+        """Yanıtı kaybolmuş katkının yalnız sahibine teslim durumunu döndürür; içerik oluşturmaz."""
+        capability_hash = self.inbox_token_izi(token)
+        with self.baglanti() as connection:
+            previous = connection.execute("SELECT entry_id FROM community_inbox WHERE capability_hash=?",
+                                          (capability_hash,)).fetchone()
+            if previous is None:
+                raise ToplulukHatasi("Gönderim bulunamadı.", 404)
+            return {"submission": self.inbox_gorunumu(self.inbox_satiri(connection, previous["entry_id"], capability_hash))}
+
     def inbox_geri_cek(self, token, entry_id, payload):
         capability_hash = self.inbox_token_izi(token)
         alanlari_dogrula(payload, {"expected_version"}, {"expected_version"})
@@ -289,6 +435,7 @@ class ToplulukDeposu:
             row = self.inbox_satiri(connection, entry_id, capability_hash)
             self.surum_kontrol(row, payload["expected_version"])
             if row["status"] != "withdrawn":
+                connection.execute("UPDATE community_public_revisions SET visible=0 WHERE entry_id=?", (entry_id,))
                 connection.execute("UPDATE community_entries SET status='withdrawn',published_revision=NULL,version=version+1,"
                                    "updated_at=? WHERE id=?", (int(self.clock()), entry_id))
             row = self.inbox_satiri(connection, entry_id, capability_hash)
@@ -317,7 +464,11 @@ class ToplulukDeposu:
             if previous:
                 if previous["fingerprint"] != fingerprint:
                     raise ToplulukHatasi("Gönderim kimliği farklı bir işlemde kullanılmış.", 409)
-                return {"card": json.loads(previous["result"]), "duplicate": True}
+                card = json.loads(previous["result"])
+                # Tekrar teslim, sonradan gizlenen kaynağın eski atıf metnini geri açmamalı.
+                card["relationships"] = self.iliski_gorunumu(connection, card["id"], card["packet"])
+                card["engagement"] = self.etkilesim_gorunumu(connection, card["id"], card["version"])
+                return {"card": card, "duplicate": True}
             if entry_id:
                 row = connection.execute("SELECT * FROM community_entries WHERE id=?", (entry_id,)).fetchone()
                 if row is None:
@@ -335,8 +486,10 @@ class ToplulukDeposu:
                 connection.execute("INSERT INTO community_entries(id,owner_id,version,latest_revision,status,created_at,updated_at) "
                                    "VALUES(?,?,1,1,'pending',?,?)", (entry_id, user["id"], now, now))
             search_text = " ".join([packet["title"], packet["summary"], packet["body"], *packet["tags"], user["display_name"]])
+            self.gelisimi_dogrula(connection, entry_id, packet)
             connection.execute("INSERT INTO community_revisions VALUES(?,?,?,?,?,?)",
                                (entry_id, version, paket_metni(packet), packet["kind"], arama_metni(search_text), now))
+            self.gelisimi_kaydet(connection, entry_id, version, packet)
             card = self.kart(connection, entry_id)
             connection.execute("INSERT INTO community_operations VALUES(?,?,?,?)",
                                (user["id"], request_key, fingerprint, paket_metni(card)))
@@ -352,6 +505,7 @@ class ToplulukDeposu:
                 raise ToplulukHatasi("Yalnız kendi kartınızı geri çekebilirsiniz.", 403)
             self.surum_kontrol(row, payload["expected_version"])
             if row["status"] != "withdrawn":
+                connection.execute("UPDATE community_public_revisions SET visible=0 WHERE entry_id=?", (entry_id,))
                 connection.execute("UPDATE community_entries SET status='withdrawn',published_revision=NULL,version=version+1,"
                                    "updated_at=? WHERE id=?", (int(self.clock()), entry_id))
             return {"card": self.kart(connection, entry_id)}
@@ -372,9 +526,16 @@ class ToplulukDeposu:
             self.surum_kontrol(row, payload["expected_version"])
             if row["status"] != "pending":
                 raise ToplulukHatasi("Bu kart inceleme sırasında değil.", 409)
+            if payload["decision"] == "publish":
+                packet = json.loads(connection.execute("SELECT packet FROM community_revisions WHERE entry_id=? AND version=?",
+                                    (entry_id, row["latest_revision"])).fetchone()["packet"])
+                self.gelisimi_dogrula(connection, entry_id, packet)
             published = row["latest_revision"] if payload["decision"] == "publish" else row["published_revision"]
             status = "published" if payload["decision"] == "publish" else "rejected"
             now = int(self.clock())
+            if payload["decision"] == "publish":
+                connection.execute("INSERT INTO community_public_revisions VALUES(?,?,1) "
+                                   "ON CONFLICT(entry_id,version) DO UPDATE SET visible=1", (entry_id, published))
             connection.execute("UPDATE community_entries SET status=?,published_revision=?,version=version+1,moderation_note=?,"
                                "updated_at=? WHERE id=?", (status, published, note, now, entry_id))
             connection.execute("INSERT INTO community_decisions(entry_id,revision,moderator_id,decision,note,created_at) "
@@ -394,6 +555,7 @@ class ToplulukDeposu:
             if row["published_revision"] is None:
                 raise ToplulukHatasi("Bu kartın yayında bir sürümü yok.", 409)
             now = int(self.clock())
+            connection.execute("UPDATE community_public_revisions SET visible=0 WHERE entry_id=?", (entry_id,))
             connection.execute("UPDATE community_entries SET status='hidden',published_revision=NULL,version=version+1,"
                                "moderation_note=?,updated_at=? WHERE id=?", (note, now, entry_id))
             connection.execute("INSERT INTO community_decisions(entry_id,revision,moderator_id,decision,note,created_at) "
@@ -418,9 +580,9 @@ class ToplulukDeposu:
             conditions.append("e.owner_id=?")
             values.append(user["id"])
         if query:
-            for term in dict.fromkeys(arama_metni(query).split()):
-                conditions.append("instr(r.search_text,?)>0")
-                values.append(term)
+            for group in arama_gruplari(query):
+                conditions.append("(" + " OR ".join("instr(r.search_text,?)>0" for _ in group) + ")")
+                values.extend(group)
         if kind:
             conditions.append("r.kind=?")
             values.append(kind)
@@ -431,14 +593,20 @@ class ToplulukDeposu:
             rows = connection.execute("SELECT e.id" + join + where + " ORDER BY r.created_at DESC,e.id LIMIT ? OFFSET ?",
                                       [*values, limit, offset]).fetchall()
             moderator = observer is not None and observer["role"] == "moderator"
-            return {"items": [self.kart(connection, row["id"], public=public, moderator=moderator) for row in rows],
-                    "total": total, "offset": offset, "limit": limit}
+            result = {"items": [self.kart(connection, row["id"], public=public, moderator=moderator) for row in rows],
+                      "total": total, "offset": offset, "limit": limit}
+            if public:
+                published_research = connection.execute("SELECT COUNT(*) FROM community_entries e "
+                    "JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.published_revision "
+                    "WHERE r.kind='research'").fetchone()[0]
+                result["library"] = {"published_research_total": published_research}
+            return result
 
-    def yayini_oku(self, entry_id, observer=None):
+    def yayini_oku(self, entry_id, observer=None, version=None):
         with self.baglanti() as connection:
             connection.execute("BEGIN")
             return self.kart(connection, entry_id, public=True,
-                             moderator=observer is not None and observer["role"] == "moderator")
+                             moderator=observer is not None and observer["role"] == "moderator", requested_version=version)
 
     def yedekle(self, target):
         return veritabani_kopyala(self.path, target)

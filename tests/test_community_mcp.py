@@ -42,8 +42,10 @@ class LocalApiHandler(BaseHTTPRequestHandler):
         elif self.path.endswith("/search"):
             result = {"items": [{"id": "research-1", "packet": {"title": "Existing report"}}],
                       "total": 1, "destination": "https://devtrellis.org"}
-        elif self.path.endswith("/cards/research-1"):
+        elif self.path.endswith("/cards/research-1") or self.path.endswith("/cards/research-1/read"):
             result = {"packet": contribution_packet(**report()), "id": "research-1"}
+        elif self.path.endswith("/cards/research-1/use"):
+            result = {"duplicate": False, "engagement": {"used_in_research": 1}}
         elif self.path.endswith("/preview"):
             result = {"preview_id": "preview-1", "packet": payload["packet"],
                       "destination": "https://devtrellis.org", "notice": "Only this packet will be sent."}
@@ -210,7 +212,7 @@ class CommunityMcpTests(unittest.TestCase):
             async with Client(create_server(client=self.client), raise_exceptions=True) as session:
                 listing = await session.list_tools()
                 tools = {tool.name: tool for tool in listing.tools}
-                self.assertEqual(set(tools), {"search_research", "read_research", "preview_contribution", "contribution_decision"})
+                self.assertEqual(set(tools), {"search_research", "read_research", "record_research_use", "open_submission_history", "preview_contribution", "contribution_decision"})
                 self.assertEqual(tools["contribution_decision"].meta["ui"]["visibility"], ["app"])
                 self.assertNotIn("author", tools["preview_contribution"].input_schema["properties"])
                 self.assertNotIn("question", tools["preview_contribution"].input_schema["properties"])

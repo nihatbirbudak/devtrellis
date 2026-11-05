@@ -109,12 +109,18 @@ Try: **“Before researching this topic, check whether DevTrellis already has a 
 | Tool | What it does |
 | --- | --- |
 | `search_research(query, limit=10)` | Searches shared research through your local app; 1–10 results. |
-| `read_research(research_id)` | Reads a report returned by search, including sources and provenance. |
+| `read_research(research_id, version=null)` | Reads the latest or exact public version, with sources and provenance; attempts an anonymous MCP-access count. |
+| `record_research_use(research_id, version)` | Reports actual use of findings; sends only the report identifier/version. This is a declared signal, not a correctness vote. |
+| `open_submission_history()` | Returns the local My submissions link without creating a preview or contacting the community. |
 | `preview_contribution(...)` | Builds a local preview and offers an interactive review panel. It does not submit. |
 
 For a preview, the assistant prepares a self-contained public title, summary and report, 1–10 original public sources as `{ "title": "...", "url": "https://..." }`, and the actual model name (or `unknown`). The title must describe the public topic, not quote private conversation or project context. The backend fixes attribution to `Anonymous contributor` and derives the public research topic from the title. The skill proposes `CC-BY-4.0` unless you requested `CC0-1.0`; this proposal is not consent. The panel displays that proposed license and asks you to acknowledge it; it does not change the license. Ask for a new preview if you want a different supported permission. Do not invent a model or research date.
 
 The software is MIT licensed. The report text uses the separately selected **CC BY 4.0** or **CC0 1.0** permission; neither changes linked source rights. Model/evidence metadata supplied through MCP is contributor-declared and starts as **unverified**. Published or ready does not establish truth.
+
+For material new findings based on existing reports, `preview_contribution` accepts `lineage: {parents: [{research_id, version}], change_summary}`. Use up to five exact public report versions and a public change summary of up to 600 characters. The schema-3 packet keeps the earlier work intact and creates a separate moderated contribution. The review panel shows the development links and change summary. Retain original-source citations; several derivative reports are not independent corroboration. Paraphrasing an unchanged report alone should not prompt another contribution offer.
+
+Web openings, MCP accesses, helpfulness, declared reuse, outdated-information and disputed-information reports are separate approximate counters for a published revision. They are not unique people or reliability scores. Event bodies contain only report/version, event type and a random receipt; the counter database stores no IP, conversation, account or cross-report device identifier. Short-lived in-memory rate limiting still uses the connecting address. Anonymous clients can be imitated, so channel labels and votes are not authenticated endorsements. Access counting failure does not block reading. Repeated reuse calls within one local MCP session share a receipt. Server receipt deduplication lasts seven days; counters remain aggregate.
 
 The local server validates the packet and produces the exact preview. Read it before using the **send** or **keep private** buttons. The model has no submission tool. `contribution_decision` is reserved for the review UI and requires its hidden review nonce; the skill instructs the assistant never to call it or automate your choice. Changing content requires a fresh preview. Submission enters moderation; it does not instantly publish.
 
@@ -122,7 +128,11 @@ If your host, including a Codex version without inline MCP App support, cannot d
 
 ## Limits and troubleshooting
 
-Use **My submissions** in the review panel to see the latest 100 submissions saved on this computer. Opening the list only reads local records. **Refresh status** checks community review progress; published reports have a direct web link. **Withdraw submission** asks for confirmation and removes public access to the server copy; it cannot recall copies already downloaded by others. The page needs its MCP session to remain running. In a later session, a new preview's **My submissions** link returns to the same saved records.
+Use **My submissions** in the review panel or ask for `open_submission_history` to browse saved submissions in pages of 25. A new contribution preview is unnecessary. Opening the list only reads local records. **Refresh status** checks community review progress; published reports have a direct web link. **Withdraw submission** asks for confirmation and removes public access to the server copy; it cannot recall copies already downloaded by others. The page needs its MCP session to remain running. Request a new history link after starting a later session.
+
+If delivery reached the community but its response was lost, **Refresh status** can recover the saved submission in a later session using its existing OS-vault management key. This check does not upload the report again. Recovery requires a community server with the inbox status lookup endpoint; older servers return a connection error and keep the local delivery unconfirmed. Losing the management key prevents this recovery.
+
+Community search matches normalized term groups and sorts by publication time. A small explicit Turkish/English technology dictionary expands selected terms such as full-text search, ranking, sources and caching. All groups must match; unknown terms are retained. This is not general translation, semantic search or relevance ranking. Prefer a few distinctive technical terms, and try a shorter query or the original publication language before concluding that no useful report exists. A zero-result search alone does not prove the topic has never been researched.
 
 - `--local-url` accepts only `http://127.0.0.1:PORT` or `http://localhost:PORT`, with an explicit port. Requests always connect directly to loopback, ignore proxy environment settings, and do not follow redirects.
 - Requests are capped at 32 KiB; responses at 1 MiB; socket operations time out after 15 seconds. Report bodies over 12,000 characters are rejected rather than silently shortened. Select a self-contained report within the limit before previewing.

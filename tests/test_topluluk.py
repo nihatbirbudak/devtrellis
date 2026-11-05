@@ -229,6 +229,40 @@ class ToplulukTestleri(unittest.TestCase):
         self.assertEqual(response["coverage"]["checked_sources"], 0)
         self.assertNotEqual(feed_depo.path, self.store.path)
 
+    def test_kisisel_ve_inceleme_listeleri_yuzden_sonra_aranir_ve_sayfalanir(self):
+        self.login()
+        moderator = self.login("reviewer", self.client_for())
+        wanted = None
+        for index in range(105):
+            title = "Ölçümler sayfalama hedefi" if index == 0 else f"Araştırma {index}"
+            result = self.store.gonder(self.author, {
+                "packet": self.packet(title=title), "expected_version": 0,
+                "idempotency_key": f"pagination-synthetic-{index:04d}"})
+            if index == 0:
+                wanted = result["card"]["id"]
+            self.now[0] += 1
+        self.store.gonder(self.other, {"packet": self.packet(title="Diğer hesabın kaydı"),
+                                     "expected_version": 0, "idempotency_key": "pagination-other-0001"})
+        for route, client, total, final_offset in (("mine", self.client, 105, 100),
+                                                   ("review", moderator, 106, 101)):
+            path = "/api/community/" + route
+            page = client.get(path, params={"offset": final_offset, "limit": 24})
+            self.assertEqual(page.status_code, 200, page.text)
+            self.assertEqual(page.json()["total"], total)
+            self.assertEqual(len(page.json()["items"]), 5)
+            self.assertIn(wanted, [item["id"] for item in page.json()["items"]])
+            found = client.get(path, params={"query": "HEDEFİ ÖLÇÜMLER", "limit": 24})
+            self.assertEqual(found.status_code, 200, found.text)
+            self.assertEqual(found.json()["total"], 1)
+            self.assertEqual(found.json()["items"][0]["id"], wanted)
+            self.assertEqual(client.get(path, params={"query": "missing word"}).json()["total"], 0)
+            self.assertEqual(client.get(path, params={"query": "x" * 201}).status_code, 422)
+            self.assertEqual(client.get(path, params={"offset": 9223372036854775808}).status_code, 422)
+        self.assertEqual(self.client.get("/api/community/review", params={"query": "hedefi"}).status_code, 403)
+        anonymous = self.client_for()
+        self.assertEqual(anonymous.get("/api/community/mine", params={"offset": 100}).status_code, 401)
+        self.assertEqual(anonymous.get("/api/community/cards", params={"query": "hedefi"}).json()["total"], 0)
+
     def test_arama_kelimelerin_sirasindan_bagimsiz_normalize_and_eslesmesi_kullanir(self):
         self.login()
         moderator = self.login("reviewer", self.client_for())

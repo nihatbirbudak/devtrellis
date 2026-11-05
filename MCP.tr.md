@@ -107,7 +107,9 @@ Denemek için: **“Bu konuyu araştırmadan önce DevTrellis'te yararlı bir ra
 | Araç | İşlev |
 | --- | --- |
 | `search_research(query, limit=10)` | Yerel uygulama üzerinden 1–10 topluluk araştırması arar. |
-| `read_research(research_id)` | Aramada bulunan raporu, kaynaklarını ve üretim bilgisini okur. |
+| `read_research(research_id, version=null)` | Güncel veya tam kamu sürümünü kaynaklarıyla okur; anonim MCP erişim sayımını dener. |
+| `record_research_use(research_id, version)` | Bulgulardan gerçekten yararlanıldığını yalnız rapor kimliği/sürümüyle bildirir. Doğruluk oyu değildir. |
+| `open_submission_history()` | Önizleme hazırlamadan veya topluluğa bağlanmadan yerel Gönderimlerim bağlantısını verir. |
 | `preview_contribution(...)` | Yerel önizlemeyi ve etkileşimli inceleme panelini hazırlar; göndermez. |
 
 Önizleme için asistan kendi başına anlaşılır kamusal başlık, özet ve rapor, `{ "title": "...", "url": "https://..." }` biçiminde 1–10 özgün kamusal kaynak ve gerçek model adını (bilinmiyorsa `unknown`) hazırlar. Başlık kamusal konuyu anlatmalı, özel konuşma veya proje bağlamını kopyalamamalıdır. Arka uç yazarı `Anonymous contributor` olarak sabitler ve kamusal araştırma konusunu başlıktan türetir. `CC0-1.0` istemediysen skill `CC-BY-4.0` önerir; bu öneri onay verdiğin anlamına gelmez. Panel önerilen lisansı gösterip kutuyla onayını ister; lisansı değiştirmez. Farklı desteklenen bir izin için yeni önizleme iste. Model adı veya üretim tarihi uydurulmaz.
@@ -122,7 +124,17 @@ Uygulaman paneli gösteremiyorsa — örneğin satır içi MCP App desteklemeyen
 
 `provider` araştırma motorunu belirtir: `codex`, `claude`, `nvidia` veya `unknown`. Gerçek model adı ayrı alandır. `topic`, aracın sunduğu `ai`, `software`, `security`, `data` gibi kategori kodlarından biridir; araştırmanın özel konusunu `title` alanına yaz. Geçersiz kategoriler yerel API'ye istek gitmeden reddedilir.
 
-İnceleme panelindeki **Gönderimlerim** bağlantısı bu bilgisayarda kayıtlı son 100 gönderiyi gösterir. Liste açılışı yalnız yerel kayıtları okur. **Durumu yenile** topluluktaki inceleme sonucunu sorgular; yayımlanmış raporun doğrudan web bağlantısı görünür. **Gönderiyi geri çek**, onayından sonra sunucudaki kopyanın kamusal erişimini kapatır; başkalarının önceden indirdiği kopyaları geri alamaz. Sayfa MCP oturumu açıkken çalışır. Daha sonraki oturumda yeni bir önizlemenin **Gönderimlerim** bağlantısıyla aynı kayıtlara dönersin.
+İnceleme panelindeki **Gönderimlerim** veya `open_submission_history` aracı kayıtları 25'lik sayfalarla gösterir; yeni katkı önizlemesi gerekmez. Liste açılışı yalnız yerel kayıtları okur. **Durumu yenile** topluluktaki inceleme sonucunu sorgular; yayımlanmış raporun doğrudan web bağlantısı görünür. **Gönderiyi geri çek**, onayından sonra sunucudaki kopyanın kamusal erişimini kapatır; başkalarının önceden indirdiği kopyaları geri alamaz. Sayfa MCP oturumu açıkken çalışır; sonraki oturumda yeni geçmiş bağlantısı isteyebilirsin.
+
+Gönderi topluluğa ulaşıp cevabı kaybolduysa **Durumu yenile**, sonraki oturumda mevcut güvenli kasa yönetim anahtarıyla kaydı bulabilir. Bu sorgu araştırmayı yeniden yüklemez. Kurtarma için sunucunun inbox durum bulma uç noktasını desteklemesi gerekir; eski sunucuda bağlantı hatası gösterilir ve yerel teslim belirsiz olarak kalır. Yönetim anahtarı kaybolursa bu yöntemle kurtarma yapılamaz.
+
+Topluluk araması normalleştirilmiş terim gruplarını arar ve yayın tarihine göre sıralar. Küçük bir Türkçe/İngilizce teknik sözlük tam metin arama, sıralama, kaynak ve önbellek gibi belirli karşılıkları genişletir. Bütün gruplar eşleşmeli; bilinmeyen terimler atılmaz. Genel çeviri, anlamsal arama veya ilgililik sıralaması değildir. Birkaç ayırt edici teknik terim kullan; uygun rapor olmadığına karar vermeden önce daha kısa sorgu veya özgün yayının dilini dene. Sıfır sonuç, konunun daha önce araştırılmadığını tek başına kanıtlamaz.
+
+## Geliştirilmiş araştırmalar ve göstergeler
+
+Yeni kamu bulguları ekleyen araştırmada `lineage: {parents: [{research_id, version}], change_summary}` gönderilir. En fazla beş temel araştırmanın tam kamu sürümü ve en fazla 600 karakterlik değişiklik özeti kullanılır. Şema 3, önceki çalışmayı koruyarak ayrı bir inceleme kaydı oluşturur. Önizleme bu bağlantıları ve özeti gösterir. Özgün kaynakları koru; birbirinden türeyen raporlar bağımsız kanıt sayılmaz. Yalnız yeniden ifade edilen metin için yeni katkı önerilmemeli.
+
+Web açılışı, MCP erişimi, yararlı bulma, bildirilen kullanım, güncellik ve itiraz sayımları ayrı ve yaklaşık göstergelerdir; benzersiz kişi veya doğruluk puanı değildir. Olaylarda yalnız rapor/sürüm, tür ve rastgele tekrar teslim kimliği bulunur. Sayaç veritabanında IP, sohbet, hesap veya raporlar arasında ortak cihaz kimliği saklanmaz. Bellekteki kısa süreli hız sınırı bağlantı adresini kullanır. Anonim istemci türü taklit edilebildiğinden kanal ve oylar doğrulanmış kimlik beyanı sayılmaz. Sayım hatası okumayı engellemez. Aynı yerel MCP oturumundaki tekrar kullanım bildirimleri tek kimliği kullanır; sunucu tekrar teslim kimliklerini yedi gün tutar, toplu sayımlar kalır.
 
 - `--local-url` yalnız açık portlu `http://127.0.0.1:PORT` veya `http://localhost:PORT` kabul eder. Bağlantı doğrudan loopback'e yapılır; ortam proxy ayarları ve HTTP yönlendirmeleri kullanılmaz.
 - İstek en fazla 32 KiB, yanıt en fazla 1 MiB olur; soket işlemleri 15 saniyede zaman aşımına uğrar. 12.000 karakterden uzun rapor sessizce kesilmez, reddedilir. Önizlemeden önce sınır içinde kendi başına anlaşılır bir rapor seç.

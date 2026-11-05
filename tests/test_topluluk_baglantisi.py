@@ -343,6 +343,72 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.assertTrue(recovered["duplicate"])
         self.assertEqual(len(self.vault.values), 1)
 
+    def test_lost_response_recovers_after_restart_without_sending_the_report_again(self):
+        exchange = self.transport.handler
+
+        def dropped(request):
+            exchange(request)
+            raise httpx.ReadError("untrusted delivery detail", request=request)
+
+        self.bridge.transport = httpx.MockTransport(dropped)
+        preview = self.prepare()
+        with self.assertRaises(ToplulukBaglantiHatasi):
+            self.send(preview)
+        local = self.bridge.listele()["items"][0]
+        self.assertIsNone(local["submission"])
+        restarted = ToplulukBaglantisi(self.depo, transport=self.transport, vault=self.vault)
+        self.assertEqual(restarted.previews, {})
+        before = len(self.calls)
+        recovered = restarted.yonet(local["local_id"])
+        self.assertEqual(recovered["submission"]["status"], "pending")
+        self.assertEqual(len(self.calls), before + 1)
+        self.assertEqual(self.calls[-1].method, "GET")
+        self.assertEqual(self.calls[-1].url.path, "/api/community/inbox/status")
+        self.assertEqual(self.calls[-1].content, b"")
+        self.assertEqual(self.calls[-1].url.query, b"")
+        self.assertEqual(self.calls[-1].headers["authorization"], self.calls[0].headers["authorization"])
+        with self.remote.state.community.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM community_inbox").fetchone()[0], 1)
+        self.assertEqual(restarted.yonet(local["local_id"], {"expected_version": 1})["submission"]["status"], "withdrawn")
+
+    def test_unreceived_or_unsupported_recovery_keeps_unknown_delivery_without_resubmitting(self):
+        self.bridge.transport = httpx.MockTransport(lambda request: httpx.Response(503, json={"detail": "test unavailable"}))
+        with self.assertRaises(ToplulukBaglantiHatasi):
+            self.send(self.prepare())
+        local = self.bridge.listele()["items"][0]
+        reads = []
+
+        def legacy_server(request):
+            reads.append(request)
+            return httpx.Response(404, json={"detail": "private remote response"})
+
+        restarted = ToplulukBaglantisi(self.depo, transport=httpx.MockTransport(legacy_server), vault=self.vault)
+        with self.assertRaises(ToplulukBaglantiHatasi) as caught:
+            restarted.yonet(local["local_id"])
+        self.assertNotIn("private remote response", str(caught.exception))
+        self.assertEqual([(request.method, request.content) for request in reads], [("GET", b"")])
+        self.assertIsNone(restarted.listele()["items"][0]["submission"])
+        with self.remote.state.community.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM community_inbox").fetchone()[0], 0)
+
+    def test_recovery_lookup_requires_own_capability_and_rejects_browser_context(self):
+        sent = self.send(self.prepare())
+        path = "/api/community/inbox/status"
+        token = next(iter(self.vault.values.values()))
+        headers = {"X-DevTrellis-Inbox": "1", "Authorization": "Bearer " + token}
+        response = self.remote_client.get(path, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["submission"], sent["submission"])
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertNotIn(token, response.text)
+        self.assertNotIn("packet", response.json())
+        self.assertEqual(self.remote_client.get(path).status_code, 403)
+        self.assertEqual(self.remote_client.get(path, headers={"X-DevTrellis-Inbox": "1"}).status_code, 401)
+        self.assertEqual(self.remote_client.get(path, headers={**headers, "Authorization": "Bearer " + "x" * 43}).status_code, 404)
+        for browser in ({"Origin": COMMUNITY_URL}, {"Cookie": "example=synthetic"}, {"Sec-Fetch-Site": "same-origin"}):
+            with self.subTest(browser=browser):
+                self.assertEqual(self.remote_client.get(path, headers={**headers, **browser}).status_code, 403)
+
     def test_search_read_import_reuses_published_research_without_model(self):
         sent = self.send(self.prepare())
         store = self.remote.state.community
@@ -377,6 +443,53 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
                 self.bridge.ara({"query": "test"})
         with self.assertRaises(ValueError):
             self.bridge.oku("https://127.0.0.1/private")
+
+    def test_withdraw_invalid_version_never_leaves_local_machine(self):
+        sent = self.send(self.prepare())
+        before = len(self.calls)
+        for invalid in (True, 0, -1, 1.0, "private-version-value", {"private": "context"},
+                        [], None, 9223372036854775808):
+            with self.subTest(value=invalid), self.assertRaises(ValueError) as caught:
+                self.bridge.yonet(sent["local_id"], {"expected_version": invalid})
+            self.assertNotIn("private-version-value", str(caught.exception))
+            self.assertEqual(len(self.calls), before)
+
+    def test_delayed_status_cannot_replace_newer_withdrawal_or_remote_identity(self):
+        sent = self.send(self.prepare())
+        pending = copy.deepcopy(sent["submission"])
+        withdrawn = self.bridge.yonet(sent["local_id"], {"expected_version": pending["version"]})
+        delayed = ToplulukBaglantisi(Depo(self.depo.path, []), transport=self.transport, vault=self.vault)
+        result = delayed.kaydet(sent["local_id"], {"submission": pending})
+        self.assertEqual(result["submission"], withdrawn["submission"])
+        self.assertEqual(self.bridge.listele()["items"][0]["submission"], withdrawn["submission"])
+        with self.assertRaises(ToplulukBaglantiHatasi):
+            delayed.kaydet(sent["local_id"], {"submission": {**withdrawn["submission"], "id": "f" * 32}})
+        self.assertEqual(self.bridge.yonet(sent["local_id"])["submission"], withdrawn["submission"])
+
+    def test_withdrawal_conflict_preserves_snapshot_then_refresh_recovers(self):
+        preview = self.prepare()
+        self.assertEqual(self.calls, [])
+        sent = self.send(preview)
+        store = self.remote.state.community
+        store.hesap_ekle("reviewer", "Reviewer", "moderator", "a-long-test-password")
+        moderator = store.kimlik_dogrula("reviewer", "a-long-test-password")
+        store.karar(moderator, sent["submission"]["id"], {"expected_version": 1, "decision": "publish", "note": "Reviewed"})
+        found = self.bridge.ara({"query": "Ortak"})
+        self.assertEqual(found["total"], 1)
+        self.assertEqual(found["items"][0]["id"], sent["submission"]["id"])
+        published = self.bridge.oku(sent["submission"]["id"])
+        self.assertEqual(published["packet"], preview["packet"])
+        with self.assertRaisesRegex(ToplulukBaglantiHatasi, "durumu değişti"):
+            self.bridge.yonet(sent["local_id"], {"expected_version": 1})
+        self.assertEqual(self.bridge.listele()["items"][0]["submission"], sent["submission"])
+        current = self.bridge.yonet(sent["local_id"])["submission"]
+        self.assertEqual(current["status"], "published")
+        withdrawn = self.bridge.yonet(sent["local_id"], {"expected_version": current["version"]})
+        self.assertEqual(withdrawn["submission"]["status"], "withdrawn")
+        self.assertEqual(store.listele()["total"], 0)
+        self.assertEqual(self.bridge.ara({"query": "Ortak"})["total"], 0)
+        with self.assertRaises(ToplulukBaglantiHatasi):
+            self.bridge.oku(sent["submission"]["id"])
 
     def test_local_api_csrf_guards_preview_send_and_search(self):
         app = FastAPI()

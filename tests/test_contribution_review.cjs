@@ -117,3 +117,14 @@ test("MCP kaynak self-contained kalır; inceleme paketi protokol ve UI dışınd
   const html=source("mcp-contribution.html");assert.doesNotMatch(html,/<script[^>]+src=|<link[^>]+href=|<iframe/i);assert.match(html,/connect-src 'none'/);
   assert.ok(html.includes(source("contribution-review.js").trim()),"MCP bundle and local review core must stay identical");
 });
+
+test("yerel ve MCP önizleme araştırmanın tam kaynak sürümünü ve eklenen bulguları gönderimden önce gösterir",async()=>{
+  for(const surface of ["local","mcp"]){
+    const app=harness({surface});app.fixture.data.packet.schema_version=3;app.fixture.data.packet.lineage={parents:[{research_id:"a".repeat(32),version:2},{research_id:"../private",version:1}],change_summary:"New <script>public findings</script> and additional measurements."};
+    if(surface==="mcp"){app.initialize();app.deliver();}else await app.ready();
+    assert.match(app.root.textContent,/Research this builds on/);assert.match(app.root.textContent,/New <script>public findings<\/script>/);
+    const link=app.flatten(app.root).find(node=>node.tagName==="A"&&String(node.href).includes("?card="));assert.equal(link.href,"https://devtrellis.org/?card="+"a".repeat(32)+"&version=2");
+    assert.ok(app.flatten(app.root).every(node=>!String(node.href||"").includes("private")&&node.tagName!=="SCRIPT"));assert.equal(app.byId("review-send").disabled,true);
+    assert.ok(app.fixture.requests.every(row=>!row.options.method));assert.ok(app.fixture.messages.every(row=>row.message.method!=="tools/call"));
+  }
+});

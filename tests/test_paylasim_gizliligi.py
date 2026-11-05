@@ -60,6 +60,26 @@ class PaylasimGizliligiTestleri(unittest.TestCase):
                     kamu_kopyasi(paket(sources=[{"title": "Public source", "url": address}]))
                 self.assertNotIn(address, str(caught.exception))
 
+    def test_sensitive_patterns_are_cleaned_in_every_free_text_metadata_field(self):
+        secret = "nvapi-" + "SYNTHETICEXAMPLE" * 2
+        source = paket(schema_version=2, title="Research user@example.org", summary="Contact user@example.org",
+                       body="Research findings only.", author="Unshared account name", tags=["user@example.org"],
+                       sources=[{"title": "Contact user@example.org", "url": "https://example.org/public"}],
+                       provenance={"question": "Private request context", "claim_text": "Private claim context",
+                                   "model": secret, "provider": "unknown", "generated_at": "2026-11-05T10:00:00+00:00",
+                                   "topic": "ai", "language": "en", "source_url": "https://example.org/public",
+                                   "evidence_status": "verified", "modified": False})
+        before = copy.deepcopy(source)
+        cleaned, count = kamu_kopyasi(source)
+        serialized = json.dumps(cleaned)
+        for value in (secret, "user@example.org", "Unshared account name", "Private request context", "Private claim context"):
+            self.assertNotIn(value, serialized)
+        self.assertEqual(cleaned["provenance"]["question"], cleaned["title"])
+        self.assertEqual(cleaned["provenance"]["model"], "[redacted]")
+        self.assertEqual(cleaned["provenance"]["evidence_status"], "unverified")
+        self.assertEqual(source, before)
+        self.assertGreaterEqual(count, 8)
+
     def test_tracking_is_removed_and_youtube_exception_is_narrow(self):
         self.assertEqual(kamusal_url("https://example.org/article?utm_source=feed&gclid=tracking#section"),
                          "https://example.org/article")
