@@ -6,6 +6,23 @@ The community is a separate process and database. Its main flow is **find existi
 
 The service does not store model credentials, generate research or review submissions automatically. It supports **one application process** with SQLite and a small moderated pilot. An operator-created moderator account manages the normal review queue; reader and anonymous contributor accounts are not required. Invited accounts and manual file exchange remain optional paths.
 
+## Public pages and private requests
+
+These community pages offer English and Turkish without an account:
+
+| Page | Purpose |
+| --- | --- |
+| [About](https://devtrellis.org/about) | The community's purpose, current scope and limitations. |
+| [Guidelines](https://devtrellis.org/guidelines) | Sources, corrections, attribution and respectful participation. |
+| [Volunteer application](https://devtrellis.org/contribute) | A private introduction for ongoing help with research, code, translation, design or sources. |
+| [Support](https://devtrellis.org/support) | Setup guidance and a private route for a question, bug, content concern or privacy concern. |
+
+Applying is not required to read, research or share a research report. Volunteer applications and support messages enter a separate private request inbox; they are not research submissions, do not appear in public search and grant no research-content license. The same page paths work on a local community installation.
+
+The form first shows a local preview. Only **Send to operators** sends the reviewed details. Name and email are optional; an email address is needed if the sender wants a reply. The service confirms receipt on screen, but sends no automatic email and promises no response time or service-level agreement. Operators review messages manually. A lost or uncertain delivery response keeps the same message and retry identity to avoid duplicate records.
+
+Do not ask senders for credentials, private conversations, full logs or private files. Account-free submission does not hide connection metadata from hosting infrastructure. The [private request operation](#private-request-operation) section describes access, retention and capacity.
+
 ## Reviewed editorial reports
 
 An operator with direct server filesystem access can publish a source-checked public research file using `topluluk.py --db PATH publish-reviewed REPORT.json --sha256 REVIEWED_FILE_SHA256 --note "Review note"`. Review the exact file and its sources before running it. A mismatched hash or a packet requiring privacy redaction is rejected. The command uses disabled internal contributor/reviewer records for its two recorded stages; these cannot sign in and do not represent two independent human reviewers. Repeating the same file is idempotent, and a withdrawn or hidden report is not automatically republished. This local command is not exposed as an HTTP or model tool and does not automate the user's contribution controls.
@@ -70,6 +87,32 @@ The public API does not enable cross-origin browser access. Session cookies are 
 - At most 200 anonymous cards can be pending and 5,000 anonymous cards can exist in this pilot database. Full capacity returns HTTP 503. Counts are checked atomically; no old contribution is silently deleted to admit a new one.
 - IP request budgets are bounded in-memory counters for one process and reset after restart. Queue and total-record limits persist in SQLite. These limits are a pilot safeguard, not a complete abuse-prevention system; monitor backlog and capacity before expanding access.
 - Do not log Authorization, Cookie, CSRF values, request bodies or private research queries. The application access log is disabled. Configure the reverse proxy's logging and retention deliberately; account-free contribution does not make network addresses invisible to hosting infrastructure.
+
+## Private request operation
+
+The operator inbox is `/requests` on the community site. Its HTML shell is public; listing, reading and changing private requests require an authenticated **moderator** session. A contributor account cannot access them. The browser form uses an anonymous session, same-origin checks and CSRF protection for delivery; it does not require sign-up. The service does not send these messages to a model or publish them automatically.
+
+Operators with filesystem access to the existing community database can also use the local CLI:
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 topluluk.py --db data/community.sqlite3 requests-list --status new --offset 0 --limit 25
+.\.venv\Scripts\python.exe -X utf8 topluluk.py --db data/community.sqlite3 requests-show REQUEST_ID
+.\.venv\Scripts\python.exe -X utf8 topluluk.py --db data/community.sqlite3 requests-status REQUEST_ID in_review
+.\.venv\Scripts\python.exe -X utf8 topluluk.py --db data/community.sqlite3 requests-status REQUEST_ID closed
+```
+
+Replace `REQUEST_ID` with the 32-character identifier from the list. Omitting `--status` lists every status; accepted values are `new`, `in_review` and `closed`. `requests-list` includes subjects and status, but excludes message bodies and contact fields. `requests-show` reveals the private message and any supplied name/email. `requests-status` changes only the review state and prints a small receipt; closing a request neither sends a reply nor deletes it. These commands rely on the operator's filesystem permission, not a browser login.
+
+Treat subjects, messages and contact fields as private. Do not copy real requests or CLI output into model prompts, agent mail, public issues or research packets. Review them in the authorized operator interface or terminal. Status changes do not send email; any reply is a separate manual action using the supplied contact address. The submitted address is not verified identity.
+
+### Private request retention and limits
+
+- The first creation time starts a **90-day** retention period. Expired rows are deleted at the next valid private-request operation: submit, list, detail or status change. Browsing public research does not trigger this cleanup. There is no separate scheduled cleanup job, so an idle request service does not promise physical deletion exactly on day 90.
+- Retrying the same message or changing its status does not extend retention. After a backup is restored, expired requests are removed before a valid private-request operation returns them. Backups can contain private requests; their access, retention and rotation are separate operator responsibilities. This cleanup does not erase existing backup copies.
+- At most **1,000 total requests** and **200 requests in `new` status** can exist. Capacity is checked atomically. New delivery or reopening a request into a full `new` queue returns HTTP 429; no unexpired record is silently deleted to admit a new request. An unchanged retry can return its existing receipt even at capacity.
+- Delivery allows **4 requests per IP per minute**, **20 per IP per UTC day**, and **60 requests per minute across the service**. Retries and rejected attempts can consume these budgets. The counters are in memory for the single application process and reset on restart; the database capacity persists.
+- The complete delivery body is limited to **16 KiB** and must have JSON content type and a matching Content-Length. Subjects allow 160 characters, messages 4,000, optional names 80 and optional email addresses 254. Browser validation is also enforced by the server. Keep the reverse proxy's client-IP handling and body limits compatible.
+- Keep the database, backups and logs outside the web root. Do not log request bodies, contact fields, Cookie or CSRF values. The request records are a separate table in the community database; this is a public-access boundary, not protection from a filesystem-authorized operator.
 
 ## Populate developments
 

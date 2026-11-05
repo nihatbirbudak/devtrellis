@@ -44,6 +44,15 @@ def main(argv=None):
     publish.add_argument("packet", type=Path)
     publish.add_argument("--sha256", required=True, help="İncelenen dosyanın SHA256 özeti")
     publish.add_argument("--note", required=True, help="Kaynak incelemesinin kısa notu")
+    requests_list = sub.add_parser("requests-list", help="Özel başvuru/destek kutusunu listele; iletişim ve mesaj gövdesi gösterilmez")
+    requests_list.add_argument("--status", choices=["new", "in_review", "closed"], default="")
+    requests_list.add_argument("--offset", type=int, default=0)
+    requests_list.add_argument("--limit", type=int, default=25)
+    requests_show = sub.add_parser("requests-show", help="Bir özel başvuru/destek mesajını JSON olarak göster")
+    requests_show.add_argument("id")
+    requests_status = sub.add_parser("requests-status", help="Özel başvuru/destek talebinin durumunu değiştir")
+    requests_status.add_argument("id")
+    requests_status.add_argument("status", choices=["new", "in_review", "closed"])
     backup = sub.add_parser("backup", help="Yeni dosyaya tutarlı SQLite yedeği al")
     backup.add_argument("target", type=Path)
     restore = sub.add_parser("restore", help="Yedeği yeni veritabanına aç; mevcut dosyayı değiştirme")
@@ -83,6 +92,21 @@ def main(argv=None):
             result = incelenen_dosyayi_yayinla(args.db, args.packet, args.sha256, args.note)
             print(json.dumps({"id": result["card"]["id"], "version": result["card"]["version"],
                               "status": result["card"]["status"], "duplicate": result["duplicate"]}))
+        elif args.command in ("requests-list", "requests-show", "requests-status"):
+            if not args.db.is_file():
+                raise ValueError("Topluluk veritabanı bulunamadı.")
+            import json
+            from radar.topluluk_talepleri import TalepDeposu
+            requests = TalepDeposu(args.db)
+            if args.command == "requests-list":
+                result = requests.listele(status=args.status, offset=args.offset, limit=args.limit)
+            elif args.command == "requests-show":
+                result = requests.oku(args.id)
+            else:
+                detail = requests.durum_degistir(args.id, args.status)
+                result = {key: detail[key] for key in ("id", "status", "created_at", "updated_at")}
+            # Gönderilen metin komut veya terminal kontrol dizisi olarak yorumlanmaz.
+            print(json.dumps(result, ensure_ascii=True))
         elif args.command == "backup":
             if not args.db.is_file():
                 raise ValueError("Topluluk veritabanı bulunamadı.")

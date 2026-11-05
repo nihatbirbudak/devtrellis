@@ -3,6 +3,12 @@
   "use strict";
   const BRAND = "DevTrellis";
   const EN = {
+    "Topluluğu tanı":"Meet the community",
+    "Hakkımızda":"About us",
+    "Topluluk kuralları":"Community guidelines",
+    "Katkıda bulun":"Contribute",
+    "Destek":"Support",
+    "Başvuru ve destek kutusu":"Applications and support inbox",
     "Topluluk kütüphane sayımı geçersiz.":"The community library count is invalid.",
     "Araştırma sürümü pozitif olmalı.":"The research version must be positive.",
     "İstenen araştırma sürümü alınamadı.":"The requested research version could not be retrieved.",

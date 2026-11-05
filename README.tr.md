@@ -8,6 +8,8 @@ DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes 
 
 Önce **[devtrellis.org](https://devtrellis.org)** üzerinde hazır araştırmayı ara. Başlığa veya **Araştırmayı oku** düğmesine tıklayarak tam raporu oku; GitHub, proje ve özgün kaynak bağlantılarını incele. Tarihini, kaynaklarını, kapsamını ve sınırlarını kontrol et. Yeterliyse kullan; eksik veya eski kalan kısmı kendi modelinle yeniden araştır. Sitede okumak için hesap, kurulum, API anahtarı veya yapay zekâ asistanı gerekmez. Hazır raporu okumak ve içe almak model çağırmaz.
 
+Topluluk sayfaları: [Hakkımızda](https://devtrellis.org/about) · [Kurallar](https://devtrellis.org/guidelines) · [Katkı başvurusu](https://devtrellis.org/contribute) · [Destek](https://devtrellis.org/support). Hepsi hesap gerektirmeden İngilizce ve Türkçe kullanılabilir. Başvuru ve destek mesajları özeldir; araştırma okumak veya paylaşmak için başvuru gerekmez.
+
 Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** veya **Önizle ve paylaş** seç: kamusal metni, kaynakları, model bilgisini ve metin iznini kontrol edip onayladığın anonim kopyayı incelemeye gönder. Kişisel yazar adı ve özel soru/iddia alanları eklenmez. Katkı isteğe bağlıdır; hesap açmak veya dosya taşımak gerekmez. Böylece bulma, kontrol etme, yeniden kullanma ve katkı sunma döngüsüyle ortak bilgi birikir. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları ayırır.
 
 ## Bugünkü kapsam

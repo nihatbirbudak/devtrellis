@@ -8,6 +8,8 @@ DevTrellis is an open technology knowledge community for hobbyists and professio
 
 Start at **[devtrellis.org](https://devtrellis.org)**: open a title or choose **Read research** to read the full shared report and follow its GitHub, project and original source links. Check its date, sources, scope and limitations. If it answers your question, reuse it; if something is missing or outdated, research that part with your own model. Reading on the site needs no account, installation, API key or AI assistant. Reading and importing an existing report do not call a model.
 
+Community pages: [About](https://devtrellis.org/about) · [Guidelines](https://devtrellis.org/guidelines) · [Volunteer application](https://devtrellis.org/contribute) · [Support](https://devtrellis.org/support). All offer English and Turkish without an account. Applications and support messages are private; applying is not required to read or share research.
+
 Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact public text, sources, model details and content permission before sending an anonymous copy for moderation. Private question/claim metadata and author identity are excluded. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
 
 ## Two ways to use it

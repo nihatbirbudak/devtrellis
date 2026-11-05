@@ -1,3 +1,12 @@
+# DevTrellis 0.1.0-alpha.8
+
+## Community pages and private requests
+
+- English and Turkish About, Guidelines, Contribute and Support pages are linked from the community home. Reading and research contribution remain account-free; the volunteer application is optional and separate.
+- Visitors can preview a support or volunteer message locally before explicitly sending it. Optional contact fields are private. Language changes preserve drafts; uncertain delivery retries keep the same message and request identifier.
+- Private requests have a moderator-only inbox and operator CLI. They never become public research cards. Role checks, session-bound CSRF, body limits, rate limits and atomic capacity checks protect intake. Malformed-message validation errors do not echo private text.
+- Requests expire after 90 days from initial creation and are removed on subsequent valid request-store operations. Backups rotate separately. No automatic email, guaranteed reply time or complete anonymity is promised.
+
 # DevTrellis 0.1.0-alpha.7
 
 ## Search improvements from diverse-topic trials

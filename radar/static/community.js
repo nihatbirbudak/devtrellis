@@ -246,6 +246,7 @@
     byId("account-name").textContent = user?.display_name || user?.username || "";
     byId("community-tab-mine").hidden = !user;
     byId("community-tab-review").hidden = user?.role !== "moderator";
+    if (byId("request-management")) byId("request-management").hidden = user?.role !== "moderator";
     byId("contribute").disabled = !state.session || state.fileBusy;
   }
   async function loadSession() { state.session = await request("/session"); renderSession(); }

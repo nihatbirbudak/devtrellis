@@ -9,6 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import FileResponse, JSONResponse
 
 from radar.depo import Depo
@@ -18,6 +20,7 @@ from radar.kaynak_havuzu import kaynaklari_oku
 from radar.konular import konulari_listele
 from radar.marka import PRODUCT_NAME, VERSION
 from radar.topluluk_depo import ToplulukDeposu, ToplulukHatasi
+from radar.topluluk_talepleri import TalepDeposu
 
 
 COOKIE = "devtrellis_session"
@@ -72,6 +75,7 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     origin = adresi_dogrula(public_url, local_pilot)
     authority = urlsplit(origin).netloc
     store = ToplulukDeposu(db_path, clock=clock)
+    requests_store = TalepDeposu(db_path, clock=clock)
     feed_path = Path(feed_db_path) if feed_db_path else Path(db_path).with_name("community-feed.sqlite3")
     if feed_path.resolve() == Path(db_path).resolve():
         raise ValueError("Haber deposu ve topluluk deposu ayrı dosyalar olmalı.")
@@ -81,7 +85,15 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     limiter = IstekSiniri(clock)
     app = FastAPI(title=f"{PRODUCT_NAME} Community", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.community = store
+    app.state.requests = requests_store
     app.state.feed_depo = feed_depo
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation(request, exc):
+        if request.url.path == "/api/community/requests" or request.url.path.startswith("/api/community/requests/"):
+            # Framework errors otherwise echo malformed private message bodies and query values.
+            return JSONResponse({"detail": "Talep biçimi geçersiz; alanları kontrol edin."}, status_code=422)
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
@@ -100,6 +112,7 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         inbox_control = ((request.method == "GET" and re.fullmatch(r"/api/community/inbox/[^/]+", request.url.path)) or
                          (request.method == "POST" and re.fullmatch(r"/api/community/inbox/[^/]+/withdraw", request.url.path)))
         inbox_call = inbox_create or inbox_control
+        contact_create = request.method == "POST" and request.url.path == "/api/community/requests"
         event_write = request.method == "POST" and re.fullmatch(r"/api/community/cards/[^/]+/events", request.url.path)
         event_client = event_write and "x-devtrellis-client" in request.headers
         if event_client and (request.headers.get("x-devtrellis-client") != "1" or
@@ -113,15 +126,19 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
                     request.headers.get("x-devtrellis-inbox") != "1"):
                 return JSONResponse({"detail": "Bu teslim yolu yerel uygulamanın sunucu bağlantısını gerektirir."}, status_code=403)
         mutation = request.method not in {"GET", "HEAD", "OPTIONS"}
-        category = ("inbox" if inbox_create else "inbox-control" if inbox_control else
+        category = ("contact" if contact_create else "inbox" if inbox_create else "inbox-control" if inbox_control else
                     "event" if event_write else "login" if request.url.path == "/api/community/login" else "write" if mutation else "read")
-        limit = {"login": 6, "write": 40, "read": 240, "inbox": 4, "inbox-control": 30, "event": 60}[category]
+        limit = {"contact": 4, "login": 6, "write": 40, "read": 240, "inbox": 4, "inbox-control": 30, "event": 60}[category]
         address = request.client.host if request.client else "unknown"
         if not limiter.izin(address, category, limit):
             return JSONResponse({"detail": "İstek sınırına ulaşıldı; bir dakika sonra tekrar deneyin."},
                                 status_code=429, headers={"Retry-After": "60"})
         if inbox_create and not limiter.izin(address, "inbox-daily", 20, period=86400):
             return JSONResponse({"detail": "Günlük gönderim sınırına ulaşıldı; daha sonra tekrar deneyin."},
+                                status_code=429, headers={"Retry-After": "86400"})
+        if contact_create and (not limiter.izin(address, "contact-daily", 20, period=86400) or
+                               not limiter.izin("all", "contact-total", 60)):
+            return JSONResponse({"detail": "Talep sınırına ulaşıldı; daha sonra tekrar deneyin."},
                                 status_code=429, headers={"Retry-After": "86400"})
         if event_write and (not limiter.izin(address, "event-daily", 2000, period=86400) or
                             not limiter.izin("all", "event-total", 600)):
@@ -138,6 +155,8 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
                 length = -1
             if length < 0 or request.headers.get("transfer-encoding"):
                 return JSONResponse({"detail": "İstek uzunluğu gerekli."}, status_code=411)
+            if contact_create and length > 16384:
+                return JSONResponse({"detail": "Talep en fazla 16 KiB olabilir."}, status_code=413)
             if length > BODY_LIMIT:
                 return JSONResponse({"detail": "İstek en fazla 64 KiB olabilir."}, status_code=413)
             body = await request.body()
@@ -186,6 +205,34 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     @app.get("/")
     def home():
         return FileResponse(static / "community.html")
+
+    @app.get("/about")
+    @app.get("/guidelines")
+    @app.get("/contribute")
+    @app.get("/support")
+    def community_pages():
+        return FileResponse(static / "community-pages.html")
+
+    @app.get("/requests")
+    def request_management():
+        # Sayfa kabuğu veri içermez; bütün talep okumaları moderatör yetkisi gerektirir.
+        return FileResponse(static / "community-requests.html")
+
+    @app.get("/static/community-pages.js")
+    def community_pages_script():
+        return FileResponse(static / "community-pages.js", media_type="text/javascript")
+
+    @app.get("/static/community-pages.css")
+    def community_pages_styles():
+        return FileResponse(static / "community-pages.css", media_type="text/css")
+
+    @app.get("/static/community-requests.js")
+    def community_requests_script():
+        return FileResponse(static / "community-requests.js", media_type="text/javascript")
+
+    @app.get("/static/community-requests.css")
+    def community_requests_styles():
+        return FileResponse(static / "community-requests.css", media_type="text/css")
 
     @app.get("/community.css")
     @app.get("/static/community.css")
@@ -243,6 +290,36 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         store.oturum_kapat(token)
         response.delete_cookie(COOKIE, path="/", secure=not local_pilot, httponly=True, samesite="strict")
         return {"authenticated": False, "user": None, "csrf_token": None}
+
+    def moderator(request, *, mutate=False):
+        _, user = session(request, mutate=mutate)
+        if user.get("role") != "moderator":
+            raise HTTPException(403, "Bu işlem moderatör yetkisi gerektirir.")
+        return user
+
+    @app.post("/api/community/requests")
+    def create_request(request: Request, response: Response, payload: dict = Body(...)):
+        session(request, authenticated=False, mutate=True)
+        result = requests_store.gonder(payload)
+        response.status_code = 200 if result["duplicate"] else 201
+        return result
+
+    @app.get("/api/community/requests")
+    def list_requests(request: Request, status: str = "", offset: int = Query(0, ge=0, le=100000),
+                      limit: int = Query(25, ge=1, le=100)):
+        moderator(request)
+        return requests_store.listele(status=status, offset=offset, limit=limit)
+
+    @app.get("/api/community/requests/{request_id}")
+    def read_request(request_id: str, request: Request):
+        moderator(request)
+        return requests_store.oku(request_id)
+
+    @app.post("/api/community/requests/{request_id}/status")
+    def update_request_status(request_id: str, request: Request, payload: dict = Body(...)):
+        moderator(request, mutate=True)
+        alanlari_dogrula(payload, {"status"}, {"status"})
+        return requests_store.durum_degistir(request_id, payload["status"])
 
     @app.get("/api/community/cards")
     def cards(request: Request, query: str = Query("", max_length=200), kind: str = "",
