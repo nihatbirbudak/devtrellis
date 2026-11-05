@@ -4,7 +4,17 @@
 
 İsteğe bağlı MCP bağlantısı, asistanının **önce hazır araştırmaları aramasını**, işe yarayan raporları okumasını ve kendi araştırması bitince katkı göndermeyi önermesini sağlar. DevTrellis hesabı açman gerekmez. Araştırmayı asistanının kendi modeli yapar; bu MCP sunucusu model çağırmaz ve ortak model kotası kullanmaz.
 
-Akış: **ara → kaynakları oku ve eksikleri belirle → eksik kısmı araştır → yerel inceleme paneli → sen düğmeyle karar ver → topluluk incelemesi**. Uygun hazır raporlar tekrar araştırmayı azaltabilir. MCP veya skill kurmak asistanı araçları kullanmaya zorlamaz; token tasarrufu veya doğru sonuç garantisi değildir.
+Varsayılan akış: **özetlerde ara → uygun hazır yanıtı kullan → yalnız belirsiz veya değişken noktaları kontrol et → gerekirse derin araştırmayı öner**. Anlamlı yeni bulgu oluşursa ayrıca yerel katkı incelemesi, senin düğmeyle seçimin ve topluluk incelemesi gelir. Açıkça derin araştırma istendiğinde bu istek önceliklidir. MCP veya skill kurmak asistanı araçları kullanmaya zorlamaz; token tasarrufu veya doğru sonuç garantisi değildir.
+
+Arama, rapor gövdelerini göndermeden özet, kaynak, rapor tarihleri, model bilgisi ve mevcut metadatayı taşır. MCP varsayılan olarak üç aday ister; tam raporu yalnız gerektiğinde okur. Yerel köprü ve topluluk sunucusu özet görünümünü destekliyorsa aramanın ağ yanıtında da rapor gövdeleri taşınmaz. Eski bileşenlerle çalışırken köprü tam arama yanıtını kabul eder ve sonuçları modele vermeden gövdeleri çıkarır. Yakın rapor tarihi, modelin ünü veya kaynak sayfasının değişmemesi tek başına iddianın güncel olduğunu kanıtlamaz. Rapor tarihleri kaynak kontrol tarihi değildir. Asistan kullanılan bulgularla gerçekten yaptığı kontrolleri ayırır, ortak raporun tam sürümüne bağlantı verir ve yanıtın ardından daha derin araştırmayı seçenek olarak sunar.
+
+Kamusal arama uç noktası `view=summary` kabul eder; mevcut istemciler için varsayılan tam pakettir. Yerel arama API'si de varsayılan tam paket döndürür ve desteklediği `search_views` değerlerini oturum yanıtında bildirir. MCP, yerel destek bildirimi varsa özet görünümünü ister. Özet paketlerinde `body` yoktur; bunlar içe aktarılabilir katkı paketi değil arama sonucudur. Tam sürümü okuma ve indirme tam raporu döndürmeye devam eder. Yalnız rapor gövdesindeki bir uyarı özette bulunmayabilir; özet soruyu karşılamıyorsa rapor okunur.
+
+Yerel köprü `search_modes` içinde destek bildirirse MCP ayrıca `search_mode=ranked` ister. Kamu API'si araştırma aramalarında bu seçeneği destekler; mevcut `all` varsayılanı korunur. Ayrı SQLite FTS5 indeksi yalnız şu anda yayımlanmış araştırma sürümlerini taşır. Önce sözcük kapsamı, ardından başlık/özet/etiket/gövde ağırlıkları, eşitlikte tarih ve kimlik sıralaması kullanılır. Küçük, açık bir TR/EN sözlüğü ve sınırlı sözcük biçimi eşleşmesi vardır; sınırsız anlamsal arama değildir. Tanınan noktalı sürümler ve teknik belirteçler eşleşmelidir; sorudaki sıradan miktarlar doğrulanacak iddia olabileceği için zorunlu filtre değildir. Adla belirtilen dağıtım farklarında rapor kapsamı ayrıca okunmalıdır.
+
+Sıralı adaylar `search_match.matched_terms`, `missing_terms`, `all_terms_matched` ve `answer_sufficiency: "not_assessed"` taşır. Eksik terim varsa rapor kapsamı incelenir; bütün terimlerin eşleşmesi de cevabın yeterli veya doğru olduğunu kanıtlamaz. Eski sunucularda veya FTS5 olmayan SQLite sürümlerinde mevcut bütün-terim araması çalışır ve `search.fallback: true` gösterilir. Ek model çağrısı, embedding modeli veya dış vektör hizmeti gerekmez. İndeks türetilmiş veridir; biçimi değişirse yükseltmede yenilenir. Yayın ve geri çekme, indeksle aynı veritabanı işlemi içinde tamamlanır.
+
+Doğrulanmış her arama sonucu ve rapor okumasında, ilgili raporun tam sürümüne giden `report_url` bulunur. Okuyucudan kimlik üzerinden bağlantı kurmasını istemek yerine bu değeri atıf olarak kullan. Köprü bağlantıyı topluluk adresi ve doğrulanmış kimlik/sürümden türetir; uzak kartın içindeki bir URL'ye güvenmez.
 
 ## 1. İsteğe bağlı MCP adaptörünü kur
 
@@ -98,7 +108,7 @@ python -X utf8 araclar/skill-kur.py --zip devtrellis-research-skill.zip
 
 Arşiv `devtrellis-research/SKILL.md` ve arayüz metadata'sını içerir; kurucu, uygulama verisi veya kişisel dosya içermez. Mevcut arşivin üzerine yazmaz. Skill yüklemek yalnız yönerge sağlar; bulutta çalışan bir sohbeti bilgisayarındaki localhost hizmetine bağlamaz. Aynı uygulamada MCP bağlantısına erişim ayrıca gerekir. Desteklenen yükleme seçenekleri için [Claude'un resmi skill paketleme rehberine](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills) bak.
 
-Skill'in akışı: genel bir kamusal konuyu ara, özgün kaynak ve tarihleri incele, eksikleri kendi modelinle araştır, bitince kendi başına anlaşılır kamusal bir rapor hazırla. Skill yerel dosyaları taramayı, anahtar çıkarmayı, bağımlılık kurmayı veya konuşma yüklemeyi istemez. Özel konuşma, profil, proje ayrıntıları ve herkese açık olmayan depo içeriği sorgu ve metadata dahil hiçbir araç girdisine eklenmemelidir.
+Skill genel bir kamusal konuyu arar, yeterli bulguları kullanır ve yalnız gerekli kaynakları veya eksikleri araştırır. Ayrı kamusal katkı yalnız anlamlı yeni bulgular için hazırlanır; değişmemiş araştırmayı kullanmak yeniden rapor üretmeyi gerektirmez. Skill yerel dosyaları taramayı, anahtar çıkarmayı, bağımlılık kurmayı veya konuşma yüklemeyi istemez. Özel konuşma, profil, proje ayrıntıları ve herkese açık olmayan depo içeriği sorgu ve metadata dahil hiçbir araç girdisine eklenmemelidir.
 
 Denemek için: **“Bu konuyu araştırmadan önce DevTrellis'te yararlı bir rapor var mı bak. İlgili kaynakları göster ve hangi kısmın güncellenmesi gerektiğini açıkla.”**
 
@@ -106,11 +116,13 @@ Denemek için: **“Bu konuyu araştırmadan önce DevTrellis'te yararlı bir ra
 
 | Araç | İşlev |
 | --- | --- |
-| `search_research(query, limit=10)` | Yerel uygulama üzerinden 1–10 topluluk araştırması arar. |
-| `read_research(research_id, version=null)` | Güncel veya tam kamu sürümünü kaynaklarıyla okur; anonim MCP erişim sayımını dener. |
+| `search_research(query, limit=3)` | Yerel uygulama üzerinden 1–10 özet paket arar; `view=summary` döner, `packet.body` içermez. Varsayılan ve skill'in ilk isteği 3 adaydır. |
+| `read_research(research_id, version=null)` | Güncel veya tam kamu sürümünü kaynaklarıyla okur; sayaç olayı göndermez. |
 | `record_research_use(research_id, version)` | Bulgulardan gerçekten yararlanıldığını yalnız rapor kimliği/sürümüyle bildirir. Doğruluk oyu değildir. |
 | `open_submission_history()` | Önizleme hazırlamadan veya topluluğa bağlanmadan yerel Gönderimlerim bağlantısını verir. |
 | `preview_contribution(...)` | Yerel önizlemeyi ve etkileşimli inceleme panelini hazırlar; göndermez. |
+
+`read_research` yalnız okuma yapan GET kullanır; erişim veya kullanım olayı göndermez. Böylece okuma yazma onayına bağlı değildir. `record_research_use` ayrı ve isteğe bağlı yazma işlemidir. Mevcut MCP erişim sayacı olay gönderen eski istemcileri kapsar; bütün MCP okumalarının sayısı değildir. Erişim ve kullanım sayıları benzersiz kişi veya güvenilirlik puanı sayılmaz.
 
 Önizleme için asistan kendi başına anlaşılır kamusal başlık, özet ve rapor, `{ "title": "...", "url": "https://..." }` biçiminde 1–10 özgün kamusal kaynak ve gerçek model adını (bilinmiyorsa `unknown`) hazırlar. Başlık kamusal konuyu anlatmalı, özel konuşma veya proje bağlamını kopyalamamalıdır. Arka uç yazarı `Anonymous contributor` olarak sabitler ve kamusal araştırma konusunu başlıktan türetir. `CC0-1.0` istemediysen skill `CC-BY-4.0` önerir; bu öneri onay verdiğin anlamına gelmez. Panel önerilen lisansı gösterip kutuyla onayını ister; lisansı değiştirmez. Farklı desteklenen bir izin için yeni önizleme iste. Model adı veya üretim tarihi uydurulmaz.
 

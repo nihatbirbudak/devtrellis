@@ -32,6 +32,8 @@ def main(argv=None):
     serve.add_argument("--local-pilot", action="store_true", help="Yalnız loopback üzerinde HTTP pilotuna izin ver")
     serve.add_argument("--port", type=int, default=8782)
     serve.add_argument("--feed-db", type=Path, default=ROOT / "data" / "community-feed.sqlite3")
+    serve.add_argument("--source-memory-config", type=Path, help="Açıkça seçilmiş küçük kamu kaynak kataloğu; varsayılan kapalı")
+    serve.add_argument("--source-memory-db", type=Path, help="Kaynak hafızasının ayrı SQLite dosyası; config ile birlikte gerekir")
     account = sub.add_parser("account-add", help="Davet edilen kişinin hesabını gizli parola istemiyle oluştur")
     account.add_argument("username")
     account.add_argument("--display-name", required=True)
@@ -64,11 +66,17 @@ def main(argv=None):
             if not 1 <= args.port <= 65535:
                 raise ValueError("Port 1–65535 arasında olmalı.")
             from urllib.parse import urlsplit
-            from radar.topluluk_api import uygulama
+            from radar.topluluk_api import adresi_dogrula, uygulama
+            from radar.kaynak_hafizasi_api import kaynak_hafizasini_hazirla
             import uvicorn
             if args.local_pilot and urlsplit(args.public_url).port != args.port:
                 raise ValueError("Yerel pilot URL portu ile --port aynı olmalı.")
-            app = uygulama(args.db, public_url=args.public_url, local_pilot=args.local_pilot, feed_db_path=args.feed_db)
+            adresi_dogrula(args.public_url, args.local_pilot)
+            if args.db.resolve() == args.feed_db.resolve():
+                raise ValueError("Haber deposu ve topluluk deposu ayrı dosyalar olmalı.")
+            memory = kaynak_hafizasini_hazirla(args.source_memory_config, args.source_memory_db, args.db, args.feed_db)
+            app = uygulama(args.db, public_url=args.public_url, local_pilot=args.local_pilot,
+                           feed_db_path=args.feed_db, source_memory=memory)
             print("DevTrellis topluluk hizmeti başlıyor; otomatik model çağrısı yapılmaz.", flush=True)
             uvicorn.run(app, host="127.0.0.1", port=args.port, workers=1, access_log=False, log_level="warning",
                         proxy_headers=not args.local_pilot, forwarded_allow_ips="127.0.0.1")

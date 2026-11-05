@@ -137,6 +137,76 @@ class SkillInstallTests(unittest.TestCase):
         self.assertFalse(self.destination().exists())
         self.assertEqual(self.snapshot(), {})
 
+    def test_rollback_preserves_a_concurrent_personal_edit(self):
+        installer.install("both", self.home)
+        before = self.snapshot()
+        real_write = installer.atomic_write
+        personal = b"Personal instructions written during installation.\\n"
+
+        def edit_then_fail(path, content):
+            if path == self.destination("claude") / "SKILL.md":
+                (self.destination() / "SKILL.md").write_bytes(personal)
+                raise OSError("simulated second-host disk failure")
+            return real_write(path, content)
+
+        with patch.object(installer, "atomic_write", side_effect=edit_then_fail):
+            with self.assertRaises(installer.SkillInstallRecoveryError) as caught:
+                installer.install("both", self.home, package=self.altered_package())
+        expected = dict(before)
+        expected[".codex/skills/devtrellis-research/SKILL.md"] = personal
+        self.assertEqual(self.snapshot(), expected)
+        self.assertIn({"target": "codex", "file": "SKILL.md", "status": "preserved_external_change"},
+                      caught.exception.recovery)
+
+    def test_rollback_failure_does_not_skip_other_files_or_host(self):
+        installer.install("both", self.home)
+        before = self.snapshot()
+        package = self.altered_package()
+        real_write = installer.atomic_write
+        failed = False
+
+        def fail_install_and_one_restore(path, content):
+            nonlocal failed
+            if not failed and path == self.destination("claude") / installer.MARKER:
+                failed = True
+                raise OSError("simulated installation failure")
+            if failed and path == self.destination("claude") / "agents/openai.yaml":
+                raise OSError("simulated rollback failure")
+            return real_write(path, content)
+
+        with patch.object(installer, "atomic_write", side_effect=fail_install_and_one_restore):
+            with self.assertRaises(installer.SkillInstallRecoveryError) as caught:
+                installer.install("both", self.home, package=package)
+        expected = dict(before)
+        expected[".claude/skills/devtrellis-research/agents/openai.yaml"] = installer.package_files(package)["agents/openai.yaml"]
+        self.assertEqual(self.snapshot(), expected)
+        self.assertIn({"target": "claude", "file": "agents/openai.yaml", "status": "failed", "error_type": "OSError"},
+                      caught.exception.recovery)
+        self.assertIn({"target": "claude", "file": "SKILL.md", "status": "restored"}, caught.exception.recovery)
+        self.assertIn({"target": "codex", "file": "SKILL.md", "status": "restored"}, caught.exception.recovery)
+
+    def test_first_install_rollback_preserves_concurrent_personal_files(self):
+        real_write = installer.atomic_write
+        personal = b"Keep my new instructions."
+        extra = self.destination() / "personal.txt"
+
+        def edit_then_fail(path, content):
+            if path == self.destination() / "agents/openai.yaml":
+                (self.destination() / "SKILL.md").write_bytes(personal)
+                extra.write_bytes(b"Keep this additional file.")
+                raise OSError("simulated installation failure")
+            return real_write(path, content)
+
+        with patch.object(installer, "atomic_write", side_effect=edit_then_fail):
+            with self.assertRaises(installer.SkillInstallRecoveryError) as caught:
+                installer.install("codex", self.home)
+        self.assertEqual((self.destination() / "SKILL.md").read_bytes(), personal)
+        self.assertEqual(extra.read_bytes(), b"Keep this additional file.")
+        self.assertFalse((self.destination() / "agents").exists())
+        self.assertFalse((self.destination() / installer.MARKER).exists())
+        self.assertIn({"target": "codex", "file": "SKILL.md", "status": "preserved_external_change"},
+                      caught.exception.recovery)
+
     def test_linked_destination_cannot_escape_home(self):
         outside = self.root / "outside"
         outside.mkdir()

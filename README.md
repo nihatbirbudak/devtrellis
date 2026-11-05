@@ -87,3 +87,5 @@ node --test tests/*.cjs
 ```
 
 Tests use temporary data and fake providers unless documented otherwise; live probes are excluded from release archives. GitHub Actions runs the standard Python and JavaScript suites on Ubuntu and Windows with Python 3.12 and Node.js 22. Optional real Windows launcher tests remain a separate local acceptance step. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [PLATFORM.md](PLATFORM.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+The optional [on-demand source memory pilot](SOURCE-MEMORY.md) is disabled by default and uses a separate database. It introduces no periodic crawler or automatic model calls.

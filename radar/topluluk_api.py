@@ -6,6 +6,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
@@ -13,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import FileResponse, JSONResponse
 
+from radar.arastirma_ozeti import arama_ozeti
 from radar.depo import Depo
 from radar.gelistirici_alani import GelistiriciAlani, alanlari_dogrula, guvenli_url, paket_dogrula
 from radar.paylasim_gizliligi import kamu_kopyasi
@@ -71,14 +73,21 @@ def adresi_dogrula(public_url, local_pilot):
     return f"{parsed.scheme}://{parsed.netloc.lower()}"
 
 
-def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sources=None, static_dir=None, clock=None):
+def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sources=None, static_dir=None, clock=None,
+             source_memory=None):
     origin = adresi_dogrula(public_url, local_pilot)
     authority = urlsplit(origin).netloc
-    store = ToplulukDeposu(db_path, clock=clock)
-    requests_store = TalepDeposu(db_path, clock=clock)
     feed_path = Path(feed_db_path) if feed_db_path else Path(db_path).with_name("community-feed.sqlite3")
     if feed_path.resolve() == Path(db_path).resolve():
         raise ValueError("Haber deposu ve topluluk deposu ayrı dosyalar olmalı.")
+    if source_memory is not None:
+        from radar.kaynak_hafizasi import KaynakHafizasi
+        from radar.kaynak_hafizasi_api import ayri_depolari_dogrula
+        if not isinstance(source_memory, KaynakHafizasi):
+            raise ValueError("Kaynak hafızası hizmeti geçersiz.")
+        ayri_depolari_dogrula(source_memory.path, db_path, feed_path)
+    store = ToplulukDeposu(db_path, clock=clock)
+    requests_store = TalepDeposu(db_path, clock=clock)
     feed_depo = Depo(feed_path, sources if sources is not None else kaynaklari_oku())
     feed = GelistiriciAlani(feed_depo)
     static = Path(static_dir) if static_dir else Path(__file__).resolve().parent / "static"
@@ -90,6 +99,8 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
 
     @app.exception_handler(RequestValidationError)
     async def request_validation(request, exc):
+        if request.url.path == "/api/community/source-memory" or request.url.path.startswith("/api/community/source-memory/"):
+            return JSONResponse({"detail": "Kaynak kontrol isteği biçimi geçersiz."}, status_code=422)
         if request.url.path == "/api/community/requests" or request.url.path.startswith("/api/community/requests/"):
             # Framework errors otherwise echo malformed private message bodies and query values.
             return JSONResponse({"detail": "Talep biçimi geçersiz; alanları kontrol edin."}, status_code=422)
@@ -183,6 +194,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         if mutate and not secrets.compare_digest(request.headers.get("x-ufuk-csrf", "").encode(), csrf(token).encode()):
             raise HTTPException(403, "Sayfayı yenileyip tekrar deneyin.")
         return token, state["user"]
+
+    if source_memory is not None:
+        from radar.kaynak_hafizasi_api import kaynak_hafizasi_yollarini_ekle
+        kaynak_hafizasi_yollarini_ekle(app, source_memory, session, limiter)
 
     def write_cookie(response, token):
         response.set_cookie(COOKIE, token, max_age=28800, httponly=True, secure=not local_pilot, samesite="strict", path="/")
@@ -323,8 +338,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
 
     @app.get("/api/community/cards")
     def cards(request: Request, query: str = Query("", max_length=200), kind: str = "",
-              offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(30, ge=1, le=100)):
-        return store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request))
+              offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(30, ge=1, le=100),
+              view: Literal["full", "summary"] = "full", search_mode: Literal["all", "ranked"] = "all"):
+        result = store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request), search_mode=search_mode)
+        return arama_ozeti(result) if view == "summary" else result
 
     @app.get("/api/community/cards/{entry_id}")
     def card(entry_id: str, request: Request, version: int | None = Query(None, ge=1, le=9223372036854775807)):

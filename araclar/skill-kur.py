@@ -114,6 +114,61 @@ def atomic_write(path, content):
             temporary.unlink()
 
 
+class SkillInstallRecoveryError(RuntimeError):
+    """A failed install preserved external changes or could not restore every file."""
+
+    def __init__(self, recovery):
+        self.recovery = recovery
+        attention = [row for row in recovery if row["status"] not in {"restored", "already_restored"}]
+        details = "; ".join(f'{row["target"]}/{row["file"]}: {row["status"]}' for row in attention)
+        super().__init__("Skill installation failed; rollback needs attention: " + details)
+
+
+def installed_bytes(path, home):
+    path = bounded(path, home)
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise ValueError("A skill file was replaced by a directory; it was preserved.")
+    return path.read_bytes()
+
+
+def rollback_files(completed, home):
+    """Restore each successful write independently, only while our own bytes remain."""
+    recovery = []
+    for host, destination, prior, written, created in reversed(completed):
+        for name, last_written in reversed(list(written.items())):
+            row = {"target": host, "file": name}
+            try:
+                path = bounded(destination / name, home)
+                current = installed_bytes(path, home)
+                previous = prior[name] if prior is not None else None
+                if current == previous:
+                    row["status"] = "already_restored"
+                elif current != last_written:
+                    row["status"] = "preserved_external_change"
+                else:
+                    if previous is None:
+                        path.unlink()
+                    else:
+                        atomic_write(path, previous)
+                    row["status"] = "restored"
+            except Exception as error:
+                row.update(status="failed", error_type=type(error).__name__)
+            recovery.append(row)
+        for directory in reversed(created):
+            row = {"target": host, "file": directory.relative_to(destination).as_posix()}
+            try:
+                bounded(directory, home)
+                if directory.exists():
+                    directory.rmdir()  # Only empty directories created by this attempt.
+                row["status"] = "restored"
+            except Exception as error:
+                row.update(status="preserved_directory", error_type=type(error).__name__)
+            recovery.append(row)
+    return recovery
+
+
 def install(target, home=None, *, package=PACKAGE):
     if target not in {"codex", "claude", "both"}:
         raise ValueError("Choose codex, claude or both.")
@@ -131,30 +186,36 @@ def install(target, home=None, *, package=PACKAGE):
     completed, result = [], []
     try:
         for host, destination, prior in plans:
+            if inspect_destination(destination, home) != prior:
+                raise ValueError("The skill changed after preflight; external changes were preserved.")
             if prior == wanted:
                 result.append({"target": host, "path": str(destination), "status": "unchanged"})
                 continue
+            written, created = {}, []
+            completed.append((host, destination, prior, written, created))
             bounded(destination, home)
             destination.mkdir(parents=True, exist_ok=prior is not None)
-            completed.append((destination, prior))
-            bounded(destination / "agents", home).mkdir(exist_ok=True)
+            if prior is None:
+                created.append(destination)
+            agents = bounded(destination / "agents", home)
+            if not agents.exists():
+                agents.mkdir()
+                created.append(agents)
             for name, content in wanted.items():
-                atomic_write(bounded(destination / name, home), content)
+                path = bounded(destination / name, home)
+                previous = prior[name] if prior is not None else None
+                if installed_bytes(path, home) != previous:
+                    raise ValueError("A skill file changed during installation; it was preserved.")
+                atomic_write(path, content)
+                written[name] = content
             result.append({"target": host, "path": str(destination), "status": "updated" if prior else "installed"})
-    except Exception:
-        for destination, prior in reversed(completed):
-            bounded(destination, home)
-            if prior is not None:
-                for name, content in prior.items():
-                    atomic_write(bounded(destination / name, home), content)
-            else:
-                for name in (*FILES, MARKER):
-                    path = bounded(destination / name, home)
-                    if path.exists():
-                        path.unlink()
-                if (destination / "agents").exists():
-                    (destination / "agents").rmdir()
-                destination.rmdir()
+        for _, destination, _ in plans:
+            if inspect_destination(destination, home) != wanted:
+                raise ValueError("The installed skill changed before verification; it was preserved.")
+    except Exception as error:
+        recovery = rollback_files(completed, home)
+        if any(row["status"] not in {"restored", "already_restored"} for row in recovery):
+            raise SkillInstallRecoveryError(recovery) from error
         raise
     return result
 
@@ -183,7 +244,7 @@ def main():
         parser.error("Choose --target codex|claude|both, or --zip NEW_FILE (without --home).")
     try:
         result = install(options.target, options.home) if options.target else {"zip": export_zip(options.zip)}
-    except (ValueError, OSError) as error:
+    except (ValueError, OSError, SkillInstallRecoveryError) as error:
         parser.exit(1, f"{error}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

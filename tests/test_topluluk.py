@@ -217,6 +217,26 @@ class ToplulukTestleri(unittest.TestCase):
         self.assertEqual(self.client.get("/api/community/cards", params={"query": "özel sözcük"}).json()["total"], 0)
         self.assertEqual(self.client.get("/api/community/cards", params={"query": "%' OR 1=1"}).json()["total"], 0)
 
+    def test_summary_search_preserves_metadata_and_default_full_read_contract(self):
+        self.login()
+        packet = self.packet(body=("Published evidence. " * 400).rstrip())
+        published = self.review(self.submit(packet))
+        anonymous = self.client_for()
+        params = {"query": "Published evidence", "kind": "research", "limit": 3}
+        full = anonymous.get("/api/community/cards", params=params)
+        summary = anonymous.get("/api/community/cards", params={**params, "view": "summary"})
+        self.assertEqual(summary.status_code, 200, summary.text)
+        expected = full.json()
+        expected["items"][0]["packet"].pop("body")
+        expected["view"] = "summary"
+        self.assertEqual(summary.json(), expected)
+        self.assertGreater(len(full.content) - len(summary.content), len(packet["body"].encode()) - 50)
+        self.assertEqual(anonymous.get("/api/community/cards", params={**params, "view": "full"}).json(), full.json())
+        path = f'/api/community/cards/{published["id"]}'
+        self.assertEqual(anonymous.get(path).json()["packet"], packet)
+        self.assertEqual(anonymous.get(path + "/packet").json(), packet)
+        self.assertEqual(anonymous.get("/api/community/cards", params={"view": "unknown"}).status_code, 422)
+
     def test_haber_akisi_ayri_depodan_gelir(self):
         feed_depo = self.app.state.feed_depo
         source = {"id": "feed", "name": "Yayıncı", "topic": "ai", "benefit": "Gelişme", "enabled": True, "interval_hours": 24}
@@ -287,9 +307,10 @@ class ToplulukTestleri(unittest.TestCase):
         self.submit(self.packet(title="Özel Python nebula raporu"), key="private-query-new-0001")
         anonymous = self.client_for()
         for query in ("nebula python", "python gizli"):
-            result = anonymous.get("/api/community/cards", params={"query": query, "kind": "research"}).json()
-            self.assertEqual(result["total"], 0)
-            self.assertEqual(result["items"], [])
+            for view in ("full", "summary"):
+                result = anonymous.get("/api/community/cards", params={"query": query, "kind": "research", "view": view}).json()
+                self.assertEqual(result["total"], 0)
+                self.assertEqual(result["items"], [])
         public = anonymous.get("/api/community/cards", params={"query": "ölçümler python"}).json()
         self.assertEqual(public["total"], 1)
         self.assertEqual(public["items"][0]["packet"]["body"], "Kamusal ölçümler.")

@@ -73,3 +73,5 @@ Araştırma bittiğinde **Toplulukla paylaşmak ister misin?** önerisi görün�
 Yazılım **MIT** lisanslıdır; ticari kullanım da serbesttir. Kartın sahibi kendi metni için **CC BY 4.0** veya **CC0 1.0** seçer. Bu, kaynak makalenin veya bağlantı verilen projenin haklarını değiştirmez. Hesap açılması raporun doğrulandığı anlamına gelmez.
 
 Test komutları ve katkı yönergeleri [İngilizce README](README.md) içindedir. Ayrıca [güvenlik bildirimi](SECURITY.md) ve [ürün kapsamına](PLATFORM.md) bakabilirsin.
+
+İsteğe bağlı [talep üzerine kaynak hafızası pilotu](SOURCE-MEMORY.tr.md) varsayılan kapalıdır ve ayrı veritabanı kullanır. Düzenli tarayıcı veya otomatik model çağrısı açmaz.

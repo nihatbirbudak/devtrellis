@@ -35,7 +35,8 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
 
     @router.get("/community/session")
     def community_session():
-        return {"csrf_token": csrf_token, "destination": "https://devtrellis.org"}
+        return {"csrf_token": csrf_token, "destination": "https://devtrellis.org",
+                "search_views": ["full", "summary"], "search_modes": ["all", "ranked"]}
 
     @router.post("/community/search", dependencies=guarded)
     def community_search(payload: dict = Body(...)):

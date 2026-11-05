@@ -164,7 +164,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 
 def _request_once(url: str, allowed_hosts: set[str], headers: dict[str, str],
-                  deadline: float, max_bytes: int = MAX_BODY_BYTES, stop_event=None) -> FetchResult:
+                  deadline: float, max_bytes: int = MAX_BODY_BYTES, stop_event=None,
+                  strict_validators=False) -> FetchResult:
     parsed = _validate_url(url, allowed_hosts)
     family, address = _resolve_public_host(parsed.hostname, deadline)
     connection = _PinnedHTTPSConnection(parsed.hostname, family, address,
@@ -197,7 +198,17 @@ def _request_once(url: str, allowed_hosts: set[str], headers: dict[str, str],
         connection.request("GET", target, headers=request_headers)
         response_socket.settimeout(min(REQUEST_TIMEOUT, _remaining(deadline)))
         response = connection.getresponse()
-        response_headers = {key.lower(): value for key, value in response.getheaders()}
+        response_headers = {}
+        for key, value in response.getheaders():
+            name = key.lower()
+            if name in {"cache-control", "vary"} and name in response_headers:
+                # Bu alanlar HTTP listeleridir; önceki gizlilik/temsil kuralı kaybolmamalıdır.
+                response_headers[name] += ", " + value
+            elif (strict_validators and name in {"etag", "last-modified"} and name in response_headers
+                    and response_headers[name] != value):
+                raise CollectionError("Kaynak yanıtında çelişkili sürüm doğrulayıcıları var.")
+            else:
+                response_headers[name] = value
         if response_headers.get("content-encoding", "identity").lower() != "identity":
             raise CollectionError("Sıkıştırılmış beklenmeyen yanıt güvenlik sınırı nedeniyle okunmadı.")
         content_length = response_headers.get("content-length")
@@ -518,6 +529,44 @@ def guvenli_sayfa_oku(url: str, source: dict) -> FetchResult:
         raise CollectionError("Makale kaynağının istek sınırına ulaşıldı (HTTP 429).")
     if result.status != 200:
         raise CollectionError(f"Makale okunamadı (HTTP {result.status}).")
+    return result
+
+
+def kosullu_parametreleri_dogrula(url):
+    """Kaynak hafızasında sürüm ve dil parametrelerini korur; özel sorgu parametrelerini reddeder."""
+    try:
+        pairs = urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query, keep_blank_values=True, strict_parsing=True)
+    except (TypeError, ValueError):
+        raise CollectionError("Kaynak parametreleri geçersiz.") from None
+    if len(pairs) > 4 or len({key for key, _ in pairs}) != len(pairs) or any(
+            key not in {"v", "version", "tag", "lang", "language"}
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", value) for key, value in pairs):
+        raise CollectionError("Kaynak yalnız gözden geçirilmiş sürüm ve dil parametreleri içerebilir.")
+
+
+def kosullu_sayfa_oku(url: str, source: dict, *, etag=None, modified=None, language="en") -> FetchResult:
+    """Seçilmiş tek temsili koşullu okur; yönlendirmeler ve kimlik başlıkları kabul edilmez."""
+    allowed_hosts = set(source.get("item_hosts", [])) & APPROVED_FETCH_HOSTS
+    _validate_url(url, allowed_hosts)
+    kosullu_parametreleri_dogrula(url)
+    if not isinstance(language, str) or not re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?", language):
+        raise CollectionError("Kaynak dili geçersiz.")
+    headers = {"Accept-Language": language}
+    for name, value in (("If-None-Match", etag), ("If-Modified-Since", modified)):
+        if value is not None:
+            if (not isinstance(value, str) or not 1 <= len(value) <= 512
+                    or any(ord(char) < 32 or ord(char) == 127 or ord(char) > 255 for char in value)):
+                raise CollectionError("Kaynak doğrulayıcı başlığı geçersiz.")
+            headers[name] = value
+    deadline = time.monotonic() + SOURCE_TIMEOUT
+    if not _robots_allowed(url, allowed_hosts, deadline):
+        raise CollectionError("Kaynağın robots erişim kuralı bu okumaya izin vermiyor.")
+    # İlk pilotta temsil ve koşullu başlıkların başka sayfaya taşınması önlenir.
+    result = _request_once(url, allowed_hosts, headers, deadline, strict_validators=True)
+    if result.status not in (200, 304):
+        raise CollectionError("Kaynak koşullu kontrolü başarılı olmadı; erişim engeli veya yönlendirme aşılmadı.")
+    if result.status == 304 and not (etag or modified):
+        raise CollectionError("Önceki kaynak doğrulayıcısı olmadan 304 kabul edilemez.")
     return result
 
 
