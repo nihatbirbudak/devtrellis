@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 from mcp_topluluk import CommunityClient, contribution_packet, create_server, local_address
+from radar.gelistirici_alani import paket_dogrula
+from radar.konular import KONULAR
 
 
 def report(**changes):
@@ -184,6 +186,18 @@ class CommunityMcpTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 contribution_packet(**report(**changes))
 
+    def test_report_categories_match_local_packet_contract(self):
+        for topic in KONULAR:
+            with self.subTest(topic=topic):
+                packet = contribution_packet(**report(topic=topic))
+                self.assertEqual(paket_dogrula(packet)["provenance"]["topic"], topic)
+        with self.assertRaisesRegex(ValueError, "Topic must be a category code"):
+            contribution_packet(**report(topic="NVIDIA hosted NIM API access"))
+        with self.assertRaisesRegex(ValueError, "Provider must be"):
+            contribution_packet(**report(provider="OpenAI"))
+        with self.assertRaises(ValueError):
+            contribution_packet(**report(sources=[{"title": "Invalid source", "url": "not-a-url"}]))
+
     def test_proxy_environment_cannot_redirect_local_requests(self):
         with patch.dict("os.environ", {"HTTP_PROXY": "http://not-a-proxy.invalid:99", "ALL_PROXY": "http://not-a-proxy.invalid:99"}):
             self.assertEqual(self.client.read("research-1")["id"], "research-1")
@@ -200,6 +214,15 @@ class CommunityMcpTests(unittest.TestCase):
                 self.assertEqual(tools["contribution_decision"].meta["ui"]["visibility"], ["app"])
                 self.assertNotIn("author", tools["preview_contribution"].input_schema["properties"])
                 self.assertNotIn("question", tools["preview_contribution"].input_schema["properties"])
+                properties = tools["preview_contribution"].input_schema["properties"]
+                self.assertEqual(set(properties["topic"]["enum"]), set(KONULAR))
+                self.assertEqual(set(properties["provider"]["enum"]), {"codex", "claude", "nvidia", "unknown"})
+                self.assertEqual(set(properties["license"]["enum"]), {"CC-BY-4.0", "CC0-1.0"})
+                self.assertEqual(set(properties["language"]["enum"]), {"en", "tr"})
+                before = len(self.server.calls)
+                invalid = await session.call_tool("preview_contribution", report(topic="NVIDIA hosted NIM API access"))
+                self.assertTrue(invalid.is_error)
+                self.assertEqual(len(self.server.calls), before)
                 self.assertTrue(tools["search_research"].annotations.read_only_hint)
                 search = await session.call_tool("search_research", {"query": "evidence"})
                 self.assertFalse(search.is_error)

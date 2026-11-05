@@ -21,6 +21,7 @@
     pending:["İnceleme bekliyor","Pending review"],published:["Yayımlandı","Published"],rejected:["Reddedildi","Rejected"],withdrawn:["Geri çekildi","Withdrawn"],hidden:["Yayından kaldırıldı","Removed from publication"],
     kept:["Önizleme iptal edildi. Bu kopya gönderilmedi; yerel araştırman korunur.","The preview was discarded. This copy was not sent; your local research is preserved."],
     result:["Gönderim durumu","Submission status"],
+    submissions:["Gönderimlerim · durum ve geri çekme","My submissions · status and withdrawal"],
     failed:["İşlem doğrulanamadı. Önizleme korunuyor; tekrar denemeden önce sonucu kontrol et.","The action could not be confirmed. Your preview is preserved; check the result before retrying."],
     host:["İstemci bağlantısı doğrulanamadı. Araç yanıtındaki yerel inceleme bağlantısını kullan.","The client connection could not be verified. Use the local review link in the tool response."],
     loading:["İnceleme hazırlanıyor…","Preparing the review…"]
@@ -33,7 +34,7 @@
   const validId=value=>typeof value==="string"&&/^[A-Za-z0-9_-]{16,100}$/.test(value);
   function reviewURL(value,id){const url=safeURL(value);return url&&url.protocol==="http:"&&["127.0.0.1","localhost","[::1]"].includes(url.hostname)&&url.pathname==="/static/contribution-review.html"&&url.searchParams.get("preview")===id&&[...url.searchParams.keys()].every(key=>key==="preview")&&!url.hash?url.href:null;}
   let current=null,busy=false,finished=false,outcome=null,decide=null,openLink=null,approvalToken=null;
-  function error(message){const target=document.getElementById("review-error");if(target){target.textContent=message;target.hidden=false;}else root.replaceChildren(make("p","error",message));}
+  function error(message){const target=document.getElementById("review-error");if(target){target.textContent=message;target.hidden=false;}else{const feedback=make("p","error",message);feedback.id="review-error";feedback.setAttribute("role","alert");root.append(feedback);}}
   function date(value){const parsed=value?new Date(value):null;return !parsed||Number.isNaN(parsed.getTime())?text("unknown"):new Intl.DateTimeFormat(language==="tr"?"tr-TR":"en-US",{dateStyle:"medium",timeStyle:"short"}).format(parsed);}
   function controls(){
     const share=document.getElementById("review-send"),keep=document.getElementById("review-keep"),privacy=document.getElementById("review-public"),consent=document.getElementById("review-license");
@@ -44,12 +45,21 @@
     document.getElementById("review-language").disabled=busy;
   }
   function external(label,url){const address=safeURL(url);if(!address)return make("span","",label);const link=make("a","",label);link.href=address.href;link.target="_blank";link.rel="noopener noreferrer";if(openLink)link.addEventListener("click",event=>{event.preventDefault();Promise.resolve(openLink(address.href)).catch(()=>error(text("failed")));});return link;}
+  function submissionsLink(){
+    const value=reviewURL(current?.review_url,current?.preview_id)||(document.body.dataset.surface==="local"?window.location.href:null);
+    const url=safeURL(value);
+    if(!url||url.protocol!=="http:"||!["127.0.0.1","localhost","[::1]"].includes(url.hostname))return null;
+    url.pathname="/static/contribution-submissions.html";url.search="?lang="+language;url.hash="";
+    if(/^[a-f0-9]{32}$/.test(outcome?.localId||""))url.hash=outcome.localId;
+    const link=external(text("submissions"),url.href);link.id="review-submissions";return link;
+  }
   function render(){
     root.replaceChildren();document.documentElement.lang=language;
     const header=make("header"),brand=make("strong","","DevTrellis"),langLabel=make("label","language",text("language")),select=make("select");select.id="review-language";
     for(const value of ["en","tr"]){const option=make("option","",value.toUpperCase());option.value=value;select.append(option);}select.value=language;
     select.addEventListener("change",()=>{language=select.value==="tr"?"tr":"en";chosenLanguage=true;render();});langLabel.append(select);header.append(brand,langLabel);
     root.append(header,make("h1","",text("title")),make("p","notice",text("intro")),make("p","muted",text("privacyNote")));
+    const history=submissionsLink();if(history)root.append(history);
     if(!current){root.append(make("p","",text("waiting")));return;}
     const packet=current.packet,p=packet.provenance||{};
     root.append(make("p","notice",text("destination")+": "+current.destination),make("h2","",packet.title),make("p","",packet.summary),make("div","report",packet.body||""));
@@ -95,8 +105,8 @@
       const result=await decide({preview_id:current.preview_id,approval_token:approvalToken,decision,reviewed_public:decision==="share",consent:decision==="share"});
       const value=result?.structuredContent||result;
       if(result?.isError||!value||(decision==="keep"?value.status!=="kept_local":!value.submission?.id))throw new Error(text("failed"));
-      finished=true;approvalToken=null;outcome={decision,status:["pending","published","rejected","withdrawn","hidden"].includes(value.submission?.status)?value.submission.status:"unknown"};
-      const status=document.getElementById("review-status");status.textContent=decision==="keep"?text("kept"):text("result")+": "+text(["pending","published","rejected","withdrawn","hidden"].includes(value.submission.status)?value.submission.status:"unknown");status.hidden=false;
+      finished=true;approvalToken=null;outcome={decision,localId:value.local_id,status:["pending","published","rejected","withdrawn","hidden"].includes(value.submission?.status)?value.submission.status:"unknown"};
+      render();
     }catch(failure){error(globalThis.UfukUI?.t(failure.message)||text("failed"));}
     finally{busy=false;controls();}
   }

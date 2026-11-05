@@ -104,6 +104,8 @@ Try: **“Before researching this topic, check whether DevTrellis already has a 
 
 ## Tools and sharing
 
+`provider` identifies the research engine: `codex`, `claude`, `nvidia` or `unknown`. It is separate from the actual model name. `topic` is a category code from the tool's advertised choices, such as `ai`, `software`, `security` or `data`; put the specific research subject in `title`. Invalid categories are rejected before contacting the local API.
+
 | Tool | What it does |
 | --- | --- |
 | `search_research(query, limit=10)` | Searches shared research through your local app; 1–10 results. |
@@ -119,6 +121,8 @@ The local server validates the packet and produces the exact preview. Read it be
 If your host, including a Codex version without inline MCP App support, cannot display the panel, the response supplies a local `review_url`. Open that link yourself to use the real review buttons in your browser. The assistant should provide the link and wait; it must not open the page with automation or click approval for you. Closing or declining the review keeps the report private. A chat message is not silently converted into an approval click.
 
 ## Limits and troubleshooting
+
+Use **My submissions** in the review panel to see the latest 100 submissions saved on this computer. Opening the list only reads local records. **Refresh status** checks community review progress; published reports have a direct web link. **Withdraw submission** asks for confirmation and removes public access to the server copy; it cannot recall copies already downloaded by others. The page needs its MCP session to remain running. In a later session, a new preview's **My submissions** link returns to the same saved records.
 
 - `--local-url` accepts only `http://127.0.0.1:PORT` or `http://localhost:PORT`, with an explicit port. Requests always connect directly to loopback, ignore proxy environment settings, and do not follow redirects.
 - Requests are capped at 32 KiB; responses at 1 MiB; socket operations time out after 15 seconds. Report bodies over 12,000 characters are rejected rather than silently shortened. Select a self-contained report within the limit before previewing.

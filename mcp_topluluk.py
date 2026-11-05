@@ -13,6 +13,9 @@ from threading import Lock
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
+from radar.gelistirici_alani import paket_dogrula
+from radar.konular import KONULAR
+
 
 DEFAULT_LOCAL_URL = "http://127.0.0.1:8781"
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -185,8 +188,12 @@ def contribution_packet(*, title, summary, body, sources, model, provider, licen
     body = checked_text(body, "Report body", 12000)
     model = checked_text(model, "Actual model name (or unknown)", 160)
     topic = checked_text(topic, "Topic", 40)
-    if provider not in {"claude", "codex", "nvidia", "unknown"} or language not in {"en", "tr"}:
-        raise ValueError("Use a supported provider and language (en or tr).")
+    if topic not in KONULAR:
+        raise ValueError("Topic must be a category code: " + ", ".join(KONULAR) + ". Use the title for the research subject.")
+    if provider not in {"claude", "codex", "nvidia", "unknown"}:
+        raise ValueError("Provider must be claude, codex, nvidia or unknown; it identifies the research engine.")
+    if language not in {"en", "tr"}:
+        raise ValueError("Language must be en or tr.")
     if license not in {"CC-BY-4.0", "CC0-1.0"}:
         raise ValueError("Choose CC-BY-4.0 or CC0-1.0 for the report text with the user.")
     if (not isinstance(sources, list) or not 1 <= len(sources) <= 10
@@ -200,12 +207,12 @@ def contribution_packet(*, title, summary, body, sources, model, provider, licen
                 raise ValueError()
         except (ValueError, TypeError):
             raise ValueError("generated_at must be an ISO timestamp with a time zone, or null if unknown.") from None
-    return {"schema": "ufuk-share", "schema_version": 2, "kind": "research", "title": title,
+    return paket_dogrula({"schema": "ufuk-share", "schema_version": 2, "kind": "research", "title": title,
             "summary": summary, "body": body, "url": source_url, "tags": [topic], "sources": sources,
             "author": "Anonymous contributor", "license": license, "created_at": stamp, "updated_at": stamp,
             "provenance": {"model": model, "provider": provider, "generated_at": generated_at,
                            "question": title, "topic": topic, "source_url": source_url,
-                           "language": language, "evidence_status": "unverified", "modified": False}}
+                           "language": language, "evidence_status": "unverified", "modified": False}})
 
 
 def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None):
@@ -252,15 +259,19 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None):
     @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False),
                  meta={"ui": {"resourceUri": APP_URI}}, structured_output=False)
     def preview_contribution(ctx: Context, title: str, summary: str, body: str, sources: list[dict[str, str]],
-                             model: str, provider: str, license: str,
-                             topic: str = "ai", language: str = "en",
+                             model: str, provider: Literal["claude", "codex", "nvidia", "unknown"],
+                             license: Literal["CC-BY-4.0", "CC0-1.0"],
+                             topic: Literal[*KONULAR] = "ai", language: Literal["en", "tr"] = "en",
                              source_url: str = "", generated_at: str | None = None) -> CallToolResult:
         """Prepare a LOCAL preview of an optional completed research contribution; this does not publish.
 
         Skip private work and omit this offer if the user has declined community contribution.
         Write a separate public-source report (max 12000 chars), actual model or unknown, and 1–10
-        original public HTTPS sources as {title,url}. Never copy private prompts, names, conversations,
-        project context, secrets or local paths. Identity is anonymous; private question/claim fields
+        original public HTTPS sources as {title,url}.
+        Topic is a listed category code, not the report subject; use the title for that subject.
+        Provider is the research engine (codex, claude, nvidia or unknown), not a company name.
+        Never copy private prompts, names, conversations, project context, secrets or local paths.
+        Identity is anonymous; private question/claim fields
         are excluded. Use the user's chosen report license CC-BY-4.0 or CC0-1.0. The user must click
         the review UI, or open the returned review_url themselves. Do not automate that page or call
         contribution_decision. Preparing does not send anything to the community.

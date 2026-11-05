@@ -69,6 +69,9 @@ class LocalBridgeTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(set(json.loads(body)), {"csrf_token", "destination"})
                 self.assertEqual(self.request(origin, "/static/contribution-review.html")[0], 200)
+                for path in ("/static/contribution-submissions.html", "/static/contribution-submissions.js"):
+                    self.assertEqual(self.request(origin, path)[0], 200)
+                self.assertEqual(json.loads(self.request(origin, "/api/platform/community/submissions")[1])["items"], [])
                 for path in ("/", "/api/providers", "/api/state", "/api/platform", "/api/research-requests",
                              "/static/platform.html", "/static/../index.html"):
                     with self.subTest(path=path):
@@ -119,6 +122,9 @@ class LocalBridgeTests(unittest.TestCase):
             self.assertEqual(self.request(origin, path, "POST", {**valid, "Content-Type": "text/plain"}, b"{}")[0], 415)
             self.assertEqual(self.request(origin, path, "POST", {**valid, "Content-Length": "40000"}, b"{}")[0], 413)
             self.assertEqual(self.request(origin, "/api/platform/community/review/preview-1")[0], 403)
+            for operation in ("refresh", "withdraw"):
+                self.assertEqual(self.request(origin, "/api/platform/community/submissions/" + "a" * 32 + "/" + operation,
+                                              "POST", {"Content-Type": "application/json"}, b"{}")[0], 403)
 
     def test_body_exception_closes_only_owned_listener(self):
         unrelated = socket.socket()

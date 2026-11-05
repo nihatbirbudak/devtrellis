@@ -120,6 +120,10 @@ Uygulaman paneli gösteremiyorsa — örneğin satır içi MCP App desteklemeyen
 
 ## Sınırlar ve sorun giderme
 
+`provider` araştırma motorunu belirtir: `codex`, `claude`, `nvidia` veya `unknown`. Gerçek model adı ayrı alandır. `topic`, aracın sunduğu `ai`, `software`, `security`, `data` gibi kategori kodlarından biridir; araştırmanın özel konusunu `title` alanına yaz. Geçersiz kategoriler yerel API'ye istek gitmeden reddedilir.
+
+İnceleme panelindeki **Gönderimlerim** bağlantısı bu bilgisayarda kayıtlı son 100 gönderiyi gösterir. Liste açılışı yalnız yerel kayıtları okur. **Durumu yenile** topluluktaki inceleme sonucunu sorgular; yayımlanmış raporun doğrudan web bağlantısı görünür. **Gönderiyi geri çek**, onayından sonra sunucudaki kopyanın kamusal erişimini kapatır; başkalarının önceden indirdiği kopyaları geri alamaz. Sayfa MCP oturumu açıkken çalışır. Daha sonraki oturumda yeni bir önizlemenin **Gönderimlerim** bağlantısıyla aynı kayıtlara dönersin.
+
 - `--local-url` yalnız açık portlu `http://127.0.0.1:PORT` veya `http://localhost:PORT` kabul eder. Bağlantı doğrudan loopback'e yapılır; ortam proxy ayarları ve HTTP yönlendirmeleri kullanılmaz.
 - İstek en fazla 32 KiB, yanıt en fazla 1 MiB olur; soket işlemleri 15 saniyede zaman aşımına uğrar. 12.000 karakterden uzun rapor sessizce kesilmez, reddedilir. Önizlemeden önce sınır içinde kendi başına anlaşılır bir rapor seç.
 - Yerel CSRF anahtarı küçük `/api/platform/community/session` yanıtından alınır ve adaptörün içinde kalır. Kişisel kayıtlar ve çalışma alanının tamamı okunmaz.

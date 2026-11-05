@@ -1,4 +1,20 @@
-# DevTrellis 0.1.0-alpha.4
+# DevTrellis 0.1.0-alpha.5
+
+## Fixes from a real research pilot
+
+- MCP contribution inputs now advertise the accepted category, research engine, language and content-license values. Packets are checked locally before the HTTP call, so a descriptive topic no longer leads to an unexplained HTTP 422.
+- The review panel links to **My submissions**, available in standalone mode. It shows the latest 100 local delivery records, offers an explicit status refresh, links to published reports and supports confirmed withdrawal. Loading the page does not contact the community.
+- English and Turkish instructions explain category codes and submission management. Anonymous attribution and the existing content-review controls are preserved.
+
+## Validation of alpha.5
+
+A separate research task completed three public-source reports. Six community searches returned no reusable reports. The first preview attempts exposed the input-schema mismatch; using accepted codes produced all three previews. No real report was submitted during this pilot stage; human review and initial moderator setup remained pending.
+
+The clean export passed 52 focused Python tests, including the real MCP SDK and standalone lifecycle, and all 177 JavaScript tests. Browser checks with a synthetic transport covered English/Turkish history, explicit status refresh, the published-report link and the withdrawal confirmation prompt. Withdrawal execution was verified by automated tests; the browser automation was interrupted at its native confirmation dialog.
+
+The list currently exposes the latest 100 local submissions. The community moderator interface also needs pagination beyond its first 100 review items; these limits do not affect the three-report pilot. Reuse and token savings cannot yet be measured without a published report.
+
+## Previous release: 0.1.0-alpha.4
 
 ## Private contribution review and assistant skills
 

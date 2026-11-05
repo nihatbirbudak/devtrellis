@@ -26,12 +26,12 @@ function harness({surface="local",search=`?preview=${id}`,tokenAvailable=true,la
   const fetch=async(url,options={})=>{fixture.requests.push({url,options:copy(options),payload:options.body?JSON.parse(options.body):null});let value;
     if(url.endsWith("/session"))value={csrf_token:"LOCAL_CSRF"};
     else if(url.includes("/review/")){assert.equal(options.headers["X-Radar-CSRF"],"LOCAL_CSRF");value={...copy(fixture.data),...(tokenAvailable?{approval_token:token}:{})};}
-    else if(url.endsWith("/send"))value=fixture.fail?{detail:"Temporary failure"}:{submission:{id:"submission-one",status:fixture.status}};
+    else if(url.endsWith("/send"))value=fixture.fail?{detail:"Temporary failure"}:{local_id:"a".repeat(32),submission:{id:"b".repeat(32),status:fixture.status}};
     else if(url.endsWith("/discard"))value={status:"kept_local"};else throw new Error("Unexpected network: "+url);
     return {ok:!fixture.fail,status:fixture.fail?502:200,json:async()=>value};
   };
   const listeners={},parent={postMessage(message,origin){fixture.messages.push({message:copy(message),origin});}};
-  const window={parent,location:{search},open:(...args)=>fixture.opened.push(args),addEventListener:(name,fn)=>(listeners[name] ||= []).push(fn)};
+  const window={parent,location:{search,href:"http://127.0.0.1:8781/static/contribution-review.html"+search},open:(...args)=>fixture.opened.push(args),addEventListener:(name,fn)=>(listeners[name] ||= []).push(fn)};
   const context={document,window,navigator:{language},URL,URLSearchParams,Date,Intl,Set,Map,fetch,console,setTimeout:(fn,ms)=>{const timer=setTimeout(fn,ms);timer.unref();return timer;},clearTimeout};
   if(surface==="local")context.UfukUI={language,t:createTranslator(language)};
   const code=surface==="mcp"?source("mcp-contribution.html").match(/<script>([\s\S]*?)<\/script>/)[1]:source("contribution-review.js");
@@ -53,13 +53,14 @@ test("yerel inceleme sadece CSRF korumalı önizlemeyi okur; iki kutu olmadan g�
   await checkBoth(app);await app.byId("review-send").dispatch("click");
   const call=app.fixture.requests.at(-1);assert.equal(call.url,"/api/platform/community/send");assert.equal(call.options.headers["X-Radar-CSRF"],"LOCAL_CSRF");assert.deepEqual(call.payload,{preview_id:id,approval_token:token,reviewed_public:true,consent:true});
   assert.match(app.byId("review-status").textContent,/Pending review/);assert.equal(app.byId("review-send").disabled,true);
+  assert.equal(app.byId("review-submissions").href,"http://127.0.0.1:8781/static/contribution-submissions.html?lang=en#"+"a".repeat(32));
 });
 
 test("yerelde tut iki paylaşım iznini istemeden önizlemeyi iptal eder; geçersiz URL hiçbir istek yapmaz",async()=>{
   const app=harness();await app.ready();await app.byId("review-keep").dispatch("click");
   assert.deepEqual(app.fixture.requests.at(-1).payload,{preview_id:id,approval_token:token});assert.equal(app.fixture.requests.at(-1).url,"/api/platform/community/discard");
   assert.match(app.byId("review-status").textContent,/copy was not sent/);assert.equal(app.fixture.requests.some(row=>row.url.endsWith("/send")),false);
-  for(const search of ["?preview=../private",`?preview=${id}&preview=${id}`,"?preview="]){const invalid=harness({search});await invalid.ready();assert.equal(invalid.fixture.requests.length,0);}
+  for(const search of ["?preview=../private",`?preview=${id}&preview=${id}`,"?preview="]){const invalid=harness({search});await invalid.ready();assert.equal(invalid.fixture.requests.length,0);assert.match(invalid.byId("review-submissions").href,/\/static\/contribution-submissions.html\?lang=en$/);}
 });
 
 test("iki dil değişimi onay kutularını sıfırlar; başarısız gönderim aynı snapshot ile yeniden denenir",async()=>{
@@ -99,6 +100,17 @@ test("MCP yerelde tut kararı onaysız paylaşmaz; token yoksa yalnız güvenli 
   const opening=fallback.byId("review-fallback").dispatch("click");await turn();const link=fallback.fixture.messages.at(-1);assert.equal(link.message.method,"ui/open-link");assert.equal(link.message.params.url,fallback.fixture.data.review_url);
   fallback.host({jsonrpc:"2.0",id:link.message.id,result:{}});await opening;
   const unsafe=harness({surface:"mcp",tokenAvailable:false});unsafe.initialize();unsafe.fixture.data.review_url="https://attacker.example/?token=steal";unsafe.deliver();assert.equal(unsafe.byId("review-fallback"),undefined);assert.equal(unsafe.byId("review-send").disabled,true);
+  assert.equal(unsafe.byId("review-submissions"),undefined);
+});
+
+test("MCP gönderimden sonra yerel yönetim bağlantısı kullanıcı seçimiyle açılır; modele araç eklenmez",async()=>{
+  const app=harness({surface:"mcp"});app.initialize();app.deliver();await checkBoth(app);
+  const sending=app.byId("review-send").dispatch("click");await turn();const send=app.fixture.messages.at(-1);
+  app.host({jsonrpc:"2.0",id:send.message.id,result:{structuredContent:{local_id:"a".repeat(32),submission:{id:"b".repeat(32),status:"pending"}}}});await sending;
+  const link=app.byId("review-submissions");assert.ok(link);assert.equal(app.fixture.requests.length,0);
+  const opening=link.dispatch("click");await turn();const call=app.fixture.messages.at(-1);
+  assert.equal(call.message.method,"ui/open-link");assert.equal(call.message.params.url,"http://127.0.0.1:8781/static/contribution-submissions.html?lang=en#"+"a".repeat(32));
+  assert.ok(!call.message.params.url.includes(token));app.host({jsonrpc:"2.0",id:call.message.id,result:{}});await opening;
 });
 
 test("MCP kaynak self-contained kalır; inceleme paketi protokol ve UI dışından betik yüklemez",()=>{

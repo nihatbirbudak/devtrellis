@@ -25,7 +25,8 @@ STOP_TIMEOUT = 5.0
 OWNER_FILE = ".devtrellis-mcp-data.json"
 OWNER = {"application": "devtrellis-mcp", "schema": 1}
 REVIEW_FILES = frozenset({"/static/contribution-review.html", "/static/contribution-review.js",
-                         "/static/contribution-review.css", "/static/ui-text.js"})
+                         "/static/contribution-review.css", "/static/ui-text.js",
+                         "/static/contribution-submissions.html", "/static/contribution-submissions.js"})
 LOG_CONFIG = {
     "version": 1, "disable_existing_loggers": False,
     "handlers": {"mcp_stderr": {"class": "logging.StreamHandler", "stream": "ext://sys.stderr"}},
