@@ -10,7 +10,7 @@ const copy = value => JSON.parse(JSON.stringify(value));
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const packet = () => ({schema:"ufuk-share", schema_version:2, kind:"research", title:'<img src=x onerror="alert(1)">', summary:"Saved summary", body:"<script>original research</script>", sources:[{title:"Original source",url:"https://example.org/source"}], author:"Anonymous contributor", license:"CC-BY-4.0", created_at:"2026-01-01T00:00:00Z", updated_at:"2026-01-02T00:00:00Z", provenance:{model:"test/model",provider:"nvidia",generated_at:"2026-01-01T12:00:00Z",question:"Is this correct?",claim_text:"Original claim <svg onload=alert(1)>",topic:"software",source_url:"https://example.org/source",evidence_status:"verified",language:"en",modified:false}});
 
-function harness({language="en", metadata=true}={}) {
+function harness({language="en", metadata=true, csrfToken="CSRF", approvalToken=null}={}) {
   let document;
   class Node {
     constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.listeners={};this.attributes={};this.value="";this._text="";this.hidden=false;this.disabled=false;this.checked=false;this.isConnected=true;}
@@ -31,16 +31,16 @@ function harness({language="en", metadata=true}={}) {
   document={body:new Node("body"),activeElement:null};
   const element=(tag,classes="",text)=>{const node=new Node(tag);node.className=classes;if(text!==undefined)node.textContent=text;return node;};
   const localStorage=new Map();localStorage.getItem=localStorage.get.bind(localStorage);localStorage.setItem=localStorage.set.bind(localStorage);
-  const fixture={requests:[],packet:packet(),preview:0,failSend:false,status:"pending",toasts:[],seeds:[]};
+  const fixture={requests:[],packet:packet(),preview:0,previews:new Map(),failSend:false,status:"pending",toasts:[],seeds:[]};
   if(!metadata){delete fixture.packet.provenance;fixture.packet.schema_version=1;}
   const post=async(url,payload)=>{
     fixture.requests.push({url,payload:copy(payload)});
     if(url.endsWith("/preview")){
-      const draft=copy(fixture.packet);for(const key of ["author","summary","body"])if(Object.hasOwn(payload,key))draft[key]=payload[key];
-      for(const key of ["question","claim_text"])if(draft.provenance&&Object.hasOwn(payload,key))draft.provenance[key]=payload[key];
-      return {preview_id:`preview-${++fixture.preview}`,packet:draft,destination:"https://devtrellis.org",notice:""};
+      const draft=copy(fixture.packet);for(const key of ["title","summary","body"])if(Object.hasOwn(payload,key))draft[key]=payload[key];
+      const result={preview_id:`preview-${++fixture.preview}`,packet:draft,destination:"https://devtrellis.org",notice:""};fixture.previews.set(result.preview_id,result);return result;
     }
     if(url.endsWith("/send")){if(fixture.failSend)throw new Error("Topluluk bağlantısı kurulamadı; yerel araştırmanız korunuyor. Yeniden deneyebilirsiniz.");return {submission:{id:"submission-one",status:fixture.status,version:1},local_id:"receipt-one",duplicate:false};}
+    if(url.endsWith("/discard")){fixture.previews.delete(payload.preview_id);return {status:"kept_local"};}
     if(url.endsWith("/search"))return {items:[{id:"card-one",packet:copy(fixture.packet)}],total:1};
     if(url.endsWith("/import"))return {entry:{id:"local-one"},duplicate:false};
     throw new Error("Unexpected POST "+url);
@@ -48,7 +48,8 @@ function harness({language="en", metadata=true}={}) {
   const request=async url=>{fixture.requests.push({url});return {packet:copy(fixture.packet)};};
   const UI={language,t:createTranslator(language),provenanceFacts};
   const window={UfukUI:UI,addEventListener(){}};
-  const scope={window,document,UfukUI:UI,localStorage,URL,console,Map};
+  const fetch=async(url,options)=>{fixture.requests.push({url});if(url.endsWith("/session"))return {ok:true,json:async()=>({csrf_token:csrfToken})};assert.equal(options.headers["X-Radar-CSRF"],"CSRF");const id=url.split("/").at(-1);return {ok:true,json:async()=>({...copy(fixture.previews.get(id)),approval_token:approvalToken===null?`TOKEN-${id}`:approvalToken})};};
+  const scope={window,document,UfukUI:UI,localStorage,URL,console,Map,fetch};
   vm.runInNewContext(read("community-share.js"),scope);
   vm.runInNewContext(read("community-library.js"),scope);
   const sourceLink=(url,title)=>{const node=element("a","",title);if(/^https?:/.test(url))node.href=url;return node;};
@@ -58,8 +59,9 @@ function harness({language="en", metadata=true}={}) {
   const flatten=root=>[root,...root.children.flatMap(flatten)];
   const find=(label,root=document.body)=>flatten(root).find(node=>node.tagName==="BUTTON"&&node.textContent===label);
   const byId=id=>flatten(document.body).find(node=>node.id===id);
-  const consent=()=>flatten(document.body).find(node=>node.tagName==="INPUT"&&node.type==="checkbox");
-  return {sharing,library,fixture,document,element,flatten,find,byId,consent,localStorage};
+  const checks=()=>flatten(document.body).filter(node=>node.tagName==="INPUT"&&node.type==="checkbox");
+  const consent=()=>checks()[1],privacy=()=>checks()[0];
+  return {sharing,library,fixture,document,element,flatten,find,byId,consent,privacy,localStorage};
 }
 
 test("tamamlanmış rapor önerisi ve yerelde tut seçimi hiçbir istek göndermez", async()=>{
@@ -75,21 +77,24 @@ test("tamamlanmış rapor önerisi ve yerelde tut seçimi hiçbir istek gönderm
 test("tam önizleme metindir; izin boş başlar, değişiklik onayı kaldırır ve yalnız yeni snapshot gönderilir", async()=>{
   const app=harness();const original=copy(app.fixture.packet);
   await app.sharing.open({task_id:"private-task"});
-  assert.deepEqual(app.fixture.requests,[{url:"/api/platform/community/preview",payload:{task_id:"private-task"}}]);
+  assert.deepEqual(app.fixture.requests,[{url:"/api/platform/community/preview",payload:{task_id:"private-task"}},{url:"/api/platform/community/session"},{url:"/api/platform/community/review/preview-1"}]);
   assert.equal(app.consent().checked,false);assert.equal(app.find("Send the copy I approved").disabled,true);
   assert.ok(app.document.body.textContent.includes(original.body));
   assert.ok(app.document.body.textContent.includes(JSON.stringify(original,null,2)));
   assert.ok(app.flatten(app.document.body).every(node=>!["IMG","SCRIPT","SVG"].includes(node.tagName)));
-  app.consent().checked=true;await app.consent().dispatch("change");
-  app.byId("direct-share-question").value="Redacted question";await app.byId("direct-share-question").dispatch("input");
-  app.byId("direct-share-claim_text").value="Redacted claim";await app.byId("direct-share-claim_text").dispatch("input");
+  assert.equal(app.byId("direct-share-author"),undefined);assert.equal(app.byId("direct-share-question"),undefined);assert.equal(app.byId("direct-share-claim_text"),undefined);
+  app.consent().checked=true;await app.consent().dispatch("change");assert.equal(app.find("Send the copy I approved").disabled,true);
+  app.privacy().checked=true;await app.privacy().dispatch("change");
+  app.byId("direct-share-title").value="Public title";await app.byId("direct-share-title").dispatch("input");
+  app.byId("direct-share-body").value="Public report";await app.byId("direct-share-body").dispatch("input");
   assert.equal(app.consent().checked,false);assert.equal(app.find("Send the copy I approved").disabled,true);
   await app.find("Update preview").dispatch("click");
-  assert.equal(app.fixture.requests[1].payload.question,"Redacted question");assert.equal(app.fixture.requests[1].payload.claim_text,"Redacted claim");
+  const edited=app.fixture.requests.filter(item=>item.url.endsWith("/preview")).at(-1).payload;assert.equal(edited.title,"Public title");assert.equal(edited.body,"Public report");assert.equal(Object.hasOwn(edited,"question"),false);assert.equal(Object.hasOwn(edited,"claim_text"),false);assert.equal(Object.hasOwn(edited,"author"),false);
+  assert.ok(app.fixture.requests.some(item=>item.url.endsWith("/discard")&&item.payload.approval_token==="TOKEN-preview-1"));
   assert.equal(app.consent().checked,false);
-  app.consent().checked=true;await app.consent().dispatch("change");
+  app.consent().checked=true;await app.consent().dispatch("change");app.privacy().checked=true;await app.privacy().dispatch("change");
   app.fixture.status="withdrawn";await app.find("Send the copy I approved").dispatch("click");
-  assert.deepEqual(app.fixture.requests.at(-1),{url:"/api/platform/community/send",payload:{preview_id:"preview-2",consent:true}});
+  assert.deepEqual(app.fixture.requests.at(-1),{url:"/api/platform/community/send",payload:{preview_id:"preview-2",approval_token:"TOKEN-preview-2",consent:true,reviewed_public:true}});
   assert.match(app.document.body.textContent,/Submission status: Withdrawn/);
   assert.doesNotMatch(app.document.body.textContent,/Contribution submitted for review/);
   assert.equal(app.consent().parent.hidden,true);
@@ -98,7 +103,7 @@ test("tam önizleme metindir; izin boş başlar, değişiklik onayı kaldırır 
 
 test("belirsiz gönderimde tekrar aynı onaylı önizlemeyi kullanır; özel rapor değişmez", async()=>{
   const app=harness();await app.sharing.open({entry_id:"entry-one"});
-  app.consent().checked=true;await app.consent().dispatch("change");app.fixture.failSend=true;
+  app.consent().checked=true;await app.consent().dispatch("change");app.privacy().checked=true;await app.privacy().dispatch("change");app.fixture.failSend=true;
   await app.find("Send the copy I approved").dispatch("click");
   assert.match(app.document.body.textContent,/your local research is preserved/);
   app.fixture.failSend=false;await app.find("Send the copy I approved").dispatch("click");
@@ -109,11 +114,28 @@ test("belirsiz gönderimde tekrar aynı onaylı önizlemeyi kullanır; özel rap
 
 test("v1 paylaşım model ve üretim tarihinin eksik olduğunu belirtir ve köken editörünü açmaz", async()=>{
   const app=harness({metadata:false});await app.sharing.open({entry_id:"v1"});
-  assert.equal(app.byId("direct-share-question").hidden,true);assert.equal(app.byId("direct-share-claim_text").hidden,true);
+  assert.equal(app.byId("direct-share-question"),undefined);assert.equal(app.byId("direct-share-claim_text"),undefined);
   assert.match(app.document.body.textContent,/Model not recorded/);assert.match(app.document.body.textContent,/Generation date not recorded/);
   assert.ok(app.document.body.textContent.includes("2026-01-02"));
   await app.find("Update preview").dispatch("click");
-  assert.equal(Object.hasOwn(app.fixture.requests.at(-1).payload,"question"),false);
+  assert.equal(Object.hasOwn(app.fixture.requests.filter(item=>item.url.endsWith("/preview")).at(-1).payload,"question"),false);
+});
+
+test("açık önizlemede yerelde tut kararı yalnız yerel onay anahtarını iptal eder",async()=>{
+  const app=harness();await app.sharing.open({entry_id:"entry-one"});await app.find("Keep local").dispatch("click");
+  assert.deepEqual(app.fixture.requests.at(-1),{url:"/api/platform/community/discard",payload:{preview_id:"preview-1",approval_token:"TOKEN-preview-1"}});
+  assert.equal(app.fixture.requests.some(item=>item.url.endsWith("/send")),false);assert.equal(app.fixture.previews.size,0);
+});
+
+test("eksik oturum veya bozuk onay anahtarı gönderimi kapalı tutar",async()=>{
+  const missing=harness({csrfToken:""});await missing.sharing.open({entry_id:"entry-one"});
+  assert.equal(missing.fixture.requests.some(item=>item.url.includes("/review/")),false);
+  assert.equal(missing.find("Send the copy I approved").disabled,true);
+  assert.match(missing.document.body.textContent,/review session/i);
+  const malformed=harness({approvalToken:{secret:"not-a-string"}});await malformed.sharing.open({entry_id:"entry-two"});
+  assert.equal(malformed.find("Send the copy I approved").disabled,true);
+  assert.equal(malformed.fixture.requests.some(item=>item.url.endsWith("/send")),false);
+  assert.doesNotMatch(malformed.document.body.textContent,/not-a-string/);
 });
 
 test("hazır arama ancak açık tıklamada sorgu gönderir; kullanma yalnız içe aktarır", async()=>{

@@ -541,6 +541,20 @@
     "Kendi araştırmamı başlat": "Start my own research",
     "Tam metni açmak için araştırmanın başlığına veya Araştırmayı oku düğmesine tıkla. Kaynak ve GitHub bağlantıları doğrudan asıl yayına gider.": "Click a research title or Read research to open the full text. Source and GitHub links take you directly to the original publication."
   });
+  Object.assign(EN, {
+    "İnceleme oturumu açılamadı. Sayfayı yenileyip tekrar dene.": "The review session could not be opened. Reload the page and retry.",
+    "İnceleme onayı hazırlanamadı. Önizlemeyi yeniden aç.": "The review approval could not be prepared. Open the preview again.",
+    "Görünen yazar anonimdir. Özel araştırma sorusu, iddia veya sohbet bağlamını bu kopyaya ekleme.": "The displayed author is anonymous. Do not add private research questions, claims or conversation context to this copy.",
+    "Paylaşılacak kopyayı kontrol ettim: yalnız kamuya açık araştırma içeriyor; özel veya kişisel bilgi içermiyor.": "I reviewed the copy: it contains only public research and no private or personal information."
+  });
+  Object.assign(EN, {
+    "Yalnız aşağıdaki anonim kamu kopyası, kamusal kaynakları ve model bilgisi gönderilir. Özgün özel soru, iddia, hesap, API anahtarı, sohbet geçmişi ve ham bağlam eklenmez. Belirgin özel bilgi kalıpları gizlenir; bu işlem bütün adları veya kişisel olguları tanımaz. Kamu kopyasındaki başlık ve metnin paylaşılabilir olduğunu inceleme ekranında kontrol edin. Gönderi incelemeden sonra yayımlanır; model bilgisi doğruluk garantisi değildir.": "Only the anonymous public copy, public sources and model details below are sent. The original private question, claim, account, API key, chat history and raw context are not added. Recognizable private-information patterns are masked; this does not identify every name or personal fact. Check that the public title and text can be shared. Submissions are published after review; model details do not guarantee accuracy.",
+    "Önizleme geçersiz veya süresi doldu; metni yeniden önizleyin.": "The preview is invalid or expired; preview the text again.",
+    "İnceleme ekranından alınan geçerli onay anahtarı gerekli.": "A valid approval token from the review screen is required.",
+    "Bu önizleme gönderildi; durumu gönderimler listesinden kontrol edin.": "This preview was sent; check its status in the submissions list.",
+    "Onay bu önizlemeye ait değil veya inceleme yenilenmiş; incelemeyi yeniden açın.": "The approval does not match this preview or the review was refreshed; open it again.",
+    "Teslim denenmiş; yerelde kaldığı söylenemez. Önce gönderim sonucunu doğrulayın veya geri çekin.": "Delivery was attempted; keeping the copy local cannot be confirmed. First verify the delivery result or withdraw the submission."
+  });
   const TR = {};
   function register(messages = {}) {
     if (messages.en && typeof messages.en === "object") Object.assign(EN, messages.en);

@@ -15,7 +15,7 @@ def report(**changes):
     return {"title": "Source comparison", "summary": "A comparison with limitations.",
             "body": "The selected report text, with an explicit unresolved question.",
             "sources": [{"title": "Original source", "url": "https://example.org/research"}],
-            "model": "unknown", "provider": "claude", "question": "Which evidence is available?",
+            "model": "unknown", "provider": "claude",
             "license": "CC-BY-4.0", **changes}
 
 
@@ -45,8 +45,15 @@ class LocalApiHandler(BaseHTTPRequestHandler):
         elif self.path.endswith("/preview"):
             result = {"preview_id": "preview-1", "packet": payload["packet"],
                       "destination": "https://devtrellis.org", "notice": "Only this packet will be sent."}
+        elif "/review/" in self.path:
+            result = {"approval_token": "c" * 43}
         elif self.path.endswith("/send"):
-            result = {"status": "pending", "id": "contribution-1"}
+            if payload.get("approval_token") != "c" * 43 or payload.get("reviewed_public") is not True:
+                status, result = 422, {"detail": "Review required"}
+            else:
+                result = {"status": "pending", "id": "contribution-1"}
+        elif self.path.endswith("/discard"):
+            result = {"status": "kept_local"}
         else:
             status, result = 404, {"detail": "Unknown endpoint"}
         raw = result if isinstance(result, bytes) else json.dumps(result).encode("utf-8")
@@ -113,18 +120,41 @@ class CommunityMcpTests(unittest.TestCase):
         packet = contribution_packet(**report())
         preview = self.client.preview(packet)
         self.assertEqual(preview["packet"]["body"], report()["body"])
-        self.assertEqual(preview["packet"]["author"], "Anonymous")
+        self.assertEqual(preview["packet"]["author"], "Anonymous contributor")
         self.assertEqual(preview["packet"]["provenance"]["evidence_status"], "unverified")
         self.assertEqual(preview["packet"]["provenance"]["generated_at"], None)
         calls = len(self.server.calls)
-        for confirmed in [False, "true", 1, None]:
+        for confirmed in [False, "true", 1, None, True]:
             with self.subTest(confirmed=confirmed), self.assertRaises(ValueError):
                 self.client.submit(preview["preview_id"], confirmed)
         with self.assertRaises(ValueError):
             self.client.submit("another-preview", True)
         self.assertEqual(len(self.server.calls), calls)
-        self.assertEqual(self.client.submit(preview["preview_id"], True)["status"], "pending")
-        self.assertEqual(self.server.calls[-1][2], {"preview_id": "preview-1", "consent": True})
+        self.assertNotIn("approval_token", preview)
+        self.assertIn("/static/contribution-review.html?preview=preview-1", preview["review_url"])
+        token = self.client.review(preview["preview_id"])
+        for value in [False, "true", 1, None]:
+            with self.assertRaises(ValueError):
+                self.client.decide(preview["preview_id"], token, "share", value, True)
+        self.assertEqual(self.client.decide(preview["preview_id"], token, "share", True, True)["status"], "pending")
+        self.assertEqual(self.server.calls[-1][2], {"preview_id": "preview-1", "consent": True,
+                                                  "reviewed_public": True, "approval_token": token})
+
+    def test_private_question_and_author_are_never_added_to_packet(self):
+        packet = contribution_packet(**report(question="PRIVATE_QUESTION", author="PRIVATE_NAME"))
+        self.assertEqual(packet["author"], "Anonymous contributor")
+        self.assertEqual(packet["provenance"]["question"], packet["title"])
+        self.assertNotIn("PRIVATE_", json.dumps(packet))
+
+    def test_keep_local_invalidates_the_mcp_session_capability(self):
+        preview = self.client.preview(contribution_packet(**report()))
+        token = self.client.review(preview["preview_id"])
+        result = self.client.decide(preview["preview_id"], token, "keep")
+        self.assertEqual(result["status"], "kept_local")
+        count = len(self.server.calls)
+        with self.assertRaises(ValueError):
+            self.client.decide(preview["preview_id"], token, "share", True, True)
+        self.assertEqual(len(self.server.calls), count)
 
     def test_redirect_error_and_malformed_responses_do_not_leak_content(self):
         for status, body, content_type in [(302, {}, "application/json"),
@@ -166,8 +196,10 @@ class CommunityMcpTests(unittest.TestCase):
             async with Client(create_server(client=self.client), raise_exceptions=True) as session:
                 listing = await session.list_tools()
                 tools = {tool.name: tool for tool in listing.tools}
-                self.assertEqual(set(tools), {"search_research", "read_research", "preview_contribution", "submit_contribution"})
-                self.assertFalse(tools["submit_contribution"].input_schema["properties"]["confirmed"]["default"])
+                self.assertEqual(set(tools), {"search_research", "read_research", "preview_contribution", "contribution_decision"})
+                self.assertEqual(tools["contribution_decision"].meta["ui"]["visibility"], ["app"])
+                self.assertNotIn("author", tools["preview_contribution"].input_schema["properties"])
+                self.assertNotIn("question", tools["preview_contribution"].input_schema["properties"])
                 self.assertTrue(tools["search_research"].annotations.read_only_hint)
                 search = await session.call_tool("search_research", {"query": "evidence"})
                 self.assertFalse(search.is_error)
@@ -175,12 +207,37 @@ class CommunityMcpTests(unittest.TestCase):
                 preview = await session.call_tool("preview_contribution", report())
                 self.assertFalse(preview.is_error)
                 self.assertEqual(preview.structured_content["packet"]["body"], report()["body"])
+                self.assertNotIn("approval_token", preview.meta or {})
                 calls = len(self.server.calls)
-                for arguments in [{"preview_id": "preview-1"}, {"preview_id": "preview-1", "confirmed": "true"}]:
-                    denied = await session.call_tool("submit_contribution", arguments)
-                    self.assertTrue(denied.is_error)
+                denied = await session.call_tool("contribution_decision", {"preview_id": "preview-1",
+                    "approval_token": "c" * 43, "decision": "share", "reviewed_public": True, "consent": True})
+                self.assertTrue(denied.is_error)
                 self.assertEqual(len(self.server.calls), calls)
-                accepted = await session.call_tool("submit_contribution", {"preview_id": "preview-1", "confirmed": True})
+
+        asyncio.run(scenario())
+
+    @unittest.skipUnless(importlib.util.find_spec("mcp"), "Optional requirements-mcp.txt is not installed.")
+    def test_mcp_apps_hides_capability_from_model_content_and_serves_review_resource(self):
+        from mcp import Client
+        from mcp.client.extension import advertise
+        from mcp_topluluk import APP_URI
+
+        async def scenario():
+            extension = advertise("io.modelcontextprotocol/ui", {"mimeTypes": ["text/html;profile=mcp-app"]})
+            async with Client(create_server(client=self.client), extensions=[extension]) as session:
+                preview = await session.call_tool("preview_contribution", report())
+                self.assertFalse(preview.is_error)
+                token = preview.meta["approval_token"]
+                self.assertNotIn(token, json.dumps(preview.structured_content))
+                self.assertNotIn(token, str(preview.content))
+                page = await session.read_resource(APP_URI)
+                self.assertEqual(page.contents[0].mime_type, "text/html;profile=mcp-app")
+                self.assertIn("contribution_decision", page.contents[0].text)
+                rejected = await session.call_tool("contribution_decision", {"preview_id": "preview-1",
+                    "approval_token": token, "decision": "share", "consent": True})
+                self.assertTrue(rejected.is_error)
+                accepted = await session.call_tool("contribution_decision", {"preview_id": "preview-1",
+                    "approval_token": token, "decision": "share", "consent": True, "reviewed_public": True})
                 self.assertFalse(accepted.is_error)
                 self.assertEqual(accepted.structured_content["status"], "pending")
 

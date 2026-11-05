@@ -404,6 +404,16 @@ class ToplulukTestleri(unittest.TestCase):
         value.update(changes)
         return value
 
+    def test_hesapsiz_giris_ozel_kopyayi_kaydetmeden_reddeder(self):
+        for field, value in (("author", "Private person"), ("body", "mail person" + "@example.org")):
+            payload = self.inbox_payload()
+            payload["packet"][field] = value
+            response = self.inbox_post(payload)
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertNotIn(value, response.text)
+        with self.store.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_entries").fetchone()[0], 0)
+
     def inbox_post(self, payload=None, token="A" * 43):
         return self.client_for().post("/api/community/inbox", json=payload or self.inbox_payload(),
                                       headers=self.inbox_headers(token))
@@ -481,7 +491,7 @@ class ToplulukTestleri(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 200)
         self.assertTrue(duplicate.json()["duplicate"])
         self.assertEqual(duplicate.json()["submission"], first)
-        changed = self.inbox_post(self.inbox_payload(packet=self.packet(title="Başka araştırma")))
+        changed = self.inbox_post(self.inbox_payload(packet=self.packet(title="Başka araştırma", author="Anonymous contributor")))
         self.assertEqual(changed.status_code, 409)
         client = self.client_for()
         path = f'/api/community/inbox/{first["id"]}'
@@ -558,7 +568,7 @@ class ToplulukTestleri(unittest.TestCase):
         token = "S" * 43
         packet = self.packet(schema_version=2, author="Anonymous contributor", provenance={
             "model": "example-recorded-model", "provider": "nvidia", "generated_at": None,
-            "question": "An independent question", "topic": "ai", "source_url": "",
+            "question": "Kaynaklı araştırma", "topic": "ai", "source_url": "",
             "evidence_status": "unverified", "language": "en", "modified": True})
         response = self.inbox_post(self.inbox_payload(packet=packet), token)
         self.assertEqual(response.status_code, 201, response.text)

@@ -8,13 +8,15 @@ DevTrellis, hobi olarak üretenlerden profesyonel geliştiricilere kadar herkes 
 
 Önce **[devtrellis.org](https://devtrellis.org)** üzerinde hazır araştırmayı ara. Başlığa veya **Araştırmayı oku** düğmesine tıklayarak tam raporu oku; GitHub, proje ve özgün kaynak bağlantılarını incele. Tarihini, kaynaklarını, kapsamını ve sınırlarını kontrol et. Yeterliyse kullan; eksik veya eski kalan kısmı kendi modelinle yeniden araştır. Sitede okumak için hesap, kurulum, API anahtarı veya yapay zekâ asistanı gerekmez. Hazır raporu okumak ve içe almak model çağırmaz.
 
-Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** veya **Önizle ve paylaş** seç: tam metni, kaynakları, model bilgisini ve metin iznini kontrol edip onayladığın kopyayı varsayılan olarak anonim biçimde incelemeye gönder. Katkı isteğe bağlıdır; hesap açmak veya dosya taşımak gerekmez. Böylece bulma, kontrol etme, yeniden kullanma ve katkı sunma döngüsüyle ortak bilgi birikir. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları ayırır.
+Kendi araştırman bilgisayarında kalır. Hazır olduğunda **Yerelde tut** veya **Önizle ve paylaş** seç: kamusal metni, kaynakları, model bilgisini ve metin iznini kontrol edip onayladığın anonim kopyayı incelemeye gönder. Kişisel yazar adı ve özel soru/iddia alanları eklenmez. Katkı isteğe bağlıdır; hesap açmak veya dosya taşımak gerekmez. Böylece bulma, kontrol etme, yeniden kullanma ve katkı sunma döngüsüyle ortak bilgi birikir. [Ürün vizyonu ve yol haritası](PLATFORM.md), hazır olanlarla planlananları ayırır.
 
 ## Bugünkü kapsam
 
 Erken alfa sürümüdür. Önceki adı UFUK'tu; `UFUK_*` ayarları, veri kimlikleri ve `ufuk-share` dosya biçimi uyumluluk için korunur. Topluluk hizmeti ayrıca kurulup işletilir. Yaşayan konu sayfaları, saatlik topluluk araştırmacısı ve yayıncı bağlantıları plandadır.
 
 İsteğe bağlı [MCP bağlantısı](MCP.tr.md), uyumlu asistanların hazır araştırmaları bulup okumasını ve önizleme ile açık onay sonrasında katkı sunmasını sağlar. Asistana dönen rapor metni yine bağlam tokeni tüketebilir. Yeniden kullanım tekrarlanan model işini azaltabilir; henüz belirli bir token veya zaman tasarrufu ölçülmemiştir.
+
+Paketteki **Claude Code / Codex skill** kamusal teknoloji araştırmalarında bu akışı kullanır. MCP Apps destekleyen istemcilerde **Paylaş / Yerelde tut** düğmeleri panelde, diğerlerinde yerel inceleme sayfasında görünür. Modelin yalnızca “onaylandı” demesi gönderim yapamaz; önizlemeye bağlı yetki ve başlangıçta boş iki onay kutusu gerekir. Kalıp filtreleri bütün özel ayrıntıları tanıyamaz; tam kamu kopyasını kontrol et. [Kurulum ve gizlilik sınırları](MCP.tr.md).
 
 ## Kurulum
 

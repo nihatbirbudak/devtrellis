@@ -1,0 +1,21 @@
+{
+  "name": "devtrellis-research",
+  "version": "0.1.0",
+  "description": "Reuse public technology research and review optional community contributions.",
+  "author": {
+    "name": "DevTrellis contributors"
+  },
+  "skills": "./skills/",
+  "homepage": "https://devtrellis.org",
+  "repository": "https://github.com/nihatbirbudak/devtrellis",
+  "license": "MIT",
+  "interface": {
+    "displayName": "DevTrellis Research",
+    "shortDescription": "Find existing public research before starting.",
+    "longDescription": "Search shared technology research, check sources, research gaps with your own model, and offer a contribution for the user to review.",
+    "developerName": "DevTrellis contributors",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Find existing DevTrellis research before investigating this public technology topic."
+  }
+}

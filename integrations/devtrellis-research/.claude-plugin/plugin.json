@@ -1,0 +1,10 @@
+{
+  "name": "devtrellis-research",
+  "version": "0.1.0",
+  "description": "Reuse public technology research and review optional community contributions.",
+  "author": {"name": "DevTrellis contributors"},
+  "homepage": "https://devtrellis.org",
+  "repository": "https://github.com/nihatbirbudak/devtrellis",
+  "license": "MIT",
+  "skills": "./skills/"
+}

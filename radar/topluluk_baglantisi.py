@@ -7,7 +7,6 @@ import re
 import secrets
 import threading
 import time
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -15,13 +14,14 @@ from radar.depo import simdi, tarih
 from radar.gelistirici_alani import (
     GelistiriciAlani, KAYIT_ALANLARI, alanlari_dogrula, metin, paket_dogrula, paket_metni,
 )
+from radar.paylasim_gizliligi import kamu_kopyasi, sorguyu_dogrula
 
 
 COMMUNITY_URL = "https://devtrellis.org"
-NOTICE = ("Yalnız aşağıdaki araştırma metni, kaynakları ve model bilgisi gönderilir. "
-          "Hesap, API anahtarı, sohbet geçmişi ve özel araştırma bağlamı eklenmez. "
-          "Sık görülen e-posta, anahtar ve yerel dosya yolu kalıpları gizlenir; "
-          "adlar ve metindeki diğer kişisel ayrıntılar için önizlemeyi kontrol edin. "
+NOTICE = ("Yalnız aşağıdaki anonim kamu kopyası, kamusal kaynakları ve model bilgisi gönderilir. "
+          "Özgün özel soru, iddia, hesap, API anahtarı, sohbet geçmişi ve ham bağlam eklenmez. "
+          "Belirgin özel bilgi kalıpları gizlenir; bu işlem bütün adları veya kişisel olguları tanımaz. "
+          "Kamu kopyasındaki başlık ve metnin paylaşılabilir olduğunu inceleme ekranında kontrol edin. "
           "Gönderi incelemeden sonra yayımlanır; model bilgisi doğruluk garantisi değildir.")
 
 
@@ -55,48 +55,8 @@ class IsletimSistemiKasasi:
 
 
 def gizli_kaliplari_temizle(packet):
-    """Ortak sır ve kimlik kalıplarını kaldırır; genel kişisel bilgi tespiti iddia etmez."""
-    patterns = [
-        re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I),
-        re.compile(r"\b(?:sk-|nvapi-|ghp_|github_pat_)[A-Za-z0-9_-]{12,}\b"),
-        re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.I),
-        re.compile(r"[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/][^\s\"<>]+", re.I),
-        re.compile(r"/(?:home|Users)/[^\s\"<>]+"),
-        re.compile(r"\b(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]\s*[\"']?[^\s\"'&,;]{6,}", re.I),
-        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
-    ]
-    redactions = 0
-
-    def clean(value):
-        nonlocal redactions
-        if isinstance(value, dict):
-            return {key: clean(child) for key, child in value.items()}
-        if isinstance(value, list):
-            return [clean(child) for child in value]
-        if not isinstance(value, str):
-            return value
-        def clean_url(match):
-            nonlocal redactions
-            address = match.group()
-            parsed = urlsplit(address)
-            pairs = parse_qsl(parsed.query, keep_blank_values=True)
-            kept = [(key, item) for key, item in pairs if key.lower() not in
-                    {"token", "key", "api_key", "apikey", "password", "secret", "auth", "email", "access_token"}]
-            fragment_secret = bool(re.search(r"(?:token|key|password|secret|auth|email)=", parsed.fragment, re.I))
-            if kept != pairs or fragment_secret:
-                redactions += len(pairs) - len(kept) + int(fragment_secret)
-                address = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(kept), "" if fragment_secret else parsed.fragment))
-            return address
-        value = re.sub(r"https?://[^\s\"<>]+", clean_url, value)
-        for pattern in patterns:
-            value, count = pattern.subn("[redacted]", value)
-            redactions += count
-        return value
-
-    result = clean(packet)
-    if redactions and result.get("provenance"):
-        result["provenance"].update(modified=True, evidence_status="unverified")
-    return result, redactions
+    """Eski yardımcı adı da aynı sıkı kamu kopyası politikasını uygular."""
+    return kamu_kopyasi(packet)
 
 
 class ToplulukBaglantisi:
@@ -154,7 +114,7 @@ class ToplulukBaglantisi:
 
     def ara(self, payload):
         alanlari_dogrula(payload, {"query", "limit"}, {"query"})
-        query = metin(payload["query"], "Arama", 200, required=True)
+        query = sorguyu_dogrula(metin(payload["query"], "Arama", 200, required=True))
         limit = payload.get("limit", 10)
         if type(limit) is not int or not 1 <= limit <= 10:
             raise ValueError("Arama sınırı 1–10 arasında olmalı.")
@@ -181,7 +141,7 @@ class ToplulukBaglantisi:
         return self.area.ice_aktar({"packet": self.oku(entry_id)["packet"]})
 
     def onizle(self, payload):
-        allowed = {"task_id", "entry_id", "packet", "author", "body", "summary", "question", "claim_text"}
+        allowed = {"task_id", "entry_id", "packet", "author", "title", "body", "summary", "question", "claim_text"}
         alanlari_dogrula(payload, allowed)
         if sum(key in payload for key in ("task_id", "entry_id", "packet")) != 1:
             raise ValueError("Bir araştırma, yerel kayıt veya paylaşım metni seçin.")
@@ -201,14 +161,13 @@ class ToplulukBaglantisi:
                       **{key: entry[key] for key in KAYIT_ALANLARI if key in entry},
                       "created_at": entry["created_at"], "updated_at": entry["updated_at"]}
         packet = copy.deepcopy(packet)
-        default_author = packet["author"] if "packet" in payload else "Anonymous contributor"
-        packet["author"] = metin(payload.get("author", default_author), "Yazar", 100) or "Anonymous contributor"
+        packet["author"] = "Anonymous contributor"
         if "packet" not in payload:
             packet["license"] = "CC-BY-4.0"
         changed = False
-        for field, limit in (("body", 12000), ("summary", 600)):
+        for field, limit in (("title", 160), ("body", 12000), ("summary", 600)):
             if field in payload:
-                edited = metin(payload[field], field, limit, multiline=True)
+                edited = metin(payload[field], field, limit, required=field == "title", multiline=field != "title")
                 changed = changed or edited != packet[field]
                 packet[field] = edited
         for field, limit in (("question", 500), ("claim_text", 1000)):
@@ -223,39 +182,87 @@ class ToplulukBaglantisi:
         packet, redactions = gizli_kaliplari_temizle(packet)
         packet = paket_dogrula(packet)
         with self.lock:
-            self.previews = {key: value for key, value in self.previews.items() if value[0] > self.clock()}
+            self.previews = {key: value for key, value in self.previews.items() if value["expires_at"] > self.clock()}
             if len(self.previews) >= 100:
                 self.previews.pop(next(iter(self.previews)))
             preview_id = secrets.token_urlsafe(24)
-            self.previews[preview_id] = (self.clock() + 1800, copy.deepcopy(packet))
+            self.previews[preview_id] = {"expires_at": self.clock() + 1800, "packet": copy.deepcopy(packet),
+                                         "approval_hash": None, "result": None, "delivery_attempted": False}
         return {"preview_id": preview_id, "packet": packet, "destination": COMMUNITY_URL,
                 "notice": NOTICE, "redactions": redactions}
 
+    def _onizlemeyi_oku(self, preview_id):
+        preview_id = metin(preview_id, "Önizleme", 100, required=True)
+        preview = self.previews.get(preview_id)
+        if not preview or preview["expires_at"] <= self.clock():
+            self.previews.pop(preview_id, None)
+            raise ValueError("Önizleme geçersiz veya süresi doldu; metni yeniden önizleyin.")
+        return preview
+
+    @staticmethod
+    def _onay_izi(preview_id, packet, token):
+        if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            raise ValueError("İnceleme ekranından alınan geçerli onay anahtarı gerekli.")
+        digest = hashlib.sha256(paket_metni(packet).encode()).hexdigest()
+        return hashlib.sha256((preview_id + ":" + digest + ":" + token).encode()).hexdigest()
+
+    def inceleme_ac(self, preview_id):
+        with self.lock:
+            preview = self._onizlemeyi_oku(preview_id)
+            if preview["result"] is not None:
+                raise ValueError("Bu önizleme gönderildi; durumu gönderimler listesinden kontrol edin.")
+            token = secrets.token_urlsafe(32)
+            preview["approval_hash"] = self._onay_izi(preview_id, preview["packet"], token)
+            return {"preview_id": preview_id, "packet": copy.deepcopy(preview["packet"]), "destination": COMMUNITY_URL,
+                    "notice": NOTICE, "approval_token": token}
+
+    def _onayi_dogrula(self, preview_id, token):
+        preview = self._onizlemeyi_oku(preview_id)
+        actual = self._onay_izi(preview_id, preview["packet"], token)
+        if not preview["approval_hash"] or not secrets.compare_digest(actual, preview["approval_hash"]):
+            raise ValueError("Onay bu önizlemeye ait değil veya inceleme yenilenmiş; incelemeyi yeniden açın.")
+        return preview
+
+    def vazgec(self, payload):
+        alanlari_dogrula(payload, {"preview_id", "approval_token"}, {"preview_id", "approval_token"})
+        with self.lock:
+            preview = self._onayi_dogrula(payload["preview_id"], payload["approval_token"])
+            if preview["delivery_attempted"]:
+                raise ValueError("Teslim denenmiş; yerelde kaldığı söylenemez. Önce gönderim sonucunu doğrulayın veya geri çekin.")
+            del self.previews[payload["preview_id"]]
+            return {"status": "kept_local"}
+
     def gonder(self, payload):
-        alanlari_dogrula(payload, {"preview_id", "consent"}, {"preview_id", "consent"})
-        if payload["consent"] is not True:
+        fields = {"preview_id", "consent", "reviewed_public", "approval_token"}
+        alanlari_dogrula(payload, fields, fields)
+        if payload["consent"] is not True or payload["reviewed_public"] is not True:
             raise ValueError("Gösterilen araştırmayı paylaşmak için açık onay gerekli.")
         preview_id = metin(payload["preview_id"], "Önizleme", 100, required=True)
         with self.lock:
-            preview = self.previews.get(preview_id)
-            if not preview or preview[0] <= self.clock():
-                raise ValueError("Önizlemenin süresi doldu; metni yeniden önizleyin.")
-            packet = preview[1]
+            preview = self._onayi_dogrula(preview_id, payload["approval_token"])
+            if preview["result"] is not None:
+                return {**copy.deepcopy(preview["result"]), "duplicate": True}
+            packet = preview["packet"]
             fingerprint = hashlib.sha256(paket_metni(packet).encode()).hexdigest()
             local_id = fingerprint[:32]
             account = self.namespace + ":" + local_id
-            token = self.vault.get(account)
-            if token is None:
-                token = secrets.token_urlsafe(32)
-                self.vault.set(account, token)
-                if self.vault.get(account) != token:
-                    raise ValueError("Gönderi anahtarı güvenli kasada doğrulanamadı; araştırma gönderilmedi.")
+            # Aynı veri dizinini kullanan farklı MCP süreçleri de tek yönetim anahtarını seçer.
             with self.depo.baglanti(write=True) as connection:
+                token = self.vault.get(account)
+                if token is None:
+                    token = secrets.token_urlsafe(32)
+                    self.vault.set(account, token)
+                    if self.vault.get(account) != token:
+                        raise ValueError("Gönderi anahtarı güvenli kasada doğrulanamadı; araştırma gönderilmedi.")
                 connection.execute("INSERT OR IGNORE INTO community_deliveries(local_id,fingerprint,title,created_at) VALUES(?,?,?,?)",
                                    (local_id, fingerprint, packet["title"], simdi()))
+            # Ağ beklemesi ortak SQLite yazma kilidini tutmaz.
+            preview["delivery_attempted"] = True
             result = self.request("POST", "/api/community/inbox", token=token,
                                   payload={"packet": packet, "consent": True, "idempotency_key": fingerprint})
-            return self.kaydet(local_id, result)
+            saved = self.kaydet(local_id, result)
+            preview["result"] = copy.deepcopy(saved)
+            return saved
 
     def kaydet(self, local_id, result):
         submission = result.get("submission", result)

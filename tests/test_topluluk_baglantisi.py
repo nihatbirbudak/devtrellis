@@ -3,6 +3,7 @@
 import copy
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,6 +42,7 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.addCleanup(self.remote_client.close)
         self.calls = []
         self.vault = Kasa()
+        self.approvals = {}
         self.time = 1000
 
         def exchange(request):
@@ -56,7 +58,11 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         return self.bridge.onizle({"packet": self.packet, "author": "Anonymous contributor", **changes})
 
     def send(self, preview):
-        return self.bridge.gonder({"preview_id": preview["preview_id"], "consent": True})
+        preview_id = preview["preview_id"]
+        if preview_id not in self.approvals:
+            self.approvals[preview_id] = self.bridge.inceleme_ac(preview_id)["approval_token"]
+        return self.bridge.gonder({"preview_id": preview_id, "consent": True, "reviewed_public": True,
+                                  "approval_token": self.approvals[preview_id]})
 
     def test_preview_is_local_anonymous_and_decline_or_expiry_never_sends(self):
         before = copy.deepcopy(self.packet)
@@ -94,7 +100,10 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.assertEqual(restarted.yonet(first["local_id"])["submission"]["status"], "pending")
         withdrawn = restarted.yonet(first["local_id"], {"expected_version": first["submission"]["version"]})
         self.assertEqual(withdrawn["submission"]["status"], "withdrawn")
-        self.assertEqual(self.send(preview)["submission"]["status"], "withdrawn")
+        before = len(self.calls)
+        self.assertEqual(self.send(preview)["submission"], first["submission"])
+        self.assertEqual(len(self.calls), before)
+        self.assertEqual(restarted.yonet(first["local_id"])["submission"]["status"], "withdrawn")
 
     def test_only_approved_text_sent_even_if_returned_preview_or_source_changes(self):
         preview = self.prepare()
@@ -104,15 +113,93 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.send(preview)
         self.assertEqual(json.loads(self.calls[0].read())["packet"], approved)
 
+    def test_simultaneous_instances_share_one_capability_and_preserve_withdrawal(self):
+        class RacingVault(Kasa):
+            def __init__(self):
+                super().__init__()
+                self.lock = threading.Lock()
+                self.first_reader = None
+                self.second_reader = threading.Event()
+                self.writes = 0
+
+            def get(self, name):
+                with self.lock:
+                    value = self.values.get(name)
+                    reader = threading.get_ident()
+                    if self.first_reader is None:
+                        self.first_reader = reader
+                    elif reader != self.first_reader:
+                        self.second_reader.set()
+                # Kilit yoksa iki oturumun da aynı eski boş kasa değerini okumasını görünür kılar.
+                if value is None and reader == self.first_reader:
+                    self.second_reader.wait(0.25)
+                return value
+
+            def set(self, name, value):
+                with self.lock:
+                    self.writes += 1
+                    self.values[name] = value
+
+        vault = RacingVault()
+        peers = [ToplulukBaglantisi(Depo(self.depo.path, []), vault=vault, transport=self.transport)
+                 for _ in range(2)]
+        payloads = []
+        for peer in peers:
+            preview = peer.onizle({"packet": self.packet})
+            review = peer.inceleme_ac(preview["preview_id"])
+            payloads.append({"preview_id": preview["preview_id"], "approval_token": review["approval_token"],
+                             "consent": True, "reviewed_public": True})
+        self.assertNotEqual(payloads[0]["approval_token"], payloads[1]["approval_token"])
+        exchange = self.transport.handler
+        network = threading.Barrier(2)
+
+        def simultaneous_delivery(request):
+            # İki ağ isteğinin aynı anda ilerlemesi DB kilidinin HTTP sırasında tutulmadığını da doğrular.
+            network.wait(timeout=3)
+            return exchange(request)
+
+        for peer in peers:
+            peer.transport = httpx.MockTransport(simultaneous_delivery)
+        results, errors = {}, []
+
+        def send(index):
+            try:
+                results[index] = peers[index].gonder(payloads[index])
+            except Exception as error:
+                errors.append(type(error).__name__)
+
+        workers = [threading.Thread(target=send, args=(index,)) for index in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(6)
+        self.assertFalse(any(worker.is_alive() for worker in workers))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(vault.writes, 1)
+        self.assertEqual(len(vault.values), 1)
+        self.assertEqual(self.calls[0].headers["authorization"], self.calls[1].headers["authorization"])
+        self.assertEqual(results[0]["submission"]["id"], results[1]["submission"]["id"])
+        self.assertEqual(sorted(item["duplicate"] for item in results.values()), [False, True])
+        self.assertEqual(len(peers[0].listele()["items"]), 1)
+        with self.remote.state.community.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT count(*) FROM community_inbox").fetchone()[0], 1)
+        for peer in peers:
+            peer.transport = self.transport
+        withdrawn = peers[0].yonet(results[0]["local_id"], {"expected_version": 1})
+        self.assertEqual(withdrawn["submission"]["status"], "withdrawn")
+        self.assertEqual(peers[1].yonet(results[1]["local_id"])["submission"]["status"], "withdrawn")
+
     def test_common_secrets_are_removed_before_preview_and_sending(self):
         secret = "sk-" + "EXAMPLE" * 5
         self.packet["body"] = "Contact private@example.org and " + secret + " at C:\\Users\\Example\\secret.txt and https://example.org/doc?api_key=hidden-key and https://example.org/#access_token=hidden-fragment"
-        self.packet["url"] = "https://example.org/report?token=private&v=2"
+        self.packet["url"] = "https://example.org/report?utm_source=tracking"
         preview = self.prepare()
         text = json.dumps(preview)
         for private in (secret, "private@example.org", "secret.txt", "token=private", "hidden-key", "hidden-fragment"):
             self.assertNotIn(private, text)
         self.assertGreaterEqual(preview["redactions"], 4)
+        self.assertEqual(preview["packet"]["url"], "https://example.org/report")
         self.send(preview)
         self.assertEqual(json.loads(self.calls[0].read())["packet"], preview["packet"])
 
@@ -136,7 +223,7 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
                 context_text=private_context, need="PRIVATE_RESEARCH_NEED_462",
                 scope=["PRIVATE_PROJECT_SCOPE_297"], idempotency_key="privacy-question-claim-0001")
             task = app.state.workflow.kuyruga_al(item_id, request_id=request["id"])
-            report = {"title_tr": "Public navigation research", "summary_tr": "A public summary.",
+            report = {"title_tr": f"Navigation research for {private_name}", "summary_tr": "A public summary.",
                       "evidence_quality": {"status": "verified", "coverage_complete": True}}
             with self.depo.baglanti(write=True) as connection:
                 source = connection.execute("SELECT id,title,url,revision FROM items WHERE id=?", (item_id,)).fetchone()
@@ -150,15 +237,22 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
             original_task = copy.deepcopy(app.state.workflow.oku(task["id"]))
             original_request = copy.deepcopy(app.state.research_requests.oku(request["id"]))
             initial = self.bridge.onizle({"task_id": task["id"]})
-            self.assertIn(private_name, initial["packet"]["provenance"]["question"])
-            self.assertEqual(initial["packet"]["provenance"]["claim_text"], private_claim)
+            self.assertEqual(initial["packet"]["provenance"]["question"], initial["packet"]["title"])
+            self.assertNotIn("claim_text", initial["packet"]["provenance"])
+            # Anlamsal ad tanıma iddiası yoktur; insan kamu başlığındaki bu adı kaldırabilir.
+            self.assertIn(private_name, initial["packet"]["title"])
+            self.assertNotIn(original_request["question"], json.dumps(initial))
+            self.assertNotIn(private_claim, json.dumps(initial))
             self.assertNotIn(private_context, json.dumps(initial))
 
             cleaned_question = "What independent evidence supports autonomous navigation?"
-            edited = self.bridge.onizle({"task_id": task["id"], "question": cleaned_question, "claim_text": ""})
+            edited = self.bridge.onizle({"task_id": task["id"], "title": "Public navigation research",
+                                        "question": cleaned_question, "claim_text": ""})
+            self.assertNotEqual(initial["preview_id"], edited["preview_id"])
+            self.assertEqual(edited["packet"]["title"], "Public navigation research")
             provenance = edited["packet"]["provenance"]
-            self.assertEqual(provenance["question"], cleaned_question)
-            self.assertEqual(provenance["claim_text"], "")
+            self.assertEqual(provenance["question"], edited["packet"]["title"])
+            self.assertNotIn("claim_text", provenance)
             self.assertTrue(provenance["modified"])
             self.assertEqual(provenance["evidence_status"], "unverified")
             self.assertEqual(provenance["model"], initial["packet"]["provenance"]["model"])
@@ -197,7 +291,8 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         app.include_router(router_olustur(self.depo, "csrf-test", community=self.bridge))
         with TestClient(app) as client:
             path, headers = "/api/platform/community/preview", {"X-Radar-CSRF": "csrf-test"}
-            invalid = [dict(question=""), dict(question="x" * 501), dict(claim_text="x" * 1001),
+            invalid = [dict(title=""), dict(title="x" * 161), dict(title="Invalid\ntitle"),
+                       dict(question=""), dict(question="x" * 501), dict(claim_text="x" * 1001),
                        dict(claim_text=None), dict(context_text="PRIVATE_CONTEXT_FIELD_341")]
             for change in invalid:
                 response = client.post(path, json={"packet": packet, **change}, headers=headers)
@@ -207,16 +302,18 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
             self.assertEqual(client.post(path, json={"packet": nested}, headers=headers).status_code, 422)
             self.assertEqual(client.post(path, json={"packet": self.packet, "question": "No provenance to edit"},
                                          headers=headers).status_code, 422)
-            accepted = client.post(path, json={"packet": packet, "question": "Public research question", "claim_text": ""},
+            accepted = client.post(path, json={"packet": packet, "title": "Public topic contact private@example.org",
+                                               "question": "Public research question", "claim_text": ""},
                                    headers=headers)
             self.assertEqual(accepted.status_code, 200, accepted.text)
             cleaned = accepted.json()["packet"]
-            self.assertEqual(cleaned["provenance"]["question"], "Public research question")
-            self.assertEqual(cleaned["provenance"]["claim_text"], "")
+            self.assertEqual(cleaned["title"], "Public topic contact [redacted]")
+            self.assertEqual(cleaned["provenance"]["question"], cleaned["title"])
+            self.assertNotIn("claim_text", cleaned["provenance"])
             self.assertEqual(cleaned["provenance"]["evidence_status"], "unverified")
             self.assertTrue(cleaned["provenance"]["modified"])
             self.assertEqual(cleaned["license"], "CC0-1.0")
-            self.assertEqual(cleaned["author"], "Chosen public alias")
+            self.assertEqual(cleaned["author"], "Anonymous contributor")
         self.assertEqual(packet, before)
         self.assertEqual(self.calls, [])
         self.assertEqual(self.vault.values, {})
@@ -293,6 +390,114 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
             rejected = client.post("/api/platform/community/send", json={"preview_id": preview.json()["preview_id"], "consent": True, "packet": self.packet}, headers={"X-Radar-CSRF": "csrf-test"})
             self.assertEqual(rejected.status_code, 422)
             self.assertEqual(self.calls, [])
+
+    def test_review_token_is_required_bound_to_snapshot_and_rotated_on_reopen(self):
+        preview = self.prepare()
+        self.assertNotIn("approval_token", preview)
+        base = {"preview_id": preview["preview_id"], "consent": True, "reviewed_public": True}
+        for additions in ({}, {"approval_token": "X" * 43}):
+            with self.assertRaises(ValueError):
+                self.bridge.gonder({**base, **additions})
+        first = self.bridge.inceleme_ac(preview["preview_id"])
+        second = self.bridge.inceleme_ac(preview["preview_id"])
+        self.assertNotEqual(first["approval_token"], second["approval_token"])
+        with self.assertRaises(ValueError):
+            self.bridge.gonder({**base, "approval_token": first["approval_token"]})
+        other = self.prepare(body="A distinct public copy.")
+        with self.assertRaises(ValueError):
+            self.bridge.gonder({**base, "preview_id": other["preview_id"], "approval_token": second["approval_token"]})
+        for change in ({"reviewed_public": False}, {"reviewed_public": 1}, {"consent": False}):
+            with self.assertRaises(ValueError):
+                self.bridge.gonder({**base, "approval_token": second["approval_token"], **change})
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.vault.values, {})
+        # İnceleme cevabını değiştirmek, saklanan ve onaylanan kamu kopyasını değiştiremez.
+        second["packet"]["body"] = "NOT_THE_REVIEWED_PUBLIC_COPY"
+        accepted = self.bridge.gonder({**base, "approval_token": second["approval_token"]})
+        self.assertEqual(json.loads(self.calls[0].read())["packet"], preview["packet"])
+        repeated = self.bridge.gonder({**base, "approval_token": second["approval_token"]})
+        self.assertEqual(repeated["submission"], accepted["submission"])
+        self.assertTrue(repeated["duplicate"])
+        self.assertEqual(len(self.calls), 1)
+        with self.depo.baglanti() as connection:
+            saved = "\n".join(connection.iterdump())
+        self.assertNotIn(second["approval_token"], saved + json.dumps(accepted))
+
+    def test_review_expiry_and_discard_revoke_approval_without_egress(self):
+        preview = self.prepare()
+        review = self.bridge.inceleme_ac(preview["preview_id"])
+        control = {"preview_id": preview["preview_id"], "approval_token": review["approval_token"]}
+        with self.assertRaises(ValueError):
+            self.bridge.vazgec({**control, "approval_token": "X" * 43})
+        self.assertEqual(self.bridge.vazgec(control), {"status": "kept_local"})
+        with self.assertRaises(ValueError):
+            self.bridge.inceleme_ac(preview["preview_id"])
+        with self.assertRaises(ValueError):
+            self.bridge.gonder({**control, "consent": True, "reviewed_public": True})
+        next_preview = self.prepare()
+        next_review = self.bridge.inceleme_ac(next_preview["preview_id"])
+        self.time += 1801
+        with self.assertRaises(ValueError):
+            self.bridge.gonder({"preview_id": next_preview["preview_id"], "approval_token": next_review["approval_token"],
+                               "consent": True, "reviewed_public": True})
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.vault.values, {})
+        self.assertEqual(self.bridge.listele()["items"], [])
+
+    def test_unknown_delivery_cannot_be_misrepresented_as_kept_local(self):
+        exchange = self.transport.handler
+        def dropped(request):
+            exchange(request)
+            raise httpx.ReadError("untrusted remote details", request=request)
+        self.bridge.transport = httpx.MockTransport(dropped)
+        preview = self.prepare()
+        with self.assertRaises(ToplulukBaglantiHatasi):
+            self.send(preview)
+        with self.assertRaises(ValueError):
+            self.bridge.vazgec({"preview_id": preview["preview_id"], "approval_token": self.approvals[preview["preview_id"]]})
+        self.bridge.transport = self.transport
+        self.assertTrue(self.send(preview)["duplicate"])
+        with self.assertRaises(ValueError):
+            self.bridge.vazgec({"preview_id": preview["preview_id"], "approval_token": self.approvals[preview["preview_id"]]})
+
+    def test_sensitive_queries_and_unsafe_source_urls_are_rejected_before_network(self):
+        private_values = ("private@example.org", "+90 (555) 123 45 67", "192.168.1.20", "2001:db8::1",
+                          "C:\\Users\\Person\\project", "/home/person/project", "project.internal", "token=private-value",
+                          "https://name:password@example.org/path", "private%40example.org")
+        for value in private_values:
+            with self.subTest(value=value), self.assertRaises(ValueError) as error:
+                self.bridge.ara({"query": "Research " + value})
+            self.assertNotIn(value, str(error.exception))
+        for address in ("http://example.org/source", "https://8.8.8.8/source", "https://example.org/?q=private",
+                        "https://example.org/?token=private-value", "https://example.org/private%40example.org"):
+            with self.subTest(address=address), self.assertRaises(ValueError) as error:
+                self.bridge.onizle({"packet": paket(sources=[{"title": "Source", "url": address}])})
+            self.assertNotIn(address, str(error.exception))
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.vault.values, {})
+        self.assertEqual(self.bridge.previews, {})
+
+    def test_review_and_discard_http_require_csrf_and_boolean_alone_cannot_send(self):
+        app = FastAPI()
+        app.include_router(router_olustur(self.depo, "csrf-test", community=self.bridge))
+        with TestClient(app) as client:
+            headers = {"X-Radar-CSRF": "csrf-test"}
+            preview = client.post("/api/platform/community/preview", json={"packet": self.packet}, headers=headers).json()
+            self.assertNotIn("approval_token", preview)
+            path = "/api/platform/community/review/" + preview["preview_id"]
+            self.assertEqual(client.get(path).status_code, 403)
+            review = client.get(path, headers=headers)
+            self.assertEqual(review.status_code, 200, review.text)
+            self.assertEqual(review.headers["cache-control"], "no-store")
+            base = {"preview_id": preview["preview_id"], "consent": True, "reviewed_public": True}
+            self.assertEqual(client.post("/api/platform/community/send", json=base, headers=headers).status_code, 422)
+            control = {"preview_id": preview["preview_id"], "approval_token": review.json()["approval_token"]}
+            self.assertEqual(client.post("/api/platform/community/discard", json=control).status_code, 403)
+            discarded = client.post("/api/platform/community/discard", json=control, headers=headers)
+            self.assertEqual(discarded.json(), {"status": "kept_local"})
+            self.assertEqual(client.post("/api/platform/community/send", json={**base, **control}, headers=headers).status_code, 422)
+            self.assertEqual(client.get(path, headers=headers).status_code, 422)
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == "__main__":

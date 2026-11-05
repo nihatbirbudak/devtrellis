@@ -8,7 +8,7 @@ DevTrellis is an open technology knowledge community for hobbyists and professio
 
 Start at **[devtrellis.org](https://devtrellis.org)**: open a title or choose **Read research** to read the full shared report and follow its GitHub, project and original source links. Check its date, sources, scope and limitations. If it answers your question, reuse it; if something is missing or outdated, research that part with your own model. Reading on the site needs no account, installation, API key or AI assistant. Reading and importing an existing report do not call a model.
 
-Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact text, sources, model details and content permission before sending a copy, anonymously by default, for moderation. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
+Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact public text, sources, model details and content permission before sending an anonymous copy for moderation. Private question/claim metadata and author identity are excluded. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
 
 ## Two ways to use it
 
@@ -24,6 +24,8 @@ This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment varia
 The developer space, advanced workspace and community screens offer English and Turkish. Source and contributor text keeps its original language; interface language does not rewrite other people's work. Model report language is a separate provider setting.
 
 An optional [MCP connection](MCP.md) lets compatible assistants search/read existing research and offer a contribution with an explicit preview and approval. Report text returned to an assistant can still consume context tokens. Reuse may reduce repeated model work; no particular token or time saving has been measured.
+
+Install the included **Claude Code / Codex skill** to use this flow during public technology research. Compatible MCP Apps hosts show **Share / Keep local** controls; other hosts provide the same controls on a local review page. Submission requires the review capability and two initially unchecked confirmations. A model-supplied approval boolean is insufficient. Pattern filters reduce accidental disclosure, but cannot detect every private fact; inspect the exact public copy. [Skill installation and privacy boundaries](MCP.md).
 
 ## Install
 

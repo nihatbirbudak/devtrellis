@@ -12,7 +12,8 @@ from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
 from radar.depo import Depo
-from radar.gelistirici_alani import GelistiriciAlani, alanlari_dogrula, guvenli_url
+from radar.gelistirici_alani import GelistiriciAlani, alanlari_dogrula, guvenli_url, paket_dogrula
+from radar.paylasim_gizliligi import kamu_kopyasi
 from radar.kaynak_havuzu import kaynaklari_oku
 from radar.konular import konulari_listele
 from radar.marka import PRODUCT_NAME, VERSION
@@ -259,7 +260,16 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
 
     @app.post("/api/community/inbox")
     def inbox_submit(request: Request, response: Response, payload: dict = Body(...)):
-        result = store.inbox_gonder(inbox_token(request), payload)
+        token = inbox_token(request)
+        try:
+            original = paket_dogrula(payload.get("packet"))
+            public_copy, _ = kamu_kopyasi(original)
+            if public_copy != original:
+                raise ValueError()
+        except (ValueError, TypeError, KeyError):
+            # Kullanıcının incelediği kopyayı sunucuda sessizce değiştirme veya özel metni hataya taşıma.
+            raise HTTPException(422, "Katkı anonim kamu kopyası olmalı; güncel yerel önizlemeyi inceleyip tekrar gönderin.") from None
+        result = store.inbox_gonder(token, payload)
         response.status_code = 200 if result["duplicate"] else 201
         return result
 

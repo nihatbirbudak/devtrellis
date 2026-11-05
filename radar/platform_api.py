@@ -55,9 +55,17 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
     def community_preview(payload: dict = Body(...)):
         return execute(community.onizle, payload)
 
+    @router.get("/community/review/{preview_id}", dependencies=guarded)
+    def community_review(preview_id: str):
+        return JSONResponse(execute(community.inceleme_ac, preview_id), headers={"Cache-Control": "no-store"})
+
     @router.post("/community/send", dependencies=guarded)
     def community_send(payload: dict = Body(...)):
         return execute(community.gonder, payload)
+
+    @router.post("/community/discard", dependencies=guarded)
+    def community_discard(payload: dict = Body(...)):
+        return execute(community.vazgec, payload)
 
     @router.get("/community/submissions")
     def community_submissions():

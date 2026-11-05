@@ -61,9 +61,9 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
-      - name: Install optional SDK separately
-        run: python -m pip install -r requirements-mcp.txt
+      - name: Install app with optional SDK
+        run: python -m pip install -r requirements-lock.txt -r requirements-mcp.txt
       - name: Check SDK and protocol
         run: |
           python -m pip check
-          python -m unittest tests.test_community_mcp
+          python -m unittest tests.test_community_mcp tests.test_mcp_yerel

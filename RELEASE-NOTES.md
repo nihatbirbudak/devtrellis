@@ -1,4 +1,19 @@
-# DevTrellis 0.1.0-alpha.3
+# DevTrellis 0.1.0-alpha.4
+
+## Private contribution review and assistant skills
+
+- Claude Code and Codex skill packages search existing public research before new work, then offer a public-source contribution preview. The installer preserves unrelated skills and refuses to overwrite edited installations.
+- MCP Apps hosts receive Share / Keep local controls with the exact report, sources, model, destination and license. Other hosts receive a local review link. Model tools cannot submit with a boolean confirmation; the app-only decision requires a preview capability outside model-visible content and two explicit review confirmations.
+- Contribution attribution is fixed anonymous. Private question/claim metadata is excluded. Common credentials, contact details, IPs and local paths are filtered; HTTPS source links and outbound search queries receive privacy checks. The remote anonymous inbox rejects unfiltered copies before storage.
+- These controls reduce accidental disclosure; they cannot detect every private fact or hide network metadata. Host compliance and the user's review remain necessary. No model calls, automatic publication or shared provider quota are introduced.
+
+## Validation of alpha.4
+
+The clean export passed 58 focused Python tests covering privacy, consent, concurrent submissions, standalone lifecycle, the real MCP SDK and skill installation; all 33 community regression tests and 172 JavaScript tests passed. The broader local Python run discovered 721 tests with 11 optional skips and identified one old fixture using a non-anonymous author; that fixture was corrected and the entire 33-test community module passed again. Nine standalone lifecycle tests were added after that broader run.
+
+Browser checks covered the actual English/Turkish local review page, initially unchecked permissions, Keep local with zero delivery requests, and a synthetic submission through an isolated fake transport. The installed Claude Code connection reported connected; Codex registration and the standard MCP protocol were checked separately. Inline controls were tested through the MCP Apps protocol and UI harness, not by manually operating every supported assistant. No real community contribution or paid model call was made.
+
+## Previous release: 0.1.0-alpha.3
 
 ## Research first, optional contribution
 
