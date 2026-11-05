@@ -118,6 +118,40 @@ class ArastirmaAramaTestleri(unittest.TestCase):
         self.assertTrue(all(len(group) <= SECENEK_SINIRI for group in groups))
         self.assertEqual(arama_gruplari("source " * 28), arama_gruplari("source"))
 
+    def test_kesme_eki_urun_adini_bulurken_ozgun_terimi_korur(self):
+        for query in ("NVIDIA’nın API", "NVIDIA'nin API", "NVIDIA'ya API", "NVIDIA'dan API", "NVIDIA's API"):
+            with self.subTest(query=query):
+                self.assertIn("nim", self.bul(query))
+                self.assertIn(arama_metni(query.split()[0]), arama_gruplari(query)[0])
+        self.assertEqual(arama_gruplari("O'Reilly"), (("o'reilly",),))
+        self.assertEqual(arama_gruplari("repo'unknown"), (("repo'unknown",),))
+        self.assertEqual(arama_gruplari("C++'ın"), (("c++'in", "c++"),))
+        self.assertEqual(self.bul("NVIDIA'nın missing_xyz"), set())
+
+    def test_cogul_iyelik_bicimleri_ozgun_terimle_birlikte_aranir(self):
+        self.connection.execute("INSERT INTO reports VALUES (?,?)", ("weighted", arama_metni("SQLite sütun ağırlıklar ve kitap örnekleri")))
+        self.assertIn("weighted", self.bul("SQLite ağırlıkları"))
+        self.assertIn("weighted", self.bul("SQLite kitaplarından"))
+        for word in ("compiler", "similar", "API", "Rust", "foo_bar", "v1.2"):
+            with self.subTest(word=word):
+                self.assertEqual(arama_gruplari(word), ((arama_metni(word),),))
+        self.assertEqual(self.bul("SQLite ağırlıkları missing_xyz"), set())
+
+    def test_baglaclar_yalniz_iki_icerik_grubuyla_istege_bagli_olur(self):
+        self.assertIn("fts", self.bul("SQLite ile sıralama"))
+        self.assertIn("nim", self.bul("NVIDIA ve API"))
+        self.assertIn("nim", self.bul("NVIDIA API için"))
+        for query in ("ve", "ile", "için", "ve ile", "NVIDIA ile", "NVIDIA NVIDIA ile"):
+            with self.subTest(query=query):
+                self.assertTrue(arama_gruplari(query))
+                self.assertEqual(self.bul(query), self.bul(query, old=True))
+        self.assertEqual(self.bul("NVIDIA ile unknown_xyz"), set())
+
+    def test_ek_genislemesi_eski_eslesen_ozgun_adlari_dusurmez(self):
+        for identifier, text in (("apostrophe", "NVIDIA’nın API"), ("suffix", "kitapları arşivi")):
+            self.connection.execute("INSERT INTO reports VALUES (?,?)", (identifier, arama_metni(text)))
+            self.assertTrue(self.bul(text, old=True).issubset(self.bul(text)))
+
 
 if __name__ == "__main__":
     unittest.main()

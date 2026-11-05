@@ -1,3 +1,11 @@
+# DevTrellis 0.1.0-alpha.7
+
+## Search improvements from diverse-topic trials
+
+- Turkish natural queries retain their original terms while recognizing a bounded set of possessive/plural and apostrophe suffixes. Selected connecting words no longer block a query that has enough meaningful terms.
+- This remains lexical retrieval. It does not promise general translation, semantic matching, accurate model answers or measured token savings. Unknown terms and negative controls remain meaningful.
+- The research trial covers data analysis, accessibility, Python, robotics and extending release-monitoring research. Reviewed public reports include primary sources, model provenance and Turkish summaries; source review remains necessary even when model output is well formed.
+
 # DevTrellis 0.1.0-alpha.6
 
 ## Research that builds on earlier work
