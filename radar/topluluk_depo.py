@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from radar.arastirma_arama import arama_gruplari
+from radar.arastirma_siralama import INDEX_VERSION, aday_kapsami, belge_terimleri, eslesme_bilgisi, sorgu_hazirla
 from radar.gelistirici_alani import (alanlari_dogrula, arama_metni, metin, paket_dogrula,
                                     paket_metni, surumu_dogrula)
 
@@ -62,6 +63,7 @@ class ToplulukDeposu:
     def __init__(self, path, clock=None):
         self.path = Path(path)
         self.clock = clock or time.time
+        self.search_index_available = False
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.baglanti() as connection:
             connection.executescript("""
@@ -129,7 +131,84 @@ class ToplulukDeposu:
                 );
                 CREATE INDEX IF NOT EXISTS community_receipt_expiry ON community_event_receipts(expires_at);
             """)
+            self.arama_indeksini_hazirla(connection)
         self.dummy_hash = "pbkdf2_sha256$600000$" + "00" * 16 + "$" + "00" * 32
+
+    @staticmethod
+    def fts5_kur(connection):
+        """Sanal tablo yalnız kamusal araştırmaların türetilmiş arama alanlarını taşır."""
+        connection.execute("CREATE VIRTUAL TABLE IF NOT EXISTS community_research_fts USING fts5("
+                           "entry_id UNINDEXED,version UNINDEXED,title,summary,tags,body,tokenize='ascii')")
+
+    def arama_indeksini_hazirla(self, connection):
+        """Eski veriyi bir kez doldurur; değişen veya kaldırılan yayınları tutarlı onarır."""
+        try:
+            self.fts5_kur(connection)
+        except sqlite3.OperationalError as exc:
+            if "no such module: fts5" not in str(exc).lower():
+                raise
+            return
+        self.search_index_available = True
+        connection.execute("CREATE TABLE IF NOT EXISTS community_search_metadata ("
+                           "name TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        saved = connection.execute("SELECT value FROM community_search_metadata WHERE name='index_version'").fetchone()
+        if saved is None or saved["value"] != str(INDEX_VERSION):
+            connection.execute("DELETE FROM community_research_fts")
+        eligible = (" FROM community_entries e JOIN community_revisions r ON r.entry_id=e.id "
+                    "AND r.version=e.published_revision JOIN community_public_revisions p ON p.entry_id=e.id "
+                    "AND p.version=r.version AND p.visible=1 WHERE r.kind='research'")
+        connection.execute("DELETE FROM community_research_fts WHERE rowid NOT IN (SELECT e.rowid" + eligible + ")")
+        missing = connection.execute("SELECT e.id" + eligible +
+            " AND NOT EXISTS (SELECT 1 FROM community_research_fts f WHERE f.rowid=e.rowid "
+            "AND f.entry_id=e.id AND f.version=r.version)").fetchall()
+        for row in missing:
+            self.arama_indeksini_esitle(connection, row["id"])
+        connection.execute("INSERT INTO community_search_metadata VALUES('index_version',?) "
+                           "ON CONFLICT(name) DO UPDATE SET value=excluded.value", (str(INDEX_VERSION),))
+
+    def arama_indeksini_esitle(self, connection, entry_id):
+        """Yayın değişikliğiyle aynı işlemde yalnız güncel kamu sürümünü indeksler."""
+        if not self.search_index_available:
+            return
+        row = connection.execute("SELECT rowid,published_revision FROM community_entries WHERE id=?", (entry_id,)).fetchone()
+        if row is None:
+            return
+        connection.execute("DELETE FROM community_research_fts WHERE rowid=?", (row["rowid"],))
+        if row["published_revision"] is None:
+            return
+        public = connection.execute("SELECT r.packet FROM community_revisions r JOIN community_public_revisions p "
+            "ON p.entry_id=r.entry_id AND p.version=r.version AND p.visible=1 "
+            "WHERE r.entry_id=? AND r.version=? AND r.kind='research'", (entry_id, row["published_revision"])).fetchone()
+        if public is not None:
+            fields = belge_terimleri(json.loads(public["packet"]))
+            connection.execute("INSERT INTO community_research_fts(rowid,entry_id,version,title,summary,tags,body) "
+                "VALUES(?,?,?,?,?,?,?)", (row["rowid"], entry_id, row["published_revision"],
+                                          fields["title"], fields["summary"], fields["tags"], fields["body"]))
+
+    def sirali_arama(self, connection, plan, *, offset, limit, moderator):
+        """Kapsamı ve ağırlığı sayfalamadan önce hesaplar; gizli sürümler aday olamaz."""
+        if not plan["match"]:
+            return [], 0
+        def coverage(title, summary, tags, body):
+            return aday_kapsami(plan, {"title": title, "summary": summary, "tags": tags, "body": body})
+
+        connection.create_function("devtrellis_coverage", 4, coverage, deterministic=True)
+        coverage_sql = "devtrellis_coverage(f.title,f.summary,f.tags,f.body)"
+        selection = (" FROM community_research_fts f JOIN community_entries e ON e.rowid=f.rowid AND e.id=f.entry_id "
+                     "JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.published_revision AND r.version=f.version "
+                     "JOIN community_public_revisions p ON p.entry_id=e.id AND p.version=r.version AND p.visible=1 "
+                     "WHERE community_research_fts MATCH ? AND r.kind='research' AND " + coverage_sql + ">=0")
+        total = connection.execute("SELECT COUNT(*)" + selection, (plan["match"],)).fetchone()[0]
+        rows = connection.execute("SELECT e.id,f.title,f.summary,f.tags,f.body," + coverage_sql + " AS coverage,"
+            "bm25(community_research_fts,0.0,0.0,6.0,3.0,4.0,1.0) AS relevance" + selection +
+            " ORDER BY coverage DESC,relevance ASC,r.created_at DESC,e.id LIMIT ? OFFSET ?",
+            (plan["match"], limit, offset)).fetchall()
+        cards = []
+        for row in rows:
+            card = self.kart(connection, row["id"], public=True, moderator=moderator)
+            card["search_match"] = eslesme_bilgisi(plan, {name: row[name] for name in ("title", "summary", "tags", "body")})
+            cards.append(card)
+        return cards, total
 
     @contextmanager
     def baglanti(self, write=False):
@@ -438,6 +517,7 @@ class ToplulukDeposu:
                 connection.execute("UPDATE community_public_revisions SET visible=0 WHERE entry_id=?", (entry_id,))
                 connection.execute("UPDATE community_entries SET status='withdrawn',published_revision=NULL,version=version+1,"
                                    "updated_at=? WHERE id=?", (int(self.clock()), entry_id))
+            self.arama_indeksini_esitle(connection, entry_id)
             row = self.inbox_satiri(connection, entry_id, capability_hash)
             return {"submission": self.inbox_gorunumu(row)}
 
@@ -508,6 +588,7 @@ class ToplulukDeposu:
                 connection.execute("UPDATE community_public_revisions SET visible=0 WHERE entry_id=?", (entry_id,))
                 connection.execute("UPDATE community_entries SET status='withdrawn',published_revision=NULL,version=version+1,"
                                    "updated_at=? WHERE id=?", (int(self.clock()), entry_id))
+            self.arama_indeksini_esitle(connection, entry_id)
             return {"card": self.kart(connection, entry_id)}
 
     def karar(self, user, entry_id, payload):
@@ -540,6 +621,7 @@ class ToplulukDeposu:
                                "updated_at=? WHERE id=?", (status, published, note, now, entry_id))
             connection.execute("INSERT INTO community_decisions(entry_id,revision,moderator_id,decision,note,created_at) "
                                "VALUES(?,?,?,?,?,?)", (entry_id, row["latest_revision"], user["id"], payload["decision"], note, now))
+            self.arama_indeksini_esitle(connection, entry_id)
             return {"card": self.kart(connection, entry_id)}
 
     def yayindan_kaldir(self, user, entry_id, payload):
@@ -560,10 +642,13 @@ class ToplulukDeposu:
                                "moderation_note=?,updated_at=? WHERE id=?", (note, now, entry_id))
             connection.execute("INSERT INTO community_decisions(entry_id,revision,moderator_id,decision,note,created_at) "
                                "VALUES(?,?,?,'hide',?,?)", (entry_id, row["published_revision"], user["id"], note, now))
+            self.arama_indeksini_esitle(connection, entry_id)
             return {"card": self.kart(connection, entry_id)}
 
-    def listele(self, *, user=None, review=False, query="", kind="", offset=0, limit=30, observer=None):
+    def listele(self, *, user=None, review=False, query="", kind="", offset=0, limit=30, observer=None, search_mode="all"):
         query = metin(query, "Arama", 200)
+        if not isinstance(search_mode, str) or search_mode not in {"all", "ranked"}:
+            raise ValueError("Arama modu all veya ranked olmalı.")
         if kind not in ("", "research", "project"):
             raise ValueError("Kayıt türü geçersiz.")
         if type(offset) is not int or not 0 <= offset <= 9223372036854775807 or type(limit) is not int or not 1 <= limit <= 100:
@@ -571,6 +656,9 @@ class ToplulukDeposu:
         public = user is None and not review
         if review and (user is None or user["role"] != "moderator"):
             raise ToplulukHatasi("Bu işlem için moderatör hesabı gerekli.", 403)
+        ranked_requested = search_mode == "ranked" and public and kind == "research" and bool(query)
+        ranked = ranked_requested and self.search_index_available
+        plan = sorgu_hazirla(query) if ranked_requested else None
         revision_column = "published_revision" if public else "latest_revision"
         join = f" FROM community_entries e JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.{revision_column}"
         conditions, values = [], []
@@ -579,7 +667,7 @@ class ToplulukDeposu:
         elif user:
             conditions.append("e.owner_id=?")
             values.append(user["id"])
-        if query:
+        if query and not ranked:
             for group in arama_gruplari(query):
                 conditions.append("(" + " OR ".join("instr(r.search_text,?)>0" for _ in group) + ")")
                 values.extend(group)
@@ -589,12 +677,21 @@ class ToplulukDeposu:
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         with self.baglanti() as connection:
             connection.execute("BEGIN")
-            total = connection.execute("SELECT COUNT(*)" + join + where, values).fetchone()[0]
-            rows = connection.execute("SELECT e.id" + join + where + " ORDER BY r.created_at DESC,e.id LIMIT ? OFFSET ?",
-                                      [*values, limit, offset]).fetchall()
             moderator = observer is not None and observer["role"] == "moderator"
-            result = {"items": [self.kart(connection, row["id"], public=public, moderator=moderator) for row in rows],
-                      "total": total, "offset": offset, "limit": limit}
+            if ranked:
+                cards, total = self.sirali_arama(connection, plan, offset=offset, limit=limit, moderator=moderator)
+            else:
+                total = connection.execute("SELECT COUNT(*)" + join + where, values).fetchone()[0]
+                rows = connection.execute("SELECT e.id" + join + where + " ORDER BY r.created_at DESC,e.id LIMIT ? OFFSET ?",
+                                          [*values, limit, offset]).fetchall()
+                cards = [self.kart(connection, row["id"], public=public, moderator=moderator) for row in rows]
+                if ranked_requested:
+                    for card in cards:
+                        card["search_match"] = eslesme_bilgisi(plan, belge_terimleri(card["packet"]))
+            result = {"items": cards, "total": total, "offset": offset, "limit": limit}
+            if search_mode == "ranked":
+                result["search"] = {"mode": "ranked" if ranked else "all",
+                                    "fallback": bool(ranked_requested and not self.search_index_available)}
             if public:
                 published_research = connection.execute("SELECT COUNT(*) FROM community_entries e "
                     "JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.published_revision "

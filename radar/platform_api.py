@@ -5,13 +5,15 @@ import secrets
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from radar.kaynak_hafizasi_istemci import KaynakHafizasiIstemcisi, KaynakHafizasiIstemciHatasi
 from radar.gelistirici_alani import GelistiriciAlani, PlatformSurumCatismasi
 from radar.topluluk_baglantisi import ToplulukBaglantisi, ToplulukBaglantiHatasi
 
 
-def router_olustur(depo, csrf_token, workflow=None, community=None):
+def router_olustur(depo, csrf_token, workflow=None, community=None, source_memory=None):
     area = GelistiriciAlani(depo)
     community = community if community is not None else ToplulukBaglantisi(depo, workflow)
+    source_memory = source_memory if source_memory is not None else KaynakHafizasiIstemcisi()
     router = APIRouter(prefix="/api/platform")
 
     def mutation_guard(request: Request):
@@ -24,7 +26,7 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
             return operation(*args, **kwargs)
         except PlatformSurumCatismasi as exc:
             raise HTTPException(409, str(exc)) from exc
-        except ToplulukBaglantiHatasi as exc:
+        except (ToplulukBaglantiHatasi, KaynakHafizasiIstemciHatasi) as exc:
             raise HTTPException(502, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(404, "İstenen kayıt bulunamadı.") from exc
@@ -35,7 +37,32 @@ def router_olustur(depo, csrf_token, workflow=None, community=None):
 
     @router.get("/community/session")
     def community_session():
-        return {"csrf_token": csrf_token, "destination": "https://devtrellis.org"}
+        return {"csrf_token": csrf_token, "destination": "https://devtrellis.org",
+                "search_views": ["full", "summary"], "search_modes": ["all", "ranked"],
+                "source_memory": {"adapter_version": 1, "remote_enabled": "unknown"}}
+
+    def source_query_guard(request):
+        if request.query_params:
+            raise HTTPException(422, "Kaynak yolu ek sorgu veya özel bağlam kabul etmez.")
+
+    @router.get("/community/source-memory")
+    def source_catalog(request: Request):
+        source_query_guard(request)
+        return execute(source_memory.katalog)
+
+    @router.get("/community/source-memory/{source_id}")
+    def source_read(source_id: str, request: Request):
+        source_query_guard(request)
+        return execute(source_memory.oku, source_id)
+
+    @router.post("/community/source-memory/{source_id}/check", dependencies=guarded)
+    def source_check(source_id: str, request: Request, payload: dict = Body(...)):
+        source_query_guard(request)
+        if payload.keys() - {"max_age_seconds", "freshness_required"}:
+            raise HTTPException(422, "Kaynak kontrolü özel bağlam veya serbest URL kabul etmez.")
+        return execute(source_memory.kontrol_et, source_id,
+                       max_age_seconds=payload.get("max_age_seconds", 3600),
+                       freshness_required=payload.get("freshness_required", True))
 
     @router.post("/community/search", dependencies=guarded)
     def community_search(payload: dict = Body(...)):

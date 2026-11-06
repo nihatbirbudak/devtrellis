@@ -4,7 +4,17 @@
 
 The optional MCP connection lets your assistant **look for existing research first**, read useful reports, and offer to contribute its finished research. You do not need a DevTrellis account. The assistant uses its own model access; this MCP server never calls a model or consumes a shared model quota.
 
-The flow is: **search → read sources and identify gaps → research only what is missing → a local review panel → your button choice → community review**. Suitable existing work can reduce repeated research. Installing MCP or the skill does not force an assistant to use it, and does not guarantee token savings or correct answers.
+The default flow is: **search summaries → reuse a suitable answer → check only uncertain or changing points → offer deeper research if needed**. A material new finding can separately lead to a local contribution review, your button choice and community review. An explicit request for deep investigation still takes priority. Installing MCP or the skill does not force an assistant to use it, and does not guarantee token savings or correct answers.
+
+Search results omit report bodies and retain summaries, sources, report dates, model information and available metadata. MCP requests three candidates by default and reads a full report only when needed. When both the local bridge and community server support summary views, report bodies also stay out of search responses sent over the network. With older components, the bridge accepts their full search response and removes the bodies before returning results to the model. A recent report date, model reputation or an unchanged source page does not by itself prove that a claim is current. Report dates are not source-check timestamps. The assistant distinguishes reused findings from checks it actually performed, links the exact shared report version and offers further investigation after answering.
+
+The public search endpoint accepts `view=summary`; its default remains the full packet for existing clients. The local search API also defaults to full packets and advertises supported `search_views` in its session response. MCP opts into summary mode only when that local capability is present. Summary packets omit `body` and are search results, not importable contribution packets; exact-version reading and downloading still return the full report. A caveat present only in the report body is unavailable in its summary, so read the report when the summary cannot support the requested answer.
+
+MCP also requests `search_mode=ranked` when the local bridge advertises it in `search_modes`. The public API supports this opt-in for research searches; its existing `all` default remains unchanged. A separate SQLite FTS5 index contains only currently published research revisions. Word coverage comes first, then weighted title/summary/tag/body relevance, with stable date/id tie breaking. A small explicit TR/EN vocabulary and limited word-form matching help retrieval; this is not unrestricted semantic search. Recognized dotted versions and technical identifiers must match; ordinary quantities in a question may be claims to check, so they are not mandatory filters. Named release differences still require reading the scope.
+
+Each ranked candidate includes `search_match.matched_terms`, `missing_terms`, `all_terms_matched` and `answer_sufficiency: "not_assessed"`. Missing terms require checking the scope; even a match on every term proves neither a sufficient answer nor factual accuracy. Older servers or SQLite builds without FTS5 use the existing all-terms search and expose `search.fallback: true`; no embedding model, external vector service or extra model call is required. The index is derived data and is rebuilt on upgrade when its format changes; publication and withdrawal update it in the same database transaction.
+
+Each validated search result and report read includes `report_url`, a direct link to the exact report revision. Cite this value instead of asking readers to reconstruct a link from an identifier. The bridge derives it from the community origin and validated identifier/version; it does not trust a URL supplied inside a remote card.
 
 ## 1. Install the optional adapter
 
@@ -98,7 +108,7 @@ python -X utf8 araclar/skill-kur.py --zip devtrellis-research-skill.zip
 
 The archive contains `devtrellis-research/SKILL.md` and its UI metadata, with no installer, application data or personal files. It refuses to replace an existing archive. Uploading a skill supplies instructions; it does not make a remote/cloud chat able to reach your desktop's localhost service. The same host still needs access to the configured MCP connection. See [Claude's custom skill packaging guide](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills) for supported upload surfaces.
 
-The skill's rules are: search with a general public topic, inspect original sources and dates, research gaps using your own model, and prepare a self-contained public report after completion. It never asks to scan local files, extract keys, install dependencies or upload a conversation. Private conversation/profile/project details and nonpublic repository content must stay out of every tool input, including query and metadata.
+The skill searches a general public topic, reuses adequate findings and checks only the necessary sources or gaps. It prepares a separate public contribution only for material new findings; unchanged reuse does not require another report. It never asks to scan local files, extract keys, install dependencies or upload a conversation. Private conversation/profile/project details and nonpublic repository content must stay out of every tool input, including query and metadata.
 
 Try: **“Before researching this topic, check whether DevTrellis already has a useful report. Show me the relevant sources and explain what still needs updating.”**
 
@@ -108,8 +118,8 @@ Try: **“Before researching this topic, check whether DevTrellis already has a 
 
 | Tool | What it does |
 | --- | --- |
-| `search_research(query, limit=10)` | Searches shared research through your local app; 1–10 results. |
-| `read_research(research_id, version=null)` | Reads the latest or exact public version, with sources and provenance; attempts an anonymous MCP-access count. |
+| `search_research(query, limit=3)` | Searches shared research through your local app; 1–10 summary packets with `view=summary` and no `packet.body`. The default and the skill's initial request are 3. |
+| `read_research(research_id, version=null)` | Reads the latest or exact public version, with sources and provenance; sends no counter event. |
 | `record_research_use(research_id, version)` | Reports actual use of findings; sends only the report identifier/version. This is a declared signal, not a correctness vote. |
 | `open_submission_history()` | Returns the local My submissions link without creating a preview or contacting the community. |
 | `preview_contribution(...)` | Builds a local preview and offers an interactive review panel. It does not submit. |
@@ -120,7 +130,9 @@ The software is MIT licensed. The report text uses the separately selected **CC 
 
 For material new findings based on existing reports, `preview_contribution` accepts `lineage: {parents: [{research_id, version}], change_summary}`. Use up to five exact public report versions and a public change summary of up to 600 characters. The schema-3 packet keeps the earlier work intact and creates a separate moderated contribution. The review panel shows the development links and change summary. Retain original-source citations; several derivative reports are not independent corroboration. Paraphrasing an unchanged report alone should not prompt another contribution offer.
 
-Web openings, MCP accesses, helpfulness, declared reuse, outdated-information and disputed-information reports are separate approximate counters for a published revision. They are not unique people or reliability scores. Event bodies contain only report/version, event type and a random receipt; the counter database stores no IP, conversation, account or cross-report device identifier. Short-lived in-memory rate limiting still uses the connecting address. Anonymous clients can be imitated, so channel labels and votes are not authenticated endorsements. Access counting failure does not block reading. Repeated reuse calls within one local MCP session share a receipt. Server receipt deduplication lasts seven days; counters remain aggregate.
+`read_research` uses a read-only GET and sends no access or reuse event, so reading does not depend on a write approval. `record_research_use` remains a separate optional write. Existing MCP-access counters cover older clients that send events; they do not measure all MCP reads.
+
+Web openings, recorded MCP accesses, helpfulness, declared reuse, outdated-information and disputed-information reports are separate approximate counters for a published revision. They are not unique people or reliability scores. Event bodies contain only report/version, event type and a random receipt; the counter database stores no IP, conversation, account or cross-report device identifier. Short-lived in-memory rate limiting still uses the connecting address. Anonymous clients can be imitated, so channel labels and votes are not authenticated endorsements. Repeated reuse calls within one local MCP session share a receipt. Server receipt deduplication lasts seven days; counters remain aggregate.
 
 The local server validates the packet and produces the exact preview. Read it before using the **send** or **keep private** buttons. The model has no submission tool. `contribution_decision` is reserved for the review UI and requires its hidden review nonce; the skill instructs the assistant never to call it or automate your choice. Changing content requires a fresh preview. Submission enters moderation; it does not instantly publish.
 
@@ -149,3 +161,26 @@ Tests use a temporary local HTTP service and the real SDK protocol; they make no
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_mcp_yerel.py -v
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_skill_install.py -v
 ```
+
+## Compact search and exact report sections
+
+`search_research` now defaults to `view="brief"`: original sources, provenance,
+limits, publication version and report URL remain; export boilerplate and popularity
+are omitted. Use `view="summary"` for the legacy metadata shape. Brief output is
+not an exportable contribution. A `size_notice` reports a size-target overrun without
+silently truncating evidence.
+
+`read_research` keeps its default full response. For a long report, pass its exact
+version and `view="outline"`, then `view="section"` with a returned `section_id`.
+Partial output includes the exact body hash, heading context, continuation markers
+and `complete_report=false`. Source lists apply to the whole report; they are not
+automatically verified citations for every sentence. Section ids cannot be reused
+with a changed report. Prefer a single full read for short reports. The adapter
+currently downloads the full report for each view; this reduces model-facing text,
+not network transfer. No LLM, public write or usage event is invoked by these reads.
+
+The optional source-memory pilot tools are exposed only with `--source-memory-tools`.
+See [source-memory access and limits](SOURCE-MEMORY.md#optional-mcp-access). The default
+tool list remains small; enabling the adapter does not activate the server pilot.
+The research skill loads contribution/source-memory references only when needed;
+installers and portable packages must carry the complete referenced skill directory.

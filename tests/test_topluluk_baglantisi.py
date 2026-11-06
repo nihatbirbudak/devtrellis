@@ -7,7 +7,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
 from fastapi import FastAPI
@@ -318,6 +318,36 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertEqual(self.vault.values, {})
 
+    def test_local_lineage_entry_preview_preserves_schema_three_over_http(self):
+        from radar.gelistirici_alani import KAYIT_ALANLARI
+
+        lineage = {"parents": [{"research_id": "a" * 32, "version": 2}],
+                   "change_summary": "New primary-source evidence added."}
+        provenance = {"question": "Private original question", "model": "unknown", "provider": "unknown",
+                      "generated_at": None, "topic": "software", "language": "en", "source_url": "",
+                      "evidence_status": "unverified", "modified": False}
+        app = FastAPI()
+        app.include_router(router_olustur(self.depo, "csrf-test", community=self.bridge))
+        with TestClient(app) as client:
+            for metadata in (None, provenance):
+                with self.subTest(has_provenance=metadata is not None):
+                    packet = {**self.packet, "schema_version": 3, "lineage": lineage}
+                    if metadata is not None:
+                        packet["provenance"] = metadata
+                    entry = self.bridge.area.olustur({key: value for key, value in packet.items()
+                                                     if key in KAYIT_ALANLARI})
+                    response = client.post("/api/platform/community/preview", json={"entry_id": entry["id"]},
+                                           headers={"X-Radar-CSRF": "csrf-test"})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    public = response.json()["packet"]
+                    self.assertEqual(public["schema_version"], 3)
+                    self.assertEqual(public["lineage"], lineage)
+                    self.assertEqual(public["author"], "Anonymous contributor")
+                    self.assertNotIn("Private original question", json.dumps(public))
+                    self.assertEqual(self.bridge.area.oku(entry["id"]), entry)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.vault.values, {})
+
     def test_vault_failure_does_not_send_or_fall_back_to_plaintext(self):
         class Broken(Kasa):
             def set(self, name, value):
@@ -409,6 +439,34 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
             with self.subTest(browser=browser):
                 self.assertEqual(self.remote_client.get(path, headers={**headers, **browser}).status_code, 403)
 
+    def test_ranked_match_metadata_and_legacy_server_fallback(self):
+        sent = self.send(self.prepare())
+        store = self.remote.state.community
+        reviewer = store.hesap_ekle("reviewer", "Reviewer", "moderator", "a-long-test-password")
+        store.karar(reviewer, sent["submission"]["id"], {"expected_version": 1, "decision": "publish", "note": "Reviewed"})
+        result = self.bridge.ara({"query": "Ortak", "limit": 3, "view": "summary", "search_mode": "ranked"})
+        self.assertEqual(result["search"], {"mode": "ranked", "fallback": False})
+        self.assertEqual(result["items"][0]["search_match"], {"matched_terms": ["ortak"], "missing_terms": [],
+                         "all_terms_matched": True, "answer_sufficiency": "not_assessed"})
+        self.assertEqual(self.calls[-1].url.params["search_mode"], "ranked")
+        full = self.bridge.ara({"query": "Ortak", "limit": 3, "view": "full", "search_mode": "ranked"})
+        expected = copy.deepcopy(full)
+        expected["items"][0]["packet"].pop("body")
+        expected["view"] = "summary"
+        self.assertEqual(result, expected)
+        self.assertEqual(self.remote_client.get("/api/community/cards", params={"search_mode": "invalid"}).status_code, 422)
+        legacy = self.remote_client.get("/api/community/cards", params={"query": "Ortak"}).json()
+        with patch.object(self.bridge, "request", return_value=legacy):
+            fallback = self.bridge.ara({"query": "Ortak", "search_mode": "ranked"})
+        self.assertEqual(fallback["search"], {"mode": "all", "fallback": True})
+        for change in ({"answer_sufficiency": "verified"}, {"all_terms_matched": False},
+                       {"missing_terms": ["ortak"]}, {"matched_terms": ["a"] * 25}):
+            broken = copy.deepcopy(result)
+            broken["items"][0]["search_match"].update(change)
+            with self.subTest(change=change), patch.object(self.bridge, "request", return_value=broken):
+                with self.assertRaises(ToplulukBaglantiHatasi):
+                    self.bridge.ara({"query": "Ortak", "view": "summary", "search_mode": "ranked"})
+
     def test_search_read_import_reuses_published_research_without_model(self):
         sent = self.send(self.prepare())
         store = self.remote.state.community
@@ -419,11 +477,114 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         self.assertEqual(result["total"], 1)
         card = self.bridge.oku(sent["submission"]["id"])
         self.assertEqual(card["packet"]["body"], self.packet["body"])
+        self.assertEqual(result["items"][0]["report_url"], card["report_url"])
+        self.assertEqual(card["report_url"], COMMUNITY_URL + "/?card=" + card["id"] + "&version=" + str(card["version"]))
         imported = self.bridge.ice_aktar(sent["submission"]["id"])
         self.assertEqual(imported["entry"]["origin"], "imported")
         with self.assertRaises(ValueError):
             self.bridge.onizle({"entry_id": imported["entry"]["id"]})
         self.assertTrue(self.bridge.ice_aktar(sent["submission"]["id"])["duplicate"])
+
+    def test_summary_search_reaches_remote_and_preserves_metadata_with_old_server_fallback(self):
+        sent = self.send(self.prepare())
+        store = self.remote.state.community
+        reviewer = store.hesap_ekle("reviewer", "Reviewer", "moderator", "a-long-test-password")
+        store.karar(reviewer, sent["submission"]["id"], {"expected_version": 1, "decision": "publish", "note": "Reviewed"})
+        full = self.bridge.ara({"query": "Ortak", "limit": 3})
+        summary = self.bridge.ara({"query": "Ortak", "limit": 3, "view": "summary"})
+        self.assertEqual(self.calls[-1].url.params["view"], "summary")
+        expected = copy.deepcopy(full)
+        expected["items"][0]["packet"].pop("body")
+        expected["view"] = "summary"
+        self.assertEqual(summary, expected)
+        raw_full = self.remote_client.get("/api/community/cards", params={"query": "Ortak", "limit": 3}).json()
+        with patch.object(self.bridge, "request", return_value=raw_full) as request:
+            self.assertEqual(self.bridge.ara({"query": "Ortak", "limit": 3, "view": "summary"}), expected)
+            self.assertEqual(request.call_args.kwargs["params"]["view"], "summary")
+        broken = copy.deepcopy(raw_full)
+        broken["items"][0]["packet"]["body"] = ["invalid full body"]
+        with patch.object(self.bridge, "request", return_value=broken), self.assertRaises(ToplulukBaglantiHatasi):
+            self.bridge.ara({"query": "Ortak", "view": "summary"})
+        # Özet istemi normal okuma, içeri alma veya paylaşım doğrulamasını gevşetmez.
+        with patch.object(self.bridge, "request", return_value=summary["items"][0]), self.assertRaises(ToplulukBaglantiHatasi):
+            self.bridge.oku(sent["submission"]["id"])
+        for field in ("license", "sources", "created_at", "summary"):
+            broken = copy.deepcopy(summary)
+            broken["items"][0]["packet"].pop(field)
+            with self.subTest(field=field), patch.object(self.bridge, "request", return_value=broken):
+                with self.assertRaises(ToplulukBaglantiHatasi):
+                    self.bridge.ara({"query": "Ortak", "view": "summary"})
+        app = FastAPI()
+        app.include_router(router_olustur(self.depo, "csrf-test", community=self.bridge))
+        with TestClient(app) as client:
+            body = {"query": "Ortak", "limit": 3, "view": "summary"}
+            path = "/api/platform/community/search"
+            self.assertEqual(client.post(path, json=body).status_code, 403)
+            response = client.post(path, json=body, headers={"X-Radar-CSRF": "csrf-test"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), expected)
+            for view in ("unknown", True, None, []):
+                self.assertEqual(client.post(path, json={**body, "view": view},
+                                            headers={"X-Radar-CSRF": "csrf-test"}).status_code, 422)
+
+    def test_report_links_use_validated_exact_version_and_ignore_remote_url(self):
+        identifier = "a" * 32
+        remote = {"id": identifier, "status": "published", "version": 2, "published_version": 7,
+                  "created_at": self.packet["created_at"], "updated_at": self.packet["updated_at"],
+                  "packet": self.packet, "report_url": "https://attacker.example/steal?token=untrusted"}
+        expected = COMMUNITY_URL + "/?card=" + identifier + "&version=2"
+        for requested_view in ("full", "summary"):
+            result = {"items": [copy.deepcopy(remote)], "total": 1}
+            if requested_view == "summary":
+                result["view"] = "summary"
+                result["items"][0]["packet"].pop("body")
+            with self.subTest(view=requested_view), patch.object(self.bridge, "request", return_value=result):
+                card = self.bridge.ara({"query": "Public", "view": requested_view})["items"][0]
+                self.assertEqual(card["report_url"], expected)
+                self.assertEqual(card["published_version"], 7)
+                self.assertNotIn("attacker.example", json.dumps(card))
+        with patch.object(self.bridge, "request", return_value=remote) as request:
+            card = self.bridge.oku(identifier, version=2)
+            self.assertEqual(card["report_url"], expected)
+            self.assertEqual(request.call_args.kwargs["params"], {"version": 2})
+        self.assertEqual(remote["report_url"], "https://attacker.example/steal?token=untrusted")
+
+    def test_public_corrections_keep_exact_target_and_do_not_export_private_fields(self):
+        identifier = "a" * 32
+        correction_id = "b" * 32
+        notice = {"total": 4, "offset": 0, "limit": 3, "items": [
+            {"id": char * 32, "summary": "The benchmark used a different release.", "withdrawn": False,
+             "correction": {"research_id": correction_id, "version": 7}, "reviewed_at": self.packet["updated_at"]}
+            for char in "cde"]}
+        remote = {"id": identifier, "status": "published", "version": 2, "published_version": 7,
+                  "created_at": self.packet["created_at"], "updated_at": self.packet["updated_at"],
+                  "packet": self.packet, "public_corrections": notice}
+        with patch.object(self.bridge, "request", return_value=remote):
+            card = self.bridge.oku(identifier, version=2)
+        safe = card["public_corrections"]
+        self.assertEqual((safe["research_id"], safe["version"]), (identifier, 2))
+        self.assertTrue(safe["more_available"])
+        self.assertEqual(safe["items"][0]["report_url"], COMMUNITY_URL + "/?card=" + correction_id + "&version=7")
+        # Özet araması ve MCP brief de uyarıyı düşürmez.
+        from radar.arastirma_kisa import kisa_arama_sonucu
+        with patch.object(self.bridge, "request", return_value={"items": [remote], "total": 1}):
+            summary = self.bridge.ara({"query": "Ortak", "view": "summary"})
+        self.assertEqual(kisa_arama_sonucu(summary)["items"][0]["public_corrections"], safe)
+        mutations = [
+            lambda value: value.update(receipt="PRIVATE"),
+            lambda value: value["items"][0].update(reason="PRIVATE"),
+            lambda value: value["items"][0].update(summary="x" * 601),
+            lambda value: value["items"][0].update(reviewed_at="2026-11-06"),
+            lambda value: value["items"][0]["correction"].update(version=True),
+            lambda value: value["items"].append(copy.deepcopy(value["items"][0])),
+        ]
+        for mutate in mutations:
+            broken = copy.deepcopy(remote)
+            mutate(broken["public_corrections"])
+            with self.subTest(value=broken["public_corrections"]), patch.object(self.bridge, "request", return_value=broken):
+                with self.assertRaises(ToplulukBaglantiHatasi):
+                    self.bridge.oku(identifier, version=2)
+        self.assertNotIn("report_url", remote["public_corrections"]["items"][0])
 
     def test_moderator_hiding_is_visible_to_sender_and_invalid_response_not_saved(self):
         sent = self.send(self.prepare())

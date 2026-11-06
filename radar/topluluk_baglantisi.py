@@ -7,9 +7,11 @@ import re
 import secrets
 import threading
 import time
+from urllib.parse import urlencode
 
 import httpx
 
+from radar.arastirma_ozeti import arama_ozeti, paket_ozetini_dogrula
 from radar.depo import simdi, tarih
 from radar.gelistirici_alani import (
     GelistiriciAlani, KAYIT_ALANLARI, alanlari_dogrula, metin, paket_dogrula, paket_metni, surumu_dogrula,
@@ -116,24 +118,50 @@ class ToplulukBaglantisi:
         return value
 
     def ara(self, payload):
-        alanlari_dogrula(payload, {"query", "limit"}, {"query"})
+        alanlari_dogrula(payload, {"query", "limit", "view", "search_mode"}, {"query"})
+        view = payload.get("view", "full")
+        if not isinstance(view, str) or view not in {"full", "summary"}:
+            raise ValueError("Arama görünümü full veya summary olmalı.")
+        mode = payload.get("search_mode", "all")
+        if not isinstance(mode, str) or mode not in {"all", "ranked"}:
+            raise ValueError("Arama yöntemi all veya ranked olmalı.")
         query = sorguyu_dogrula(metin(payload["query"], "Arama", 200, required=True))
         limit = payload.get("limit", 10)
         if type(limit) is not int or not 1 <= limit <= 10:
             raise ValueError("Arama sınırı 1–10 arasında olmalı.")
-        result = self.request("GET", "/api/community/cards", params={"query": query, "kind": "research", "limit": limit})
+        params = {"query": query, "kind": "research", "limit": limit}
+        if view == "summary":
+            params["view"] = view
+        if mode == "ranked":
+            params["search_mode"] = mode
+        result = self.request("GET", "/api/community/cards", params=params)
+        remote_view = result.get("view", "full")
+        if (not isinstance(remote_view, str) or remote_view not in {"full", "summary"}
+                or (view == "full" and remote_view != "full")):
+            raise ToplulukBaglantiHatasi("Topluluk arama görünümü geçersiz.")
         items, total = result.get("items"), result.get("total")
         if not isinstance(items, list) or len(items) > limit or type(total) is not int or total < len(items):
             raise ToplulukBaglantiHatasi("Topluluk arama yanıtı geçersiz.")
-        response = {"items": [self.kart_dogrula(item) for item in items], "total": total,
+        response = {"items": [self.kart_dogrula(item, summary=remote_view == "summary") for item in items], "total": total,
                     "limit": limit, "offset": 0, "destination": COMMUNITY_URL}
+        if mode == "ranked":
+            search = result.get("search", {"mode": "all", "fallback": True})
+            if (not isinstance(search, dict) or search.get("mode") not in ("all", "ranked")
+                    or type(search.get("fallback")) is not bool
+                    or search["fallback"] != (search["mode"] == "all")):
+                raise ToplulukBaglantiHatasi("Topluluk arama yöntemi yanıtı geçersiz.")
+            if search["mode"] == "ranked" and any("search_match" not in item for item in response["items"]):
+                raise ToplulukBaglantiHatasi("Topluluk arama kapsamı eksik.")
+            response["search"] = {"mode": search["mode"], "fallback": search["fallback"]}
         if "library" in result:
             library = result["library"]
             amount = library.get("published_research_total") if isinstance(library, dict) else None
             if type(amount) is not int or not 0 <= amount <= 9223372036854775807 or amount < total:
                 raise ToplulukBaglantiHatasi("Topluluk kütüphane sayımı geçersiz.")
             response["library"] = {"published_research_total": amount}
-        return response
+        # Eski sunucu görünümü yok sayıp tam paket döndürebilir; önce tam
+        # doğrulamasını yap, yalnız istemcinin istediği özet yanıtını daralt.
+        return arama_ozeti(response) if view == "summary" else response
 
     def oku(self, entry_id, version=None):
         if version is not None:
@@ -187,11 +215,65 @@ class ToplulukBaglantisi:
             raise ValueError("Araştırma kullanım sayımları geçersiz.")
         return dict(value)
 
-    def kart_dogrula(self, result):
+    @staticmethod
+    def arama_eslesmesini_dogrula(value):
+        if not isinstance(value, dict) or set(value) != {"matched_terms", "missing_terms", "all_terms_matched", "answer_sufficiency"}:
+            raise ValueError("Arama kapsamı geçersiz.")
+        terms = {}
+        for field in ("matched_terms", "missing_terms"):
+            if not isinstance(value[field], list) or len(value[field]) > 24:
+                raise ValueError("Arama terimleri geçersiz.")
+            terms[field] = [metin(word, "Arama terimi", 200, required=True) for word in value[field]]
+        combined = terms["matched_terms"] + terms["missing_terms"]
+        if (not 1 <= len(combined) <= 24 or len(set(combined)) != len(combined)
+                or type(value["all_terms_matched"]) is not bool
+                or value["all_terms_matched"] != (not terms["missing_terms"])
+                or value["answer_sufficiency"] != "not_assessed"):
+            raise ValueError("Arama kapsamı tutarsız.")
+        return {**terms, "all_terms_matched": value["all_terms_matched"], "answer_sufficiency": "not_assessed"}
+
+    @staticmethod
+    def kamu_duzeltmelerini_dogrula(value, research_id, version):
+        # Kimlik/sürüm üst karttan gelir; uzak sunucunun ek özel alanı taşınmaz.
+        fields = {"total", "offset", "limit", "items"}
+        if not isinstance(value, dict) or set(value) != fields:
+            raise ValueError("Kamu düzeltme özeti geçersiz.")
+        for key, low, high in (("total", 0, 9223372036854775807), ("offset", 0, 0), ("limit", 1, 3)):
+            if type(value[key]) is not int or not low <= value[key] <= high:
+                raise ValueError("Düzeltme sayfalama bilgisi geçersiz.")
+        if not isinstance(value["items"], list) or len(value["items"]) != min(value["limit"], value["total"]):
+            raise ValueError("Düzeltme listesi eksik veya sınırı aşıyor.")
+        items, identifiers = [], set()
+        for item in value["items"]:
+            if not isinstance(item, dict) or set(item) != {"id", "summary", "withdrawn", "correction", "reviewed_at"}:
+                raise ValueError("Kamu düzeltmesi özel veya beklenmeyen alan içeriyor.")
+            identifier = item["id"]
+            if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{32}", identifier) or identifier in identifiers:
+                raise ValueError("Düzeltme kimliği geçersiz.")
+            identifiers.add(identifier)
+            correction = item["correction"]
+            if (not isinstance(correction, dict) or set(correction) != {"research_id", "version"}
+                    or not isinstance(correction["research_id"], str) or not re.fullmatch(r"[a-f0-9]{32}", correction["research_id"])
+                    or type(correction["version"]) is not int or not 1 <= correction["version"] <= 9223372036854775807
+                    or type(item["withdrawn"]) is not bool):
+                raise ValueError("Düzeltmenin tam sürümü geçersiz.")
+            stamp = metin(item["reviewed_at"], "İnceleme tarihi", 40, required=True)
+            if tarih(stamp) is None:
+                raise ValueError("Düzeltme tarihi geçersiz.")
+            items.append({"id": identifier, "summary": sorguyu_dogrula(metin(item["summary"], "Kamu düzeltmesi", 600, required=True, multiline=True)),
+                          "withdrawn": item["withdrawn"], "correction": dict(correction), "reviewed_at": stamp,
+                          "report_url": COMMUNITY_URL + "/?" + urlencode({"card": correction["research_id"], "version": correction["version"]})})
+        return {**value, "research_id": research_id, "version": version, "items": items,
+                "more_available": value["total"] > len(items)}
+
+    def kart_dogrula(self, result, *, summary=False):
         try:
             if not isinstance(result, dict) or result.get("status") != "published":
                 raise ValueError("published card expected")
-            card = {**self.durum_dogrula(result), "packet": paket_dogrula(result["packet"])}
+            packet = paket_ozetini_dogrula(result["packet"]) if summary else paket_dogrula(result["packet"])
+            card = {**self.durum_dogrula(result), "packet": packet}
+            if "search_match" in result:
+                card["search_match"] = self.arama_eslesmesini_dogrula(result["search_match"])
             if "engagement" in result:
                 card["engagement"] = self.etkilesimi_dogrula(result["engagement"])
             if "relationships" in result:
@@ -222,6 +304,10 @@ class ToplulukBaglantisi:
                             entry["title"] = None
                         safe[group].append(entry)
                 card["relationships"] = safe
+            if "public_corrections" in result:
+                card["public_corrections"] = self.kamu_duzeltmelerini_dogrula(result["public_corrections"], card["id"], card["version"])
+            # Uzak adres iddiasını kullanma; bağlantı doğrulanmış kaydın tam sürümünü açar.
+            card["report_url"] = COMMUNITY_URL + "/?" + urlencode({"card": card["id"], "version": card["version"]})
             return card
         except (ValueError, KeyError, TypeError) as exc:
             raise ToplulukBaglantiHatasi("Topluluk kartı geçersiz.") from exc
@@ -246,7 +332,7 @@ class ToplulukBaglantisi:
                 entry = self.area.oku(metin(payload["entry_id"], "Kayıt", 120, required=True))
             if entry["origin"] != "local":
                 raise ValueError("İçe alınan araştırmanın yazarını değiştiremezsiniz. Kaynağı koruyarak yeni bir araştırma hazırlayın.")
-            packet = {"schema": "ufuk-share", "schema_version": 2 if entry.get("provenance") else 1,
+            packet = {"schema": "ufuk-share", "schema_version": 3 if entry.get("lineage") else 2 if entry.get("provenance") else 1,
                       **{key: entry[key] for key in KAYIT_ALANLARI if key in entry},
                       "created_at": entry["created_at"], "updated_at": entry["updated_at"]}
         packet = copy.deepcopy(packet)
