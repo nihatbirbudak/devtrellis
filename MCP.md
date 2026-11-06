@@ -161,3 +161,26 @@ Tests use a temporary local HTTP service and the real SDK protocol; they make no
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_mcp_yerel.py -v
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_skill_install.py -v
 ```
+
+## Compact search and exact report sections
+
+`search_research` now defaults to `view="brief"`: original sources, provenance,
+limits, publication version and report URL remain; export boilerplate and popularity
+are omitted. Use `view="summary"` for the legacy metadata shape. Brief output is
+not an exportable contribution. A `size_notice` reports a size-target overrun without
+silently truncating evidence.
+
+`read_research` keeps its default full response. For a long report, pass its exact
+version and `view="outline"`, then `view="section"` with a returned `section_id`.
+Partial output includes the exact body hash, heading context, continuation markers
+and `complete_report=false`. Source lists apply to the whole report; they are not
+automatically verified citations for every sentence. Section ids cannot be reused
+with a changed report. Prefer a single full read for short reports. The adapter
+currently downloads the full report for each view; this reduces model-facing text,
+not network transfer. No LLM, public write or usage event is invoked by these reads.
+
+The optional source-memory pilot tools are exposed only with `--source-memory-tools`.
+See [source-memory access and limits](SOURCE-MEMORY.md#optional-mcp-access). The default
+tool list remains small; enabling the adapter does not activate the server pilot.
+The research skill loads contribution/source-memory references only when needed;
+installers and portable packages must carry the complete referenced skill directory.

@@ -549,6 +549,43 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
             self.assertEqual(request.call_args.kwargs["params"], {"version": 2})
         self.assertEqual(remote["report_url"], "https://attacker.example/steal?token=untrusted")
 
+    def test_public_corrections_keep_exact_target_and_do_not_export_private_fields(self):
+        identifier = "a" * 32
+        correction_id = "b" * 32
+        notice = {"total": 4, "offset": 0, "limit": 3, "items": [
+            {"id": char * 32, "summary": "The benchmark used a different release.", "withdrawn": False,
+             "correction": {"research_id": correction_id, "version": 7}, "reviewed_at": self.packet["updated_at"]}
+            for char in "cde"]}
+        remote = {"id": identifier, "status": "published", "version": 2, "published_version": 7,
+                  "created_at": self.packet["created_at"], "updated_at": self.packet["updated_at"],
+                  "packet": self.packet, "public_corrections": notice}
+        with patch.object(self.bridge, "request", return_value=remote):
+            card = self.bridge.oku(identifier, version=2)
+        safe = card["public_corrections"]
+        self.assertEqual((safe["research_id"], safe["version"]), (identifier, 2))
+        self.assertTrue(safe["more_available"])
+        self.assertEqual(safe["items"][0]["report_url"], COMMUNITY_URL + "/?card=" + correction_id + "&version=7")
+        # Özet araması ve MCP brief de uyarıyı düşürmez.
+        from radar.arastirma_kisa import kisa_arama_sonucu
+        with patch.object(self.bridge, "request", return_value={"items": [remote], "total": 1}):
+            summary = self.bridge.ara({"query": "Ortak", "view": "summary"})
+        self.assertEqual(kisa_arama_sonucu(summary)["items"][0]["public_corrections"], safe)
+        mutations = [
+            lambda value: value.update(receipt="PRIVATE"),
+            lambda value: value["items"][0].update(reason="PRIVATE"),
+            lambda value: value["items"][0].update(summary="x" * 601),
+            lambda value: value["items"][0].update(reviewed_at="2026-11-06"),
+            lambda value: value["items"][0]["correction"].update(version=True),
+            lambda value: value["items"].append(copy.deepcopy(value["items"][0])),
+        ]
+        for mutate in mutations:
+            broken = copy.deepcopy(remote)
+            mutate(broken["public_corrections"])
+            with self.subTest(value=broken["public_corrections"]), patch.object(self.bridge, "request", return_value=broken):
+                with self.assertRaises(ToplulukBaglantiHatasi):
+                    self.bridge.oku(identifier, version=2)
+        self.assertNotIn("report_url", remote["public_corrections"]["items"][0])
+
     def test_moderator_hiding_is_visible_to_sender_and_invalid_response_not_saved(self):
         sent = self.send(self.prepare())
         submission = sent["submission"]

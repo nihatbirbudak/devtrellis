@@ -74,7 +74,7 @@ def adresi_dogrula(public_url, local_pilot):
 
 
 def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sources=None, static_dir=None, clock=None,
-             source_memory=None):
+             source_memory=None, objections_db_path=None):
     origin = adresi_dogrula(public_url, local_pilot)
     authority = urlsplit(origin).netloc
     feed_path = Path(feed_db_path) if feed_db_path else Path(db_path).with_name("community-feed.sqlite3")
@@ -86,6 +86,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         if not isinstance(source_memory, KaynakHafizasi):
             raise ValueError("Kaynak hafızası hizmeti geçersiz.")
         ayri_depolari_dogrula(source_memory.path, db_path, feed_path)
+    if objections_db_path is not None:
+        from radar.arastirma_itiraz_api import itiraz_depo_yolunu_dogrula
+        objections_db_path = itiraz_depo_yolunu_dogrula(objections_db_path, db_path, feed_path,
+                                                       source_memory.path if source_memory is not None else None)
     store = ToplulukDeposu(db_path, clock=clock)
     requests_store = TalepDeposu(db_path, clock=clock)
     feed_depo = Depo(feed_path, sources if sources is not None else kaynaklari_oku())
@@ -99,6 +103,8 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
 
     @app.exception_handler(RequestValidationError)
     async def request_validation(request, exc):
+        if request.url.path == "/api/community/objections" or request.url.path.startswith("/api/community/objections/"):
+            return JSONResponse({"detail": "İtiraz isteği biçimi geçersiz."}, status_code=422)
         if request.url.path == "/api/community/source-memory" or request.url.path.startswith("/api/community/source-memory/"):
             return JSONResponse({"detail": "Kaynak kontrol isteği biçimi geçersiz."}, status_code=422)
         if request.url.path == "/api/community/requests" or request.url.path.startswith("/api/community/requests/"):
@@ -198,6 +204,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     if source_memory is not None:
         from radar.kaynak_hafizasi_api import kaynak_hafizasi_yollarini_ekle
         kaynak_hafizasi_yollarini_ekle(app, source_memory, session, limiter)
+
+    if objections_db_path is not None:
+        from radar.arastirma_itiraz_api import itiraz_yollarini_ekle
+        itiraz_yollarini_ekle(app, objections_db_path, store, session, limiter, clock=clock)
 
     def write_cookie(response, token):
         response.set_cookie(COOKIE, token, max_age=28800, httponly=True, secure=not local_pilot, samesite="strict", path="/")
@@ -336,16 +346,24 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         alanlari_dogrula(payload, {"status"}, {"status"})
         return requests_store.durum_degistir(request_id, payload["status"])
 
+    def public_corrections(card):
+        if objections_db_path is None or card["packet"]["kind"] != "research":
+            return card
+        corrections = app.state.objections.kamusal_ozetler(card["id"], card["version"], offset=0, limit=3)
+        return {**card, "public_corrections": {key: corrections[key] for key in ("total", "offset", "limit", "items")}}
+
     @app.get("/api/community/cards")
     def cards(request: Request, query: str = Query("", max_length=200), kind: str = "",
               offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(30, ge=1, le=100),
               view: Literal["full", "summary"] = "full", search_mode: Literal["all", "ranked"] = "all"):
         result = store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request), search_mode=search_mode)
+        if objections_db_path is not None:
+            result = {**result, "items": [public_corrections(item) for item in result["items"]]}
         return arama_ozeti(result) if view == "summary" else result
 
     @app.get("/api/community/cards/{entry_id}")
     def card(entry_id: str, request: Request, version: int | None = Query(None, ge=1, le=9223372036854775807)):
-        return store.yayini_oku(entry_id, observer(request), version=version)
+        return public_corrections(store.yayini_oku(entry_id, observer(request), version=version))
 
     @app.get("/api/community/cards/{entry_id}/packet")
     def packet(entry_id: str, version: int | None = Query(None, ge=1, le=9223372036854775807)):

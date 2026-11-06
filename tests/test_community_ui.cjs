@@ -68,7 +68,7 @@ function harness({authenticated = false, role = "contributor", malicious = false
   if (engagement) card.engagement = copy(engagement);
   if (relationships) card.relationships = copy(relationships);
   if (malicious) { card.packet.title = '<img src=x onerror="alert(1)">'; card.packet.body = "<script>alert(2)</script>"; card.packet.sources[0] = {title: "<svg onload=alert(3)>", url: "javascript:alert(4)"}; }
-  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0, history: [], eventReceipts: new Set(), dropEventResponse: false, eventWait: null};
+  const fixture = {authenticated, role, conflict: false, requests: [], card, uuidCount: 0, history: [], eventReceipts: new Set(), dropEventResponse: false, eventWait: null, cardsResponse: null, cardsStatus: 200};
   const session = () => ({authenticated: fixture.authenticated, user: fixture.authenticated ? {id: "user-one", username: "tester", display_name: "Test Contributor", role: fixture.role} : null, csrf_token: fixture.authenticated ? "TEST_AUTH_CSRF" : "TEST_ANON_CSRF"});
   const fetch = async (url, options) => {
     const body = options.body ? JSON.parse(options.body) : null;
@@ -86,7 +86,7 @@ function harness({authenticated = false, role = "contributor", malicious = false
       const offset = Number(params.get("offset") || 0), limit = Number(params.get("limit") || 100);
       response = {items: records.slice(offset, offset + limit), total: records.length, offset, limit};
     }
-    else if (url.startsWith("/api/community/cards?")) response = {items: [card], total: 1};
+    else if (url.startsWith("/api/community/cards?")) { response = fixture.cardsResponse || {items: [card], total: 1}; status = fixture.cardsStatus; }
     else if (url === `/api/community/cards/${card.id}` || url.startsWith(`/api/community/cards/${card.id}?version=`)) {const requestedVersion=Number(new URL(url,"https://community.example").searchParams.get("version"))||card.version;status=publicStatus;response=status===200 ? {...card, version:requestedVersion, published_version:card.version, packet:{...card.packet, body:requestedVersion!==card.version?"EXACT_EARLIER_VERSION":card.packet.body}, status:"published", moderation_version:11} : {detail:"Not found"};}
     else if (url === `/api/community/cards/${card.id}/events`) {
       assert.equal(options.headers["X-Ufuk-CSRF"], fixture.authenticated ? "TEST_AUTH_CSRF" : "TEST_ANON_CSRF");
@@ -464,4 +464,87 @@ test("kişisel ve moderasyon listelerinde yüzüncü kayıttan sonrası sayfalan
     assert.equal(query.get("query"),"hedefi sayfalama");assert.equal(query.get("offset"),"0");assert.equal(query.get("limit"),"24");
     assert.equal(app.fixture.requests.some(row=>row.options.method==="POST"),false);
   }
+});
+
+
+test("sıralamalı arama yalnız dolu kamu araştırma sorgusunda istenir; diğer listeler ve boş sorgu korunur", async () => {
+  const app = harness({authenticated: true, role: "moderator"}); await app.ready();
+  for (const tab of ["feed", "project", "mine", "review", "research"]) {
+    await app.byId(`community-tab-${tab}`).dispatch("click");
+    assert.equal(new URL(app.fixture.requests.at(-1).url, "https://community.example").searchParams.has("search_mode"), false);
+    app.byId("search-query").value = "  SQLite FTS5  "; await app.byId("community-search").dispatch("submit");
+    const params = new URL(app.fixture.requests.at(-1).url, "https://community.example").searchParams;
+    assert.equal(params.get("search_mode"), tab === "research" ? "ranked" : null);
+    assert.equal(params.get("query"), "SQLite FTS5"); assert.equal(params.get("offset"), "0"); assert.equal(params.get("limit"), "24");
+  }
+  app.byId("search-query").value = "   "; await app.byId("community-search").dispatch("submit");
+  assert.equal(new URL(app.fixture.requests.at(-1).url, "https://community.example").searchParams.has("search_mode"), false);
+  assert.equal(app.flatten(app.byId("community-list")).some(item => /search-match|search-status/.test(item.className)), false);
+  assert.equal(app.fixture.requests.some(row => row.options.method === "POST"), false);
+});
+
+test("sözcük kapsamı iki dilde güvenli metindir ve tüm terimler eşleşse de cevap yeterli sayılmaz", async () => {
+  for (const language of ["tr", "en"]) {
+    const app = harness({language}); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    app.fixture.card.search_match = {matched_terms: ["SQLite", "<img src=x onerror=alert(1)>"], missing_terms: ["Humble"], all_terms_matched: false, answer_sufficiency: "not_assessed"};
+    app.fixture.cardsResponse = {items: [app.fixture.card], total: 1, search: {mode: "ranked", fallback: false}};
+    app.byId("search-query").value = "SQLite Humble"; await app.byId("community-search").dispatch("submit");
+    const list = app.byId("community-list");
+    assert.match(list.textContent, language === "en" ? /Matched terms: SQLite/ : /Eşleşen terimler: SQLite/);
+    assert.match(list.textContent, language === "en" ? /Unmatched terms: Humble/ : /Eşleşmeyen terimler: Humble/);
+    assert.ok(list.textContent.includes("<img src=x onerror=alert(1)>"));
+    assert.ok(app.flatten(list).every(item => !["IMG", "SCRIPT"].includes(item.tagName)));
+    assert.match(list.textContent, language === "en" ? /answer sufficiency and accuracy have not been assessed/ : /yeterliliği veya doğruluğu değerlendirilmedi/);
+    assert.equal(app.flatten(list).some(item => item.className.includes("search-status")), false);
+    app.fixture.card.search_match = {matched_terms: ["SQLite"], missing_terms: [], all_terms_matched: true, answer_sufficiency: "not_assessed"};
+    app.byId("search-query").value = "SQLite"; await app.byId("community-search").dispatch("submit");
+    assert.doesNotMatch(list.textContent, /Unmatched terms:|Eşleşmeyen terimler:/);
+    assert.match(list.textContent, language === "en" ? /have not been assessed/ : /değerlendirilmedi/);
+  }
+});
+
+test("eski sunucu ve indeks geri dönüşü okunabilir kalır; sıralama doğrulanmış gibi gösterilmez", async () => {
+  for (const language of ["tr", "en"]) {
+    const app = harness({language}); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    app.byId("search-query").value = "SQLite";
+    let before = app.fixture.requests.length; await app.byId("community-search").dispatch("submit");
+    assert.equal(app.fixture.requests.length - before, 1);
+    assert.match(app.byId("community-list").textContent, language === "en" ? /relevance ordering could not be confirmed/ : /ilgililik sırası doğrulanamadı/);
+    assert.match(app.byId("community-list").textContent, /İklim araştırması/);
+    assert.equal(app.byId("community-error").hidden, true);
+    app.fixture.cardsResponse = {items: [app.fixture.card], total: 1, search: {mode: "all", fallback: true}};
+    before = app.fixture.requests.length; await app.byId("community-search").dispatch("submit");
+    assert.equal(app.fixture.requests.length - before, 1);
+    assert.match(app.byId("community-list").textContent, language === "en" ? /word-search results are shown/ : /sözcük araması sonuçları gösteriliyor/);
+    assert.doesNotMatch(app.byId("community-list").textContent, /relevance ordering could not be confirmed|ilgililik sırası doğrulanamadı/);
+  }
+});
+
+test("sıralamalı sonuçlar sayfalanır; boş sonuç sessizce genişletilmez ve temizleme eski kipte kalır", async () => {
+  const app = harness(); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+  app.fixture.cardsResponse = {items: [app.fixture.card], total: 49, search: {mode: "ranked", fallback: false}};
+  app.byId("search-query").value = "SQLite"; await app.byId("community-search").dispatch("submit");
+  await app.byId("page-next").dispatch("click");
+  let params = new URL(app.fixture.requests.at(-1).url, "https://community.example").searchParams;
+  assert.equal(params.get("offset"), "24"); assert.equal(params.get("search_mode"), "ranked"); assert.equal(params.get("query"), "SQLite");
+  app.fixture.cardsResponse = {items: [], total: 0, search: {mode: "ranked", fallback: false}};
+  const before = app.fixture.requests.length; app.byId("search-query").value = "Wrong version"; await app.byId("community-search").dispatch("submit");
+  assert.equal(app.fixture.requests.length - before, 1); assert.match(app.byId("community-list").textContent, /No records match this search/);
+  assert.equal(app.byId("community-pagination").hidden, true);
+  await app.findButton("Clear search").dispatch("click");
+  params = new URL(app.fixture.requests.at(-1).url, "https://community.example").searchParams;
+  assert.equal(params.get("query"), ""); assert.equal(params.has("search_mode"), false);
+});
+
+test("arama sunucu hatası başka kipe tekrar gönderilmez; bozuk eşleşme meta verisi güvene dönüştürülmez", async () => {
+  const app = harness(); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+  app.fixture.cardsStatus = 503; app.fixture.cardsResponse = {detail: "Temporary service error"};
+  app.byId("search-query").value = "SQLite"; const before = app.fixture.requests.length; await app.byId("community-search").dispatch("submit");
+  assert.equal(app.fixture.requests.length - before, 1); assert.equal(app.byId("community-error").hidden, false);
+  app.fixture.cardsStatus = 200;
+  app.fixture.card.search_match = {matched_terms: [null, {}], missing_terms: "untrusted", all_terms_matched: true, answer_sufficiency: "verified"};
+  app.fixture.cardsResponse = {items: [app.fixture.card], total: 1, search: {mode: "ranked", fallback: false}};
+  await app.byId("community-search").dispatch("submit");
+  assert.match(app.byId("community-list").textContent, /Answer-sufficiency information is unavailable/);
+  assert.doesNotMatch(app.byId("community-list").textContent, /Matched terms:|Unmatched terms:|verified/);
 });

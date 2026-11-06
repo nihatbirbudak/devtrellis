@@ -232,6 +232,40 @@ class ToplulukBaglantisi:
             raise ValueError("Arama kapsamı tutarsız.")
         return {**terms, "all_terms_matched": value["all_terms_matched"], "answer_sufficiency": "not_assessed"}
 
+    @staticmethod
+    def kamu_duzeltmelerini_dogrula(value, research_id, version):
+        # Kimlik/sürüm üst karttan gelir; uzak sunucunun ek özel alanı taşınmaz.
+        fields = {"total", "offset", "limit", "items"}
+        if not isinstance(value, dict) or set(value) != fields:
+            raise ValueError("Kamu düzeltme özeti geçersiz.")
+        for key, low, high in (("total", 0, 9223372036854775807), ("offset", 0, 0), ("limit", 1, 3)):
+            if type(value[key]) is not int or not low <= value[key] <= high:
+                raise ValueError("Düzeltme sayfalama bilgisi geçersiz.")
+        if not isinstance(value["items"], list) or len(value["items"]) != min(value["limit"], value["total"]):
+            raise ValueError("Düzeltme listesi eksik veya sınırı aşıyor.")
+        items, identifiers = [], set()
+        for item in value["items"]:
+            if not isinstance(item, dict) or set(item) != {"id", "summary", "withdrawn", "correction", "reviewed_at"}:
+                raise ValueError("Kamu düzeltmesi özel veya beklenmeyen alan içeriyor.")
+            identifier = item["id"]
+            if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{32}", identifier) or identifier in identifiers:
+                raise ValueError("Düzeltme kimliği geçersiz.")
+            identifiers.add(identifier)
+            correction = item["correction"]
+            if (not isinstance(correction, dict) or set(correction) != {"research_id", "version"}
+                    or not isinstance(correction["research_id"], str) or not re.fullmatch(r"[a-f0-9]{32}", correction["research_id"])
+                    or type(correction["version"]) is not int or not 1 <= correction["version"] <= 9223372036854775807
+                    or type(item["withdrawn"]) is not bool):
+                raise ValueError("Düzeltmenin tam sürümü geçersiz.")
+            stamp = metin(item["reviewed_at"], "İnceleme tarihi", 40, required=True)
+            if tarih(stamp) is None:
+                raise ValueError("Düzeltme tarihi geçersiz.")
+            items.append({"id": identifier, "summary": sorguyu_dogrula(metin(item["summary"], "Kamu düzeltmesi", 600, required=True, multiline=True)),
+                          "withdrawn": item["withdrawn"], "correction": dict(correction), "reviewed_at": stamp,
+                          "report_url": COMMUNITY_URL + "/?" + urlencode({"card": correction["research_id"], "version": correction["version"]})})
+        return {**value, "research_id": research_id, "version": version, "items": items,
+                "more_available": value["total"] > len(items)}
+
     def kart_dogrula(self, result, *, summary=False):
         try:
             if not isinstance(result, dict) or result.get("status") != "published":
@@ -270,6 +304,8 @@ class ToplulukBaglantisi:
                             entry["title"] = None
                         safe[group].append(entry)
                 card["relationships"] = safe
+            if "public_corrections" in result:
+                card["public_corrections"] = self.kamu_duzeltmelerini_dogrula(result["public_corrections"], card["id"], card["version"])
             # Uzak adres iddiasını kullanma; bağlantı doğrulanmış kaydın tam sürümünü açar.
             card["report_url"] = COMMUNITY_URL + "/?" + urlencode({"card": card["id"], "version": card["version"]})
             return card

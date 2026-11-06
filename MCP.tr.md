@@ -163,3 +163,26 @@ Testler geçici yerel HTTP hizmeti ve gerçek SDK protokolünü kullanır; inter
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_mcp_yerel.py -v
 .\.venv-mcp\Scripts\python.exe -X utf8 -m unittest discover -s tests -p test_skill_install.py -v
 ```
+
+## Kısa arama ve tam sürüme bağlı bölümler
+
+`search_research` varsayılan olarak `view="brief"` döndürür: özgün kaynaklar,
+köken, sınırlar, yayın sürümü ve rapor bağlantısı korunur; dışa aktarma alanları ve
+popülerlik çıkarılır. Eski metadata biçimi için `view="summary"` kullanılabilir.
+Kısa çıktı paylaşım paketi değildir. `size_notice`, kanıtı sessizce kesmeden boyut
+hedefinin aşıldığını bildirir.
+
+`read_research` varsayılan tam yanıtını korur. Uzun raporda tam yayın sürümüyle
+`view="outline"`, ardından dönen `section_id` ile `view="section"` kullanılabilir.
+Kısmi çıktı gövde hash'ini, başlık bağlamını, devam işaretlerini ve
+`complete_report=false` alanını taşır. Kaynak listesi bütün rapora aittir;
+her cümle için doğrulanmış atıf sayılmaz. Rapor değişince eski bölüm kimliği
+kullanılamaz. Kısa raporda tek tam okuma tercih edilir. Köprü her görünümde tam
+raporu indirir; bu özellik modelin gördüğü metni azaltır, ağ aktarımını azaltmaz.
+Bu okumalar model, kamuya yazma veya kullanım olayı başlatmaz.
+
+İsteğe bağlı kaynak hafızası araçları yalnız `--source-memory-tools` ile görünür.
+[Erişim ve sınırlar](SOURCE-MEMORY.tr.md) belgesine bakılabilir. Varsayılan araç
+listesi küçük kalır; köprü seçeneği sunucu pilotunu açmaz. Araştırma skill'i katkı
+ve kaynak hafızası referanslarını gerektiğinde okur; kurulum ve taşınabilir paket
+başvurulan skill dosyalarının tamamını içermelidir.

@@ -7,9 +7,9 @@ from radar.arastirma_arama import GRUP_SINIRI
 from radar.gelistirici_alani import arama_metni, metin
 
 
-INDEX_VERSION = 2
+INDEX_VERSION = 4
 _TOKEN = re.compile(r"[^\W_]+(?:[._/-][^\W_]+)*(?:\+{1,2}|#)?", re.UNICODE)
-_CONNECTORS = frozenset("a an the and or of for to in on at by with is are was were be been do does did can could would should how why what which when where i my me we our you your it its this that these those please about ve veya ile icin bir bu su o da de mi mu ne neden nasil nedir benim bizim sen siz sizin olan olarak bana bize lutfen hakkinda".split())
+_CONNECTORS = frozenset("a an the and or vs versus of for to in on at by with is are was were be been do does did can could would should how why what which when where i my me we our you your it its this that these those please about ve veya ile icin bir bu su o da de mi mu ne neden nasil nedir benim bizim sen siz sizin olan olarak bana bize lutfen hakkinda".split())
 # Küçük ve açık bir teknik sözlük; bütün dillerde anlamsal eşdeğerlik iddiası yok.
 _CONCEPTS = (
     ("research", "arastirma", "arastirmalar", "arastirmasi", "arastirmayi", "investigation", "investigations"),
@@ -26,6 +26,8 @@ _CONCEPTS = (
     ("limit", "limits", "limitation", "limitations", "sinir", "sinirlari"),
     ("access", "erisim", "erisimi"),
     ("data", "veri", "veriler"),
+    ("database", "databases", "veritabani", "veritabanlari"),
+    ("postgresql", "postgres"),
     ("analysis", "analyses", "analiz", "analizi"),
     ("memory", "bellek", "bellekte"),
     ("index", "indexing", "indeks", "dizin"),
@@ -40,6 +42,9 @@ _CONCEPTS = (
     ("conditional", "kosullu"),
     ("notification", "notifications", "bildirim", "bildirimler"),
 )
+# Sınırlı teknik adlar kısmi eşleşmede düşürülemez; bu bir varlık tanıma modeli değildir.
+_EXACT_NAMES = frozenset("python sqlite postgresql duckdb polars github gitlab nvidia cuda rocm claude codex openai blender kubernetes docker react android firebase webauthn wcag mcp".split())
+_ROS_RELEASES = frozenset("humble jazzy kilted foxy galactic".split())
 _ALIASES = {word: group[0] for group in _CONCEPTS for word in group}
 _ALIAS_BASES = tuple(sorted(_ALIASES, key=len, reverse=True))
 _TURKISH_ENDINGS = frozenset(("i", "u", "si", "su", "yi", "yu", "ni", "nu", "nin", "nun", "ini", "unu",
@@ -56,6 +61,10 @@ def _normalize(value):
 def _words(value):
     # Apostrofla yazılmış Türkçe özel ad ekleri sözcüğün parçası değildir.
     value = re.sub(r"(?<=\w)['’](?:nin|nun|in|un|ya|ye|yi|yu|dan|den|da|de|a|e|i|u|s)\b", "", _normalize(value))
+    value = re.sub(r"\bveri taban(i|lari)\b", r"veritaban\1", value)
+    # ROS 2/ROS2 aynı teknik addır; sayı birlikte korunur, ROS 1 ile karışmaz.
+    # Diğer sözcük+sayılar miktar olabilir; genel birleştirme uygulanmaz.
+    value = re.sub(r"(?<![\w./+#-])ros\s+([0-9]+)(?![\w./+#-])", r"ros\1", value)
     return _TOKEN.findall(value)
 
 
@@ -99,6 +108,9 @@ def _index_text(text):
     tokens = set()
     for word in _words(text):
         tokens.update(_options(word))
+        # Sürümsüz ROS araması üst adı bulur; sorgudaki ros2 yine zorunludur.
+        if re.fullmatch(r"ros[0-9]+", word):
+            tokens.update(_options("ros"))
         # Birleşik sözcüğün tam biçimi de korunur; sayısal sürümler bölünmez.
         if "-" in word and not any(char.isdigit() for char in word):
             for part in word.split("-"):
@@ -132,7 +144,9 @@ def sorgu_hazirla(query):
         # Bir sorudaki 44 piksel gibi yanlış olabilecek miktarlar filtre değildir.
         # Ondalıklı sürümler, alfasayısal teknik adlar ve yollar korunur.
         if ((any(char.isdigit() for char in word) and not word.isdecimal())
-                or any(char in word for char in "_/.+#")):
+                or any(char in word for char in "_/.+#")
+                or _EXACT_NAMES.intersection(_variants(word)) or word in _ROS_RELEASES
+                or (word in {"iron", "rolling"} and {"ros", "ros2"}.intersection(content))):
             required.append(index)
     # Uzun doğal sorunun bilinmeyen sözcükleri, bulunan iki bağımsız kavramı
     # yok etmez. Eksik kalan bütün terimler adayla birlikte açıkça döndürülür.

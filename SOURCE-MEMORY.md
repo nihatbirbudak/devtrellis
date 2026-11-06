@@ -2,7 +2,7 @@
 
 [Türkçe](SOURCE-MEMORY.tr.md)
 
-This optional alpha pilot stores a checked representation of a small, operator-selected public page list. It is separate from the research library and disabled unless the operator supplies both configuration and a separate database. It does not run a crawler, model or timer. Existing research search and installed assistant tools are unchanged.
+This optional alpha pilot stores a checked representation of a small, operator-selected public page list. It is separate from the research library and disabled unless the operator supplies both configuration and a separate database. It does not automatically run a crawler, model or timer. Existing research search and installed assistant tools are unchanged.
 
 ## Enable an isolated pilot
 
@@ -44,6 +44,69 @@ Use the session's CSRF value in `X-Ufuk-CSRF` and the service origin in `Origin`
 
 Source bodies and user questions are not stored in this memory. A summary is bound to an exact source revision and content hash. A changed revision invalidates it; a failed check does not make an old summary newly verified. Corrected summaries retain their earlier versions.
 
-There is no public summary-write endpoint, automatic model summary, MCP source-memory tool or automatic import of users' browsing history in this pilot. The internal summary-write method is reserved for a trusted future integration after actual public-content review and consent; a boolean from a model is not such consent. Existing research contribution still uses its human preview and moderation flow.
+There is no public summary-write endpoint, automatically enabled model summary or import of users' browsing history in this pilot. Optional MCP tools now connect the existing read/check API. The internal summary-write method is reserved for a trusted future integration after actual public-content review and consent; a boolean from a model is not such consent. Existing research contribution still uses its human preview and moderation flow.
 
-`checks` counts source-check attempts. `downloaded_bytes` counts target response bodies that were received; it is not total network traffic (robots requests, headers and interrupted transfers are excluded). `model_calls` is zero for this mechanism. These counters do not establish end-to-end token savings. Extend the pilot only after measuring source compatibility, correct invalidation and real reuse.
+`checks` counts source-check attempts. `downloaded_bytes` counts target response bodies that were received; it is not total network traffic (robots requests, headers and interrupted transfers are excluded). `model_calls` is zero for the read/check mechanism. These counters do not establish end-to-end token savings. Extend the pilot only after measuring source compatibility, correct invalidation and real reuse.
+
+## Optional MCP access
+
+The pilot remains disabled on the server unless its separate configuration and DB
+are supplied. For a compatible local adapter, add `--source-memory-tools` to the
+existing MCP launch arguments to expose two additional tools. This flag does not
+enable the remote pilot or start background checks. Leave it off for the smaller
+default six-tool interface.
+
+- `read_source_memory()` lists at most 20 reviewed source definitions; no publisher fetch.
+- With `research_id` and `version`, it maps that exact report's source URLs and language
+  to the catalog. URL fragments are ignored; query parameters remain exact. This is
+  only URL/language mapping, not retrospective proof of the report's content hash.
+- With `source_id`, it reads the saved record and only a currently reusable reviewed
+  summary. Stale/error summaries are withheld rather than presented as current.
+- `check_source_freshness(source_id, max_age_seconds=3600)` performs an explicit
+  on-demand check when relevant. It may update shared cache metadata and fetch a
+  publisher; no model call, report publishing, usage event or arbitrary URL is involved.
+
+The fixed public-service client uses a temporary anonymous session and the existing
+CSRF controls for checks. It never imports the user's browser cookie or credentials.
+Redirects, compressed/unbounded responses and unexpected schemas are rejected. A
+disabled pilot or failure returns an error without retrying. Local session capability
+metadata describes adapter support; `remote_enabled="unknown"` is not an uptime claim.
+
+## Optional private summary preparation
+
+The source package includes KaynakOzetiHazirlayici in radar/kaynak_ozeti_hazirlama.py. This is a Python integration API, with a caller-supplied trusted model adapter; there is no preparation CLI, HTTP route or MCP tool. Enabling the read/check pilot does not enable model generation. Construction performs no fetch or model call.
+
+The caller supplies an existing KaynakHafizasi instance, an explicit jobs database in its own empty or previously owned private directory, and a model callable. Source and jobs databases must differ. A minimal integration call, after the application has configured memory and adapter, is:
+
+    from radar.kaynak_ozeti_hazirlama import KaynakOzetiHazirlayici
+
+    record = memory.oku("selected-document")
+    preparer = KaynakOzetiHazirlayici(
+        memory, "private-summary/jobs.sqlite3", adapter, daily_limit=10
+    )
+    draft = preparer.prepare(
+        "selected-document",
+        expected_revision=record["source_revision"],
+        expected_hash=record["content_hash"],
+    )
+
+The selected source must already have a checked revision and hash; an unknown record cannot supply these values. The first preparation performs one bounded source-check operation requiring a complete HTTP 200 representation with the same hash, then one adapter invocation. Publisher policy, extraction, source budgets and concurrency limits still apply; robots checks can add network requests. Source text stays in memory and is not stored in the jobs DB.
+
+The adapter receives only the fixed system instruction, untrusted public document, exact source binding, requested summary fields, time limit and output-token limit. It returns summary, provenance with provider/model, and optional input/output token counts. It must enforce the supplied limits and must not add tools, private chat context or credentials to the prompt. The preparer cannot forcibly stop an arbitrary synchronous callable; an expired result is rejected and the attempt still consumes the daily budget. Provider retention and actual credential handling remain the integrating operator's responsibility.
+
+Successful output has draft_status=private_pending, human_review_required=true, and publication_performed=false. Both summary_reusable and public_summary_reusable are false. It does not write the public summary table or approve a contribution. Provider/model identity is adapter_reported, not independently authenticated. Missing token usage remains unknown; character counts are not converted to tokens.
+
+A still-valid identical draft with the same source revision/hash is reused while the stored source is fresh and error-free: the repeat performs zero publisher fetches and zero model calls. Its current-call metrics are zero; generation_metrics retain the original reported usage. Reuse does not turn the draft into a reviewed public summary.
+
+There is no mandatory second GET after the model finishes. The final check compares the stored source identity, hash, freshness and error state. A publisher change that has not reached that database during generation can therefore remain unseen. Human review, a publication-time source check and the public publishing integration remain separate, unfinished acceptance gates; this document does not establish real-provider or host acceptance.
+
+### Private job storage and recovery
+
+- Ready drafts expire after seven days; failed records after one day. Reusing a draft does not extend its deadline.
+- Expired ready, failed and running records are removed in the next preparation's claim transaction. Active leases are preserved. There is no background cleanup timer.
+- Storage is capped at 200 job records. The default daily attempt budget is 10 (configurable 1–100), with at most two active jobs and a default 180-second lease (60–600). A full queue returns busy without a fetch/model call.
+- The private directory contains only this component's ownership marker, database and SQLite sidecars. POSIX permissions or a protected Windows DACL restrict access; they do not encrypt data or secure copied backups.
+- Jobs contain bounded validated drafts and provenance, not source bodies, raw model responses or private questions. Expiry in the active DB does not erase old backups.
+- The community backup/restore commands do not cover source-memory or private job databases. Define separate protected copies, retention and a demonstrated restore before operational use. Restore into a separate directory with its ownership marker; confirm source-binding checks and expiry before using restored drafts.
+
+See tests/test_kaynak_ozeti_hazirlama.py for offline adapter examples and failure cases. Those fixtures are not evidence of a real NVIDIA, Claude or Codex model run.

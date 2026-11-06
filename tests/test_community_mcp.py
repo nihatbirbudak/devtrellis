@@ -165,6 +165,44 @@ class CommunityMcpTests(unittest.TestCase):
         self.assertEqual(self.server.calls[-1][0], "/api/platform/community/cards/research-1?version=3")
         self.assertIsNone(self.server.calls[-1][2])
 
+    def test_brief_preserves_limits_without_export_or_popularity(self):
+        result = self.client.search("evidence", view="brief")
+        self.assertEqual(result["view"], "brief")
+        self.assertFalse(result["exportable"])
+        card = result["items"][0]
+        self.assertNotIn("body", card["packet"])
+        self.assertNotIn("schema", card["packet"])
+        self.assertEqual(card["packet"]["sources"], report()["sources"])
+        self.assertEqual(card["engagement"], {"needs_update": 2, "disputed": 1})
+        self.assertEqual(len(self.server.calls), 2)
+
+    def test_partial_read_is_exact_and_does_not_generate_or_send_events(self):
+        identifier = "a" * 32
+        body = "# Result\nFirst finding.\n\n## Limits\nNot measured.\n"
+        card = {"id": identifier, "version": 3, "packet": contribution_packet(**report(body=body))}
+        with patch.object(self.client, "request", return_value=card) as request:
+            outline = self.client.read(identifier, 3, view="outline")
+            request.assert_called_once_with("/api/platform/community/cards/" + identifier, version=3)
+        self.assertNotIn("body", outline["packet"])
+        self.assertFalse(outline["complete_report"])
+        with patch.object(self.client, "request", return_value=card) as request:
+            part = self.client.read(identifier, 3, view="section", section_id=outline["sections"][1]["section_id"])
+            self.assertEqual(request.call_count, 1)
+        self.assertEqual(part["excerpt"]["text"], "## Limits\nNot measured.")
+        self.assertEqual(part["packet"]["sources"], card["packet"]["sources"])
+        self.assertEqual(card["packet"]["body"], body.strip())
+        with patch.object(self.client, "request", return_value={**card, "version": 4}):
+            with self.assertRaisesRegex(ValueError, "snapshot"):
+                self.client.read(identifier, 3, view="outline")
+
+    def test_partial_invalid_requests_fail_before_network(self):
+        for version, view, section in [(None, "outline", None), (3, "wrong", None),
+                                       (3, "full", "section-" + "a" * 64), (3, "section", "../private"),
+                                       (None, "section", "section-" + "a" * 64)]:
+            with self.subTest(view=view), self.assertRaises(ValueError):
+                self.client.read("a" * 32, version, view=view, section_id=section)
+        self.assertEqual(self.server.calls, [])
+
     def test_read_is_one_get_without_session_or_counter_write(self):
         for version, suffix in [(None, ""), (3, "?version=3"), (9223372036854775807, "?version=9223372036854775807")]:
             with self.subTest(version=version):
@@ -323,7 +361,7 @@ class CommunityMcpTests(unittest.TestCase):
                 search = await session.call_tool("search_research", {"query": "evidence"})
                 self.assertFalse(search.is_error)
                 self.assertEqual(search.structured_content["total"], 1)
-                self.assertEqual(search.structured_content["view"], "summary")
+                self.assertEqual(search.structured_content["view"], "brief")
                 self.assertNotIn("body", search.structured_content["items"][0]["packet"])
                 self.assertNotIn(report()["body"], str(search.content))
                 full = await session.call_tool("read_research", {"research_id": "research-1", "version": 3})

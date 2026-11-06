@@ -122,7 +122,7 @@ class LocalBridgeTests(unittest.TestCase):
                 self.assertFalse(json.loads(body)["manual_ai"])
                 status, body = self.request(origin, "/api/platform/community/session")
                 self.assertEqual(status, 200)
-                self.assertEqual(set(json.loads(body)), {"csrf_token", "destination", "search_views", "search_modes"})
+                self.assertEqual(set(json.loads(body)), {"csrf_token", "destination", "search_views", "search_modes", "source_memory"})
                 self.assertEqual(json.loads(body)["search_views"], ["full", "summary"])
                 self.assertEqual(self.request(origin, "/static/contribution-review.html")[0], 200)
                 for path in ("/static/contribution-submissions.html", "/static/contribution-submissions.js"):

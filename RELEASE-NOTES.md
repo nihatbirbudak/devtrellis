@@ -1,5 +1,15 @@
 # DevTrellis 0.1.0-alpha.9
 
+## Local r5 candidate — acceptance pending
+
+- Web research queries now request the same ranked path as MCP. Bounded TR/EN terms and ROS 2 spelling normalization preserve explicit product/release differences; candidate matching is not answer verification.
+- MCP defaults to a smaller `brief` search view. Optional outline/section views bind to an exact report version and body hash. Each current read still retrieves one full report over HTTP; section views reduce model context, not that network transfer. Full reads remain the default for selected reports.
+- Source-memory tools are opt-in (`--source-memory-tools`); checks use the normal anonymous session and CSRF protections. A separately invoked Python preparer can create a private hash-bound draft with an explicit model adapter. It has no automatic publication or provider setup. See [source memory](SOURCE-MEMORY.md).
+- An optional private objection store and API attach reviewed corrections to exact report revisions. Public reads expose only moderator-written correction notices. The feature defaults off and requires a separate private backup/restore plan before enabling it; the human form and operating acceptance remain pending. See [objections](OBJECTIONS.md).
+- The skill loads contribution/source-memory detail only when needed. Its installer and portable ZIP include both reference files, verify ownership during upgrades, and preserve user edits.
+
+This candidate has no new live-host cost experiment or production deployment. A frozen eleven-report payload comparison measured smaller JSON candidate responses, not tokens, answer quality or general savings. Source-memory preparation, human consent, moderation and recovery must be accepted on the final package before their production features are enabled.
+
 ## Smaller research search responses
 
 - Public and local research search can return summary views without report bodies. Existing API clients retain full packets by default; full and exact-version reads, downloads and contribution validation keep their existing contract.

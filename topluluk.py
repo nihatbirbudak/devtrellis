@@ -34,6 +34,8 @@ def main(argv=None):
     serve.add_argument("--feed-db", type=Path, default=ROOT / "data" / "community-feed.sqlite3")
     serve.add_argument("--source-memory-config", type=Path, help="Açıkça seçilmiş küçük kamu kaynak kataloğu; varsayılan kapalı")
     serve.add_argument("--source-memory-db", type=Path, help="Kaynak hafızasının ayrı SQLite dosyası; config ile birlikte gerekir")
+    serve.add_argument("--objections-db", type=Path,
+                       help="Varsayılan kapalı özel itiraz deposu; ayrı dizin ve ayrı yedek/saklama planı gerekir; topluluk backup kapsamına girmez")
     account = sub.add_parser("account-add", help="Davet edilen kişinin hesabını gizli parola istemiyle oluştur")
     account.add_argument("username")
     account.add_argument("--display-name", required=True)
@@ -74,9 +76,12 @@ def main(argv=None):
             adresi_dogrula(args.public_url, args.local_pilot)
             if args.db.resolve() == args.feed_db.resolve():
                 raise ValueError("Haber deposu ve topluluk deposu ayrı dosyalar olmalı.")
+            if args.objections_db is not None:
+                from radar.arastirma_itiraz_api import itiraz_depo_yolunu_dogrula
+                itiraz_depo_yolunu_dogrula(args.objections_db, args.db, args.feed_db, args.source_memory_db)
             memory = kaynak_hafizasini_hazirla(args.source_memory_config, args.source_memory_db, args.db, args.feed_db)
             app = uygulama(args.db, public_url=args.public_url, local_pilot=args.local_pilot,
-                           feed_db_path=args.feed_db, source_memory=memory)
+                           feed_db_path=args.feed_db, source_memory=memory, objections_db_path=args.objections_db)
             print("DevTrellis topluluk hizmeti başlıyor; otomatik model çağrısı yapılmaz.", flush=True)
             uvicorn.run(app, host="127.0.0.1", port=args.port, workers=1, access_log=False, log_level="warning",
                         proxy_headers=not args.local_pilot, forwarded_allow_ips="127.0.0.1")

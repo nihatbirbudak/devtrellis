@@ -3,6 +3,12 @@
   "use strict";
   const BRAND = "DevTrellis";
   const EN = {
+    "Sıralamalı arama kullanılamıyor; sözcük araması sonuçları gösteriliyor.": "Ranked search is unavailable; word-search results are shown.",
+    "Sunucu arama sıralaması bilgisini sağlamıyor; sonuçların ilgililik sırası doğrulanamadı.": "The server does not provide search-order information; relevance ordering could not be confirmed.",
+    "Eşleşen terimler: {terms}": "Matched terms: {terms}",
+    "Eşleşmeyen terimler: {terms}": "Unmatched terms: {terms}",
+    "Sözcük eşleşmesi; bu soruyu yanıtlamaya yeterliliği veya doğruluğu değerlendirilmedi.": "Word match only; answer sufficiency and accuracy have not been assessed.",
+    "Cevap yeterliliği bilgisi yok; araştırmanın kapsamını ve kaynaklarını kontrol et.": "Answer-sufficiency information is unavailable; check the research scope and sources.",
     "Topluluğu tanı":"Meet the community",
     "Hakkımızda":"About us",
     "Topluluk kuralları":"Community guidelines",
@@ -15,6 +21,13 @@
     "Topluluk arama görünümü geçersiz.":"The community search view is invalid.",
     "Topluluk arama yöntemi yanıtı geçersiz.":"The community search mode response is invalid.",
     "Topluluk arama kapsamı eksik.":"The community search coverage is missing.",
+    "Kamu düzeltme özeti geçersiz.":"The public correction summary is invalid.",
+    "Düzeltme sayfalama bilgisi geçersiz.":"The correction pagination is invalid.",
+    "Düzeltme listesi eksik veya sınırı aşıyor.":"The correction list is incomplete or exceeds its limit.",
+    "Kamu düzeltmesi özel veya beklenmeyen alan içeriyor.":"The public correction contains private or unexpected fields.",
+    "Düzeltme kimliği geçersiz.":"The correction ID is invalid.",
+    "Düzeltmenin tam sürümü geçersiz.":"The exact correction version is invalid.",
+    "Düzeltme tarihi geçersiz.":"The correction date is invalid.",
     "Arama kapsamı geçersiz.":"The search coverage is invalid.",
     "Arama terimleri geçersiz.":"The search terms are invalid.",
     "Arama kapsamı tutarsız.":"The search coverage is inconsistent.",

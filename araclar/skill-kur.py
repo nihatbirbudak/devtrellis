@@ -12,7 +12,8 @@ from pathlib import Path
 
 SKILL_NAME = "devtrellis-research"
 PACKAGE = Path(__file__).resolve().parents[1] / "integrations" / SKILL_NAME
-FILES = ("SKILL.md", "agents/openai.yaml")
+LEGACY_FILES = ("SKILL.md", "agents/openai.yaml")
+FILES = (*LEGACY_FILES, "references/contribution.md", "references/source-memory.md")
 MARKER = ".devtrellis-skill-install.json"
 OWNER = "https://github.com/nihatbirbudak/devtrellis"
 
@@ -78,10 +79,12 @@ def inspect_destination(destination, home):
     if (not isinstance(saved, dict) or set(saved) != {"schema", "owner", "skill", "files"}
             or type(saved["schema"]) is not int or saved["schema"] != 1 or saved["owner"] != OWNER
             or saved["skill"] != SKILL_NAME or not isinstance(saved["files"], dict)
-            or set(saved["files"]) != set(FILES)):
+            or set(saved["files"]) not in (set(LEGACY_FILES), set(FILES))):
         raise ValueError("The existing skill ownership record does not match DevTrellis.")
     prior = {MARKER: marker.read_bytes()}
     for name in FILES:
+        if name not in saved["files"]:
+            continue
         path = bounded(destination / name, home)
         if not path.is_file() or path.stat().st_size > 128 * 1024:
             raise ValueError("An installed skill file is missing or modified; nothing was changed.")
@@ -90,7 +93,9 @@ def inspect_destination(destination, home):
             raise ValueError("An installed skill file was edited; preserve or rename it before updating.")
         prior[name] = content
     # Değiştirilmiş ya da eklenmiş kişisel skill dosyaları yerinde kalır; otomatik güncellenmez.
-    expected = {"agents", MARKER, *FILES}
+    expected = {MARKER, *saved["files"]}
+    expected.update(parent.as_posix() for name in saved["files"] for parent in Path(name).parents
+                    if parent != Path("."))
     for directory, dirs, filenames in os.walk(destination, followlinks=False):
         for name in [*dirs, *filenames]:
             path = Path(directory) / name
@@ -142,7 +147,7 @@ def rollback_files(completed, home):
             try:
                 path = bounded(destination / name, home)
                 current = installed_bytes(path, home)
-                previous = prior[name] if prior is not None else None
+                previous = prior.get(name) if prior is not None else None
                 if current == previous:
                     row["status"] = "already_restored"
                 elif current != last_written:
@@ -197,13 +202,17 @@ def install(target, home=None, *, package=PACKAGE):
             destination.mkdir(parents=True, exist_ok=prior is not None)
             if prior is None:
                 created.append(destination)
-            agents = bounded(destination / "agents", home)
-            if not agents.exists():
-                agents.mkdir()
-                created.append(agents)
+            directories = {parent for name in files for parent in Path(name).parents if parent != Path(".")}
+            for relative in sorted(directories, key=lambda value: (len(value.parts), value.as_posix())):
+                directory = bounded(destination / relative, home)
+                if not directory.exists():
+                    directory.mkdir()
+                    created.append(directory)
+                elif not directory.is_dir():
+                    raise ValueError("A skill directory is not a regular directory; it was preserved.")
             for name, content in wanted.items():
                 path = bounded(destination / name, home)
-                previous = prior[name] if prior is not None else None
+                previous = prior.get(name) if prior is not None else None
                 if installed_bytes(path, home) != previous:
                     raise ValueError("A skill file changed during installation; it was preserved.")
                 atomic_write(path, content)

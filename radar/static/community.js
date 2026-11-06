@@ -287,6 +287,7 @@
     byId("community-count").textContent = t("Kayıtlar yükleniyor…");
     message("community-error", "");
     const query = byId("search-query").value.trim();
+    const rankedRequested = tab === "research" && Boolean(query);
     const params = new URLSearchParams({query, offset: String(offset), limit: String(PAGE_SIZE)});
     try {
       let data;
@@ -297,6 +298,7 @@
         data = await request(`/${tab}?${params}`);
       } else {
         params.set("kind", tab);
+        if (rankedRequested) params.set("search_mode", "ranked");
         data = await request(`/cards?${params}`);
       }
       if (generation !== state.generation) return;
@@ -304,7 +306,14 @@
       state.total = data.total || 0;
       const list = byId("community-list");
       list.replaceChildren();
-      for (const item of data.items || []) list.append(tab === "feed" ? feedCard(item) : contributionCard(item));
+      if (rankedRequested) {
+        if (data.search?.mode === "all" && data.search?.fallback === true) {
+          list.append(node("p", "field-help search-status", t("Sıralamalı arama kullanılamıyor; sözcük araması sonuçları gösteriliyor.")));
+        } else if (data.search?.mode !== "ranked" || data.search?.fallback !== false) {
+          list.append(node("p", "field-help search-status", t("Sunucu arama sıralaması bilgisini sağlamıyor; sonuçların ilgililik sırası doğrulanamadı.")));
+        }
+      }
+      for (const item of data.items || []) list.append(tab === "feed" ? feedCard(item) : contributionCard(item, rankedRequested));
       if (!(data.items || []).length) {
         if (query || (tab === "feed" && byId("search-interest").value.trim())) list.append(emptyState(t("Bu aramada kayıt bulunamadı."), t("Onaylanan katkılar burada görünür. Aramayı değiştirebilir veya daha sonra tekrar bakabilirsin."), true));
         else if (tab === "mine") list.append(emptyState(t("Henüz katkı yok."), t("Bir paylaşım dosyası getirerek ilk katkını hazırlayabilirsin.")));
@@ -337,7 +346,21 @@
     return article;
   }
   const statusLabel = status => t({pending: "İnceleme bekliyor", published: "Yayımlandı", rejected: "Reddedildi", withdrawn: "Geri çekildi", hidden: "Yayından kaldırıldı"}[status] || "Bilinmiyor");
-  function contributionCard(card) {
+  function searchMatchInfo(match) {
+    if (!match || typeof match !== "object" || Array.isArray(match)) return null;
+    const section = node("div", "search-match");
+    for (const [key, label] of [["matched_terms", "Eşleşen terimler: {terms}"], ["missing_terms", "Eşleşmeyen terimler: {terms}"]]) {
+      const terms = match[key];
+      if (Array.isArray(terms) && terms.length <= 40 && terms.every(term => typeof term === "string" && term.length <= 200) && terms.length) {
+        section.append(node("p", "field-help", t(label, {terms: terms.join(", ")})));
+      }
+    }
+    section.append(node("p", "field-help", t(match.answer_sufficiency === "not_assessed"
+      ? "Sözcük eşleşmesi; bu soruyu yanıtlamaya yeterliliği veya doğruluğu değerlendirilmedi."
+      : "Cevap yeterliliği bilgisi yok; araştırmanın kapsamını ve kaynaklarını kontrol et.")));
+    return section;
+  }
+  function contributionCard(card, showSearchMatch = false) {
     const packet = card.packet;
     const article = node("article", "card");
     const body = node("div", "card-body");
@@ -355,6 +378,8 @@
       }); heading.append(titleLink);
     } else heading.append(button(packet.title, event => openCard(card, "read", event.currentTarget), "card-title-link"));
     body.append(meta, heading, node("p", "summary", packet.summary));
+    const matchInfo = showSearchMatch ? searchMatchInfo(card.search_match) : null;
+    if (matchInfo) body.append(matchInfo);
     if (!privateView && card.engagement) body.append(metricList(card.engagement, true));
     if (!privateView && card.relationships?.children_total) body.append(node("p", "entry-note", t("Geliştiren çalışmalar: {count}", {count: count(card.relationships.children_total)})));
     const sources = originalLinks(packet, true); if (sources) body.append(sources);
