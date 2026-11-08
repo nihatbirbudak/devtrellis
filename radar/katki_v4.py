@@ -441,8 +441,16 @@ def kapsam_listesi(kayit):
 
 
 def surum_eslesmesi(kayit, urun, surum):
-    """Basit ve güvenli yön: ürün süzülür; sürüm yalnız aynı metinse `exact`. Aralık çözümlemesi yok (`in_range` üretilmez)."""
+    """Basit ve güvenli yön: ürün süzülür; sürüm yalnız aynı metinse `exact`. Aralık çözümlemesi yok (`in_range` üretilmez).
+
+    Yapılı kapsamı olmayan kayıt (serbest metin `applies_to`; canlıdaki iki GitHub raporu) ürün ya da sürüm beyan etmez:
+    sonuç `unspecified` (alpha.12 kabulü, orta bulgu 1). Eskiden ürün/sürüm verilince her zaman `mismatch` çıkıyor ve kayıt
+    adresle bulmada gizleniyordu. Sözleşme r2 sürüm eşleşmesini yalnız yapılı öğeler üzerinden tanımlar; `topics` için çıkarılan
+    ürün bir tahmindir, beyan sayılmaz ve sürüm taşımaz.
+    """
     ogeler = kapsam_listesi(kayit)
+    if not ogeler:
+        return "unspecified"
     if urun is not None:
         ogeler = [oge for oge in ogeler if oge["product"] == urun]
         if not ogeler:
@@ -573,7 +581,16 @@ def kapsam_cikarimi(kayit):
         if etiket:
             etiketler.add(etiket)
             etiket_parcalari.update(p for p in etiket.split("-") if len(p) >= 3 and p not in _GENEL_ALAN_PARCALARI)
-    urunler = [s for s in sozcukler if (s in etiketler or s in etiket_parcalari) and _URUN.fullmatch(s)]
+    # Ürün adayları terimlerden geniştir (alpha.12, alpha.11 kabulü düşük bulgu 3): noktalı ad noktasız da denenir
+    # ("Node.js" + nodejs.org → `nodejs`); iki harfli ad yalnız kayıtlı alan etiketinin kendisiyse sayılır ("Go" + go.dev).
+    adaylar = []
+    for ham in _SOZCUK.findall(metin_):
+        sozcuk = ham.strip(".-_+").lower()
+        for aday in (sozcuk, sozcuk.replace(".", "")):
+            if aday not in adaylar:
+                adaylar.append(aday)
+    urunler = [a for a in adaylar if (a in etiketler or (len(a) >= 3 and a in etiket_parcalari))
+               and a not in _KAPSAM_BAGLACLARI and _URUN.fullmatch(a)]
     return urunler[:5], sozcukler[:60]
 
 

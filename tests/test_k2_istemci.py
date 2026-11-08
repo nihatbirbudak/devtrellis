@@ -226,6 +226,29 @@ class LookupTests(FakeServerCase):
         ok = lookups.lookup(PY314, expected_product="cpython", expected_version="3.14.1")["results"][0]
         self.assertEqual((ok["result"], ok["version_match"]), ("found", "in_range"))
 
+    def test_product_names_as_agents_write_them_map_to_library_slugs(self):
+        """alpha.12 K3: "Python", "PostgreSQL", "Go", "Node.js" yazımları doğrulama hatası değil, slug'a çevrilir."""
+        for written, slug in (("Python", "cpython"), ("python3", "cpython"), (" CPython ", "cpython"),
+                              ("PostgreSQL", "postgresql"), ("Postgres", "postgresql"), ("Go", "go"), ("Golang", "go"),
+                              ("Node.js", "nodejs"), ("node", "nodejs"), ("Next.js", "nextjs"), ("GitHub", "github"),
+                              ("cpython", "cpython"), ("home_assistant", "homeassistant")):
+            with self.subTest(written=written):
+                self.assertEqual(kopru.product_slug(written), slug)
+        for bad in ("CPython 3", "", "3.14", "a" * 65, 7, "c++", "python3.14", ".NET", "nodejs.org"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                kopru.product_slug(bad)
+        # Konu listesinde aynen geçen ad takma ada çevrilmez (kabul düşük 3).
+        self.assertEqual(kopru.product_slug("Python", frozenset({"python"})), "python")
+        self.assertEqual(kopru.product_slug("Python", frozenset({"cpython"})), "cpython")
+        lookups, _ = self.lookups()
+        answer = lookups.lookup(PY314, expected_product="Python", expected_version="3.14")
+        self.assertEqual(answer["expected_product"], "cpython")
+        self.assertEqual(answer["results"][0]["result"], "found")
+        self.assertIn(answer["results"][0]["version_match"], {"exact", "in_range"})
+        self.assertNotIn("expected_product", lookups.lookup(PY314, expected_product="cpython"))
+        self.assertEqual(lookups.lookup(PY314, expected_product="Python", expected_version="3.13")["results"][0]["result"],
+                         "version_mismatch")
+
     def test_private_inputs_fail_without_network_or_echo(self):
         lookups, _ = self.lookups()
         before = len(self.library.calls)
@@ -301,6 +324,9 @@ class LookupTests(FakeServerCase):
         self.assertEqual(len(untrusted(answer["card"])["claims"]), 6)
         self.assertEqual(answer["card"]["server"]["omitted_claims"], 2)
         self.assertEqual(answer["hint"], '2 claims not shown; call lookup_source again with view="full" for the whole card.')
+        # alpha.12 K6: kart sayfanın tamamı değildir; liste türü sorularda kapsam denetlenmeli.
+        self.assertEqual(answer["scope_hint"], kopru.CARD_SCOPE_HINT)
+        self.assertIn("all/which", answer["scope_hint"])
         full = SourceLookup(self.client).lookup(PY314, view="full")["results"][0]
         self.assertNotIn("hint", full)
         self.assertEqual(len(untrusted(full["card"])["claims"]), 8)
@@ -414,8 +440,9 @@ class LookupTests(FakeServerCase):
         answer = SourceLookup(self.client).lookup(PY313)["results"][0]
         self.assertEqual(answer["result"], "found", answer)
         card = answer["card"]
+        # alpha.12: makine kapısı yolunda boş etiket sabit "Not human-reviewed" olur.
         self.assertEqual((card["declared"]["applies_to"], card["declared"]["checked_on"], card["server"]["label"]),
-                         ([], None, None))
+                         ([], None, "Not human-reviewed"))
         self.assertEqual(untrusted(card)["claims"][0]["quote"], "Free-threading is experimental in 3.13.")
 
     def test_r2_view_writes_a_shared_source_url_once_and_keeps_distinct_ones_per_claim(self):
@@ -493,6 +520,43 @@ class CoverageCacheTests(FakeServerCase):
                 validate_coverage(broken)
         with self.assertRaises(ValueError):
             validate_topics({**self.library.topics(), "entries": [{"card": {"id": "x", "version": 1}}]})
+
+    def test_coverage_state_is_consistent_after_the_window_expires(self):
+        """alpha.12 K7: liste süresi dolunca ilk çağrı yenilemeyi bekler; aynı saatte `stale`/`fresh` gidip gelmez."""
+        clock = [datetime.now(timezone.utc).timestamp()]
+        lookups, cache = self.lookups(clock=lambda: clock[0], min_interval=0)
+        states = []
+        for _ in range(3):
+            clock[0] += 301  # her turda geçerlilik biter; sunucu yeni liste üretir
+            self.library.generated += timedelta(seconds=301)
+            states.append(lookups.lookup(PY313)["coverage"]["state"])
+            states.append(lookups.lookup(PY313)["coverage"]["state"])
+        self.assertEqual(states, ["fresh"] * 6)
+        # Süren arka plan indirmesi beklenir (açılıştaki ön indirme).
+        import threading
+        import time as clock_module
+        self.library.generated = datetime.now(timezone.utc).replace(microsecond=0)
+        body = self.library.coverage()
+        gate = threading.Event()
+
+        class Slow:
+            def contract_get(self, path, etag=None, limit=None, timeout=None):
+                gate.wait(5)
+                return 200, body, None
+
+        slow = SnapshotCache(Slow(), "/api/platform/community/coverage", validate_coverage)
+        slow.prefetch()
+        threading.Timer(0.2, gate.set).start()
+        started = clock_module.monotonic()
+        slow.ensure()
+        self.assertIsNotNone(slow.fresh())
+        self.assertLess(clock_module.monotonic() - started, 5)
+        # Sunucuya ulaşılamıyorsa liste gerçekten eskidir: `stale` ve kart tazeliğiyle ilgisi olmadığını söyleyen not.
+        stale_lookups, _ = self.lookups(clock=lambda: clock[0] + 301, min_interval=3600)
+        stale_lookups.lookup(PY313)
+        answer = stale_lookups.lookup(PY313)
+        self.assertEqual(answer["coverage"]["state"], "stale")
+        self.assertEqual(answer["coverage"]["note"], kopru.COVERAGE_NOTE)
 
 
 def topic(card_id, products, terms):
@@ -607,6 +671,70 @@ class SearchGateTests(FakeServerCase):
         self.assertNotIn("record_type", search_cards({"items": [report_item(self.PY, "Python", ["python", "gil"])]},
                                                     snapshot, decision)["card"]["server"])
 
+    def test_empty_label_on_machine_gate_path_reads_not_human_reviewed(self):
+        """alpha.12 (alpha.11 yeniden sınama, kalan 1): `path: machine_gate` iken boş etiket sabit metne iner."""
+        from radar.topluluk_baglantisi import ToplulukBaglantisi
+        snapshot = self.gate.snapshot()
+        decision = self.gate.decide("python gil", snapshot)
+        item = report_item(self.PY, "Python free-threading", ["python", "gil"])
+        publication = {"path": "machine_gate", "human_reviewed": False, "policy_version": None, "gate_version": None,
+                       "label": {"tr": None, "en": ""}}
+        item.update(record_type="v4", kind="research_report", human_reviewed=False, publication=publication)
+        self.assertEqual(search_cards({"items": [item]}, snapshot, decision)["card"]["server"]["label"], "Not human-reviewed")
+        view = sahte.synthetic_agent_view(PY314, [("Claim.", "Quote from the page.", "cpython", "3.14", "exact")])
+        view["server"]["label"] = {"tr": "", "en": None}
+        self.assertEqual(compact_card(view, "unspecified", True)["server"]["label"], "Not human-reviewed")
+        view["server"]["path"] = "moderator"
+        self.assertIsNone(compact_card(view, "unspecified", True)["server"]["label"])
+        checked = ToplulukBaglantisi.v4_alanlarini_dogrula({"kind": "research_report", "human_reviewed": False,
+                                                            "publication": publication})
+        self.assertEqual(checked["publication"]["label"], {"tr": "İnsan incelemedi", "en": "Not human-reviewed"})
+
+    def test_short_answer_is_not_cut_and_v4_hit_shows_all_claims(self):
+        """alpha.12 K4: kart görünümünde kısa cevap 80 sözcükte kesilmez; v4 yüksek isabette iddialar aynı çağrıda gelir."""
+        snapshot = self.gate.snapshot()
+        decision = self.gate.decide("python gil", snapshot)
+        item = report_item(self.PY, "Python free-threading", ["python", "gil"])
+        summary = " ".join(f"word{n}" for n in range(95))
+        item["packet"]["summary"] = summary
+        card = search_cards({"items": [item]}, snapshot, decision)["card"]
+        self.assertEqual(untrusted(card)["short_answer"], summary)
+        # v4 kaynak kartı: arama özeti kesik iddia birleşimidir; köprü kaydı bir kez okuyup bütün iddiaları gösterir.
+        view = sahte.synthetic_agent_view(PY314, [(f"Claim {n} text.", f"Quote {n} from the page.", "cpython", "3.14", "exact")
+                                                  for n in range(6)], record_id=self.PY)
+        item.update(record_type="v4", kind="source_card", human_reviewed=False,
+                    publication={"path": "machine_gate", "human_reviewed": False, "policy_version": "p", "gate_version": "g",
+                                 "label": {"tr": "", "en": "Not human-reviewed"}})
+        reads = []
+
+        class Local:
+            def remember_v4(self, research_id):
+                reads.append(("remember", research_id))
+
+            def read_record(self, research_id, version=None):
+                reads.append((research_id, version))
+                return {"id": TestCase.PY, "version": 1, "record_type": "v4", "agent_view": view}
+
+        TestCase = self
+        high = search_cards({"items": [item]}, snapshot, decision)["card"]
+        shown = kopru.v4_search_card(high, Local())
+        self.assertEqual(reads, [("remember", self.PY), (self.PY, 1)])
+        self.assertEqual((shown["card"], shown["server"]["record_type"], shown["server"]["kind"]),
+                         (self.PY + "@1", "v4", "source_card"))
+        self.assertTrue(shown["answer_eligible"])
+        data = untrusted(shown)
+        self.assertEqual([c["quote"] for c in data["claims"]], [f"Quote {n} from the page." for n in range(6)])
+        self.assertEqual(data["not_covered"], ["benchmark numbers"])
+
+        class Broken:
+            def remember_v4(self, research_id):
+                pass
+
+            def read_record(self, *args, **kwargs):
+                raise ValueError("Local DevTrellis returned HTTP 502.")
+
+        self.assertIs(kopru.v4_search_card(high, Broken()), high)
+
 
 @unittest.skipUnless(importlib.util.find_spec("mcp"), "Optional requirements-mcp.txt is not installed.")
 class ProtocolTests(FakeServerCase):
@@ -672,6 +800,13 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotIn("Find and reuse", front)
         links = set(re.findall(r"\]\((references/[^)\s]+)\)", text.decode("utf-8")))
         self.assertEqual(links, {"references/contribution.md", "references/source-memory.md"})
+
+    def test_contribution_reference_keeps_claims_within_quotes_and_names_gaps(self):
+        """alpha.12 K5/K6: iddia alıntıdan fazlasını söylemez; liste türü konuda eksik maddeler not_covered'a yazılır."""
+        text = (self.ROOT / "references" / "contribution.md").read_text(encoding="utf-8")
+        self.assertIn("each claim says no more than its quote", text)
+        self.assertIn("pick a quote that contains that name", text)
+        self.assertIn("`not_covered`", text)
 
 
 if __name__ == "__main__":

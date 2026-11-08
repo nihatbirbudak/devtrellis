@@ -868,6 +868,111 @@ class AdresleBulma(K1Taban):
             self.assertGreaterEqual(len(blok["claims"]), 1)
             self.assertEqual(sonuc["card"]["declared"]["applies_to"], [])
 
+    def test_serbest_metin_kapsamli_rapor_urun_ve_surum_verilince_gizlenmez(self):
+        """alpha.12 kabulü orta bulgu 1: yapılı kapsamı olmayan (canlı biçim) rapor `product`/`version` verilince de bulunur;
+        sürüm eşleşmesi `unspecified` (kart sürüm beyan etmiyor). Yapılı kapsamlı kayıtta ürün süzgeci aynen çalışır."""
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to="GitHub REST API as documented on docs.example.org."))
+        for sorgu in ({}, {"product": "github"}, {"product": "widget", "version": "2.0"}, {"version": "2026-03-10"}):
+            with self.subTest(sorgu=sorgu):
+                govde = self.bak(**sorgu).json()
+                self.assertEqual((govde["result"], govde["answer_eligible"], govde["version_match"]),
+                                 ("found", True, "unspecified"))
+                self.assertEqual(govde["cards"][0]["server"]["id"], rapor)
+        # Yapılı kapsamlı kart (widget 2.0) aynı adreste: ürün uyunca kart önce, uymayınca serbest metinli rapor kalır.
+        kart_id = self.yayinla(token="B" * 43, anahtar="v4-request-0002")
+        self.assertEqual(self.bak(product="widget", version="2.0").json()["cards"][0]["server"]["id"], kart_id)
+        uymayan = self.bak(product="gadget").json()
+        self.assertEqual((uymayan["result"], uymayan["version_match"], uymayan["cards"][0]["server"]["id"]),
+                         ("found", "unspecified", rapor))
+        # K2 köprüsünden "GitHub" yazımıyla (K3) uçtan uca: kart görünür, sürüm uyarısı `unspecified`.
+        import mcp_topluluk as kopru
+        yanit = self.bak(product=kopru.product_slug("GitHub"))
+        bakis = kopru.SourceLookup(client=None)
+        bakis.fetch = lambda key, params, y=yanit: (y.status_code, kopru.validate_lookup(y.status_code, y.json(), key))
+        sonuc = bakis.one(1, KAYNAK_1, "en", {"product": "github", "version": None}, None, True, "card")
+        self.assertEqual((sonuc["result"], sonuc["version_match"], sonuc["answer_eligible"]), ("found", "unspecified", True))
+
+    def test_k2_read_research_ve_kullanim_v4_kaydinda_502_vermez(self):
+        """alpha.12 K2 (eşli ölçüm): `read_research` ve `record_research_use` v4 kayıtta yerel uçta HTTP 502 veriyordu.
+        Kök neden: yerel uygulama v1 kart ucunu (`/api/community/cards/<id>`) çağırıyordu; v4 kaydı orada yok (404) ve
+        404 yerel uçta 502'ye dönüşüyordu. Zincir: köprü → yerel uç → topluluk sunucusu (aynı süreçte, ağsız)."""
+        from unittest.mock import patch
+
+        import httpx
+        from fastapi import FastAPI
+
+        import mcp_topluluk as kopru
+        from radar import topluluk_baglantisi
+        from radar.depo import Depo
+        from radar.platform_api import router_olustur
+
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to="Widget 2.0 as documented on docs.example.org."))
+        sunucu, istekler = self.client(), []
+
+        def aktar(istek):
+            istekler.append((istek.method, istek.url.path))
+            yanit = sunucu.request(istek.method, str(istek.url), content=istek.read(), headers=dict(istek.headers))
+            return httpx.Response(yanit.status_code, content=yanit.content, headers=dict(yanit.headers))
+
+        with patch.object(topluluk_baglantisi, "COMMUNITY_URL", ORIGIN):
+            yerel = topluluk_baglantisi.ToplulukBaglantisi(Depo(self.root / "yerel.sqlite3", []),
+                                                           transport=httpx.MockTransport(aktar))
+            uygulama_yerel = FastAPI()
+            uygulama_yerel.include_router(router_olustur(yerel.depo, "c" * 32, community=yerel))
+            yerel_istemci = TestClient(uygulama_yerel)
+            self.addCleanup(yerel_istemci.close)
+
+            class Kopru(kopru.CommunityClient):
+                def request(self, path, payload=None, *, protected=False, version=None, timeout=None):
+                    yanit = (yerel_istemci.post(path, json=payload, headers={"X-Radar-CSRF": "c" * 32}) if payload is not None
+                             else yerel_istemci.get(path, params=None if version is None else {"version": version}))
+                    # Gerçek CommunityClient.request ile aynı durum eşlemesi (410 ve eski uygulamada bilinmeyen v4 yolu).
+                    if yanit.status_code == 410:
+                        raise ValueError("This DevTrellis record was removed or withdrawn; do not use earlier copies of it.")
+                    if yanit.status_code == 404 and path.startswith("/api/platform/community/v4-records/"):
+                        raise kopru.UnknownLocalRoute()
+                    if yanit.status_code >= 400:
+                        raise ValueError(f"Local DevTrellis returned HTTP {yanit.status_code}.")
+                    return yanit.json()
+
+            istemci = Kopru()
+            for surum in (1, None):
+                okuma = istemci.read(rapor, surum)
+                self.assertEqual((okuma["card"], okuma["record_type"], okuma["kind"], okuma["path"], okuma["human_reviewed"]),
+                                 (rapor + "@1", "v4", "research_report", "machine_gate", False))
+                self.assertEqual(okuma["report_url"], f"{ORIGIN}/api/community/v4/records/{rapor}/v/1")
+                gorunum = json.loads(okuma["untrusted"].split("\n")[1])
+                self.assertEqual((gorunum["schema"], gorunum["server"]["id"]), ("devtrellis-agent-view", rapor))
+                self.assertGreaterEqual(len(gorunum["untrusted"]["claims"]), 1)
+            self.assertIn(("GET", f"/api/community/v4/records/{rapor}/v/1"), istekler)
+            with self.assertRaisesRegex(ValueError, "view=\"full\""):
+                istemci.read(rapor, 1, view="outline")
+            # Kullanım bildirimi: v4'te sayaç yok; hata değil, sayılmadığı açıkça söylenir.
+            self.assertEqual(istemci.record_use(rapor, 1),
+                             {"recorded": False, "record_type": "v4", "reason": "usage_not_counted_for_v4_records"})
+            self.assertFalse(yerel.mcp_oku(rapor, 1)["access_counted"])
+            # Yok olan kayıt ve yanlış sürüm yine hata (404 → yerel 502), sessizce başka kayıt dönmez.
+            for kimlik, surum in (("f" * 32, 1), (rapor, 2)):
+                with self.subTest(kimlik=kimlik, surum=surum), self.assertRaisesRegex(ValueError, "HTTP 502"):
+                    istemci.read(kimlik, surum)
+            with self.assertRaisesRegex(ValueError, "HTTP 502"):
+                istemci.record_use("f" * 32, 1)
+            with self.assertRaisesRegex(ValueError, "içe aktarılamaz"):
+                yerel.ice_aktar(rapor)
+            # Kabul düşük 4: v4 olduğu bilinen kayıt önce v1 ucuna gitmez.
+            istemci.remember_v4(rapor)
+            istekler.clear()
+            self.assertEqual(istemci.read(rapor, 1)["record_type"], "v4")
+            self.assertEqual(istekler, [("GET", f"/api/community/v4/records/{rapor}/v/1")])
+            # Kabul düşük 5: geri çekilen kayıt (uzak 410) "kaldırıldı" der, genel 502 değil.
+            self.client().post(f"/api/community/v4/submissions/{rapor}/withdraw",
+                               json={"expected_revision": self.durum(rapor)["revision"]}, headers=self.headers())
+            for bilinen in (True, False):
+                if not bilinen:
+                    istemci.v4_records.clear()
+                with self.subTest(bilinen=bilinen), self.assertRaisesRegex(ValueError, "removed or withdrawn"):
+                    istemci.read(rapor, 1)
+
     def test_serbest_metinli_rapor_kart_varken_adaylarda_yok_kapsamda_var(self):
         """K1 ikinci dilim kabulü düşük bulgu 4 (bilinen sınır): r1 şeması `candidates[].applies_to` için en az bir
         {product, versions, version_scheme} ister; serbest metinli raporun sürüm bilgisi yoktur, uydurulmaz. Rapor bulma
@@ -909,6 +1014,11 @@ class AdresleBulma(K1Taban):
                          ["rust"])
         self.assertEqual(urunler("Mozilla Firefox developer notes", "https://developer.mozilla.org/en-US/docs/Web"), ["mozilla"])
         self.assertEqual(urunler("CPython 3.14", "https://docs.python.org/3.14/whatsnew/3.14.html"), [])
+        # alpha.12 (alpha.11 kabulü düşük bulgu 3): noktalı ad noktasız denenir; iki harfli ad yalnız alan etiketinin kendisiyse.
+        self.assertEqual(urunler("Node.js 22 http module", "https://nodejs.org/api/http.html"), ["nodejs"])
+        self.assertEqual(urunler("Go net/http server", "https://pkg.go.dev/net/http"), ["go"])
+        self.assertEqual(urunler("Use it as documented", "https://go.dev/doc/"), [])
+        self.assertEqual(urunler("Notes in JS", "https://example.org/js"), [])
         # Canlıdaki iki raporun biçimi: ürün yalnız `github` kalır (`docs`, `en`, `com` sayılmaz).
         self.assertEqual(urunler("GitHub REST API (releases and pagination; examples in the documents send "
                                  "X-GitHub-Api-Version: 2026-03-10) and GitHub webhooks, as documented for github.com on "

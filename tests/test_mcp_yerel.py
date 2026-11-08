@@ -292,6 +292,70 @@ class LocalBridgeTests(unittest.TestCase):
         self.assertEqual(personal.read_bytes(), b"unrelated personal database")
         self.assertEqual(list(self.directory.iterdir()), [personal])
 
+    def test_background_start_yields_before_the_application_is_built(self):
+        """alpha.12 K1: arka plan kipinde adres hemen verilir; uygulama iş parçacığında kurulur, `wait()` hazır olunca döner."""
+        import threading
+
+        import mcp_topluluk
+
+        release = threading.Event()
+        real_app = mcp_yerel._application
+
+        def slow_app(*args, **kwargs):
+            release.wait(5)
+            return real_app(*args, **kwargs)
+
+        with patch.object(mcp_yerel, "_application", side_effect=slow_app):
+            with mcp_yerel.yerel_kopru(self.directory, background=True) as bridge:
+                self.assertIsInstance(bridge, mcp_yerel.LocalBridge)
+                self.assertEqual(urlsplit(bridge.origin).hostname, "127.0.0.1")
+                release.set()
+                client = mcp_topluluk.CommunityClient(bridge.origin, ready=bridge.wait)
+                self.assertIn("csrf_token", client.request("/api/platform/community/session"))
+                self.assertEqual(self.request(bridge.origin, "/api/health")[0], 200)
+            self.assert_closed(bridge.origin)
+        # Kurulum hatası: ilk istek açık bir hata alır, asıl sebep stderr'e yazılır, kapanış temiz kalır.
+        import io as io_module
+        from contextlib import redirect_stderr
+        errors = io_module.StringIO()
+        with patch.object(mcp_yerel, "_application", side_effect=OSError("injected build failure")), redirect_stderr(errors):
+            with mcp_yerel.yerel_kopru(self.directory, background=True) as bridge:
+                with self.assertRaisesRegex(RuntimeError, "Could not start"):
+                    bridge.wait()
+                client = mcp_topluluk.CommunityClient(bridge.origin, ready=bridge.wait)
+                with self.assertRaisesRegex(ValueError, "did not start"):
+                    client.request("/api/platform/community/session")
+        self.assertIn("OSError: injected build failure", errors.getvalue())
+        # Eksik bağımlılık: alpha.11'deki "Install dependencies" ipucu hem stderr'de hem araç hatasında (kabul düşük 2).
+        errors = io_module.StringIO()
+        with patch.object(mcp_yerel, "_application", side_effect=ModuleNotFoundError("No module named 'fastapi'")),                 redirect_stderr(errors):
+            with mcp_yerel.yerel_kopru(self.directory, background=True) as bridge:
+                client = mcp_topluluk.CommunityClient(bridge.origin, ready=bridge.wait)
+                with self.assertRaisesRegex(ValueError, "Install dependencies"):
+                    client.request("/api/platform/community/session")
+        self.assertIn("Install dependencies", errors.getvalue())
+        # Oturum, kurulum bitmeden kapanırsa iş parçacığı uygulamayı kapatır; süreç beklemez, hata yükselmez.
+        release.clear()
+        with patch.object(mcp_yerel, "_application", side_effect=slow_app):
+            with mcp_yerel.yerel_kopru(self.directory, background=True):
+                pass
+        release.set()
+        with mcp_yerel.yerel_kopru(self.directory) as origin:
+            self.assertEqual(self.request(origin, "/api/health")[0], 200)
+
+    def test_bridge_import_does_not_load_the_local_service_stack(self):
+        """alpha.12 K1: `initialize` öncesi yüklenen modüllerde fastapi, uvicorn ve platform API zinciri yok."""
+        import subprocess
+        import sys
+
+        root = Path(__file__).resolve().parents[1]
+        code = ("import sys, mcp_topluluk; from radar.mcp_yerel import yerel_kopru; "
+                "print(sorted(m for m in ('fastapi', 'uvicorn', 'radar.platform_api', 'radar.toplayici') "
+                "if m in sys.modules))")
+        result = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "[]")
+
     def test_invalid_ownership_marker_is_not_accepted(self):
         self.directory.mkdir()
         marker = self.directory / mcp_yerel.OWNER_FILE

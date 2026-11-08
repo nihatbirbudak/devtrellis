@@ -31,7 +31,8 @@ def router_olustur(depo, csrf_token, workflow=None, community=None, source_memor
         except PlatformSurumCatismasi as exc:
             raise HTTPException(409, str(exc)) from exc
         except (ToplulukBaglantiHatasi, KaynakHafizasiIstemciHatasi) as exc:
-            raise HTTPException(502, str(exc)) from exc
+            # Kaldırılmış/geri çekilmiş kayıt (uzak 410) genel 502 değil, 410 olarak iletilir (alpha.12 kabulü düşük 5).
+            raise HTTPException(410 if getattr(exc, "durum", None) == 410 else 502, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(404, "İstenen kayıt bulunamadı.") from exc
         except ValueError as exc:
@@ -109,6 +110,11 @@ def router_olustur(depo, csrf_token, workflow=None, community=None, source_memor
     @router.get("/community/cards/{entry_id}")
     def community_card(entry_id: str, version: int | None = Query(default=None, ge=1, le=9223372036854775807)):
         return execute(community.oku, entry_id, version)
+
+    @router.get("/community/v4-records/{entry_id}")
+    def community_v4_record(entry_id: str, version: int | None = Query(default=None, ge=1, le=9223372036854775807)):
+        # v4 olduğu bilinen kayıt (arama/bulma sonucu): v1 ucuna gidilmeden okunur (alpha.12 kabulü düşük 4).
+        return execute(community.v4_oku, entry_id, version)
 
     @router.post("/community/cards/{entry_id}/read", dependencies=guarded)
     def community_mcp_read(entry_id: str, payload: dict = Body(...)):
