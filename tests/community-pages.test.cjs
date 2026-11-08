@@ -1,4 +1,4 @@
-// Public page behavior: local preview, explicit delivery, safe retries and EN/TR drafts.
+// Kamu sayfasında yerel önizleme, açık gönderim, güvenli tekrar ve iki dilli taslağı sınar.
 const assert = require("node:assert/strict");
 const {test} = require("node:test");
 const {PAGES, COPY, initialLanguage, requestPayload, createUuid, validReceipt, createApp} = require("../radar/static/community-pages.js");
@@ -28,7 +28,7 @@ function harness({page="support", language=null, storageBroken=false, secure=tru
   const root=new Node("div");root.id="community-page-root";
   const flatten=node=>[node,...node.children.flatMap(flatten)];
   const document={documentElement:{lang:""},title:"",createElement:tag=>new Node(tag),getElementById:id=>flatten(root).find(node=>node.id===id)};
-  const storage={getItem(key){assert.equal(key,"ufuk.ui.language");if(storageBroken)throw new Error("blocked");return language;},setItem(key,value){assert.equal(key,"ufuk.ui.language");state.saved.push({key,value});if(storageBroken)throw new Error("blocked");}};
+  const storage={getItem(key){assert.ok(["devtrellis.ui.language","ufuk.ui.language"].includes(key));if(storageBroken)throw new Error("blocked");return language;},setItem(key,value){assert.equal(key,"devtrellis.ui.language");state.saved.push({key,value});if(storageBroken)throw new Error("blocked");}};
   const crypto=secure?{randomUUID(){state.keys++;return "00000000-0000-4000-8000-"+String(state.keys).padStart(12,"0");}}:{};
   const fetcher=async(url,options={})=>{
     state.calls.push({url,options,payload:options.body?JSON.parse(options.body):undefined});
@@ -44,7 +44,7 @@ function harness({page="support", language=null, storageBroken=false, secure=tru
     for(const [name,value] of Object.entries(values))await input("request-"+name,value,["category","consent"].includes(name)?"change":"input");
     if(!Object.hasOwn(overrides,"consent"))await input("request-consent",true,"change");
   }
-  return {app,state,root,flatten,document,byId,input,fill,preview:()=>byId("community-request-form").dispatch("submit"),send:()=>byId("request-send").dispatch("click"),posts:()=>state.calls.filter(call=>call.options.method==="POST")};
+  return {app,state,root,flatten,document,byId,input,fill,preview:()=>byId("community-request-form").dispatch("submit"),send:()=>byId("request-send").dispatch("click"),posts:()=>state.calls.filter(call=>call.url==="/api/community/requests"&&call.options.method==="POST")};
 }
 
 test("four routes have translated titles, one heading and one current navigation link without fetching",()=>{
@@ -70,7 +70,7 @@ test("language changes retain every draft field and consent; only the language i
   for(const [key,value] of Object.entries({category:"translation",subject:" Draft subject ",message:"Line one\nLine two",name:"Ada",email:"ada@example.org"}))assert.equal(h.byId("request-"+key).value,value);
   assert.equal(h.byId("request-consent").checked,true);
   assert.equal(h.document.documentElement.lang,"tr");assert.equal(h.state.focused,"pages-language");
-  assert.deepEqual(h.state.saved,[{key:"ufuk.ui.language",value:"tr"}]);assert.equal(h.state.calls.length,0);
+  assert.deepEqual(h.state.saved,[{key:"devtrellis.ui.language",value:"tr"}]);assert.equal(h.state.calls.length,0);
 });
 
 test("preview is local and displays exact normalized fields as inert text",async()=>{
@@ -89,6 +89,7 @@ test("only explicit send opens the CSRF session and posts exactly the reviewed p
   await h.fill({category:"code",subject:"  Docs help ",message:" Improve the setup guide. ",name:"Ada",email:"ada@example.org"});await h.preview();
   await h.input("pages-language","en","change");assert.equal(h.state.calls.length,0);await h.send();
   assert.deepEqual(h.state.calls.map(call=>call.url),["/api/community/session","/api/community/requests"]);
+  assert.equal(h.state.calls[0].options.method,"POST");
   const call=h.posts()[0];assert.equal(call.options.credentials,"same-origin");assert.equal(call.options.headers["X-Ufuk-CSRF"],"CSRF_FOR_TEST");
   assert.equal(call.options.headers["Content-Type"],"application/json");
   assert.deepEqual(call.payload,{kind:"contribute",category:"code",subject:"Docs help",message:"Improve the setup guide.",name:"Ada",email:"ada@example.org",language:"tr",consent:true,website:"",idempotency_key:"00000000-0000-4000-8000-000000000001"});
@@ -185,7 +186,7 @@ test("secure fallback creates a version-four UUID and accepted receipts include 
 test("contact and draft text never enter navigation URLs or storage, even after receipt",async()=>{
   const h=harness();await h.fill({name:"Unique Private Name",email:"private@example.org",subject:"Unique Subject",message:"Unique secret draft"});await h.preview();
   await h.input("pages-language","tr","change");await h.send();await h.input("pages-language","en","change");
-  assert.deepEqual(h.state.saved,[{key:"ufuk.ui.language",value:"tr"},{key:"ufuk.ui.language",value:"en"}]);
+  assert.deepEqual(h.state.saved,[{key:"devtrellis.ui.language",value:"tr"},{key:"devtrellis.ui.language",value:"en"}]);
   for(const node of h.flatten(h.root).filter(n=>n.tagName==="A"))assert.doesNotMatch(node.href,/Private|private|Unique|secret/);
   assert.ok(!h.root.textContent.includes("Unique secret draft"));assert.ok(!h.root.textContent.includes("private@example.org"));
 });
@@ -197,5 +198,16 @@ test("policy copy separates private requests from research and scopes retention 
     assert.match(h.root.textContent,language==="en"?/does not grant a license/:/lisans izni vermez/);
     const nodes=h.flatten(h.root);assert.equal(h.byId("request-name").required,false);assert.equal(h.byId("request-email").required,false);
     assert.ok(nodes.some(n=>n.tagName==="A"&&n.href==="https://github.com/nihatbirbudak/devtrellis/issues"));
+  }
+});
+
+test("new language preference wins and legacy preference is still readable",()=>{
+  assert.equal(initialLanguage({getItem:key=>({"devtrellis.ui.language":"tr","ufuk.ui.language":"en"}[key])}),"tr");
+  assert.equal(initialLanguage({getItem:key=>key==="ufuk.ui.language"?"tr":null}),"tr");
+});
+test("community guide links use existing repository documentation instead of the missing local guide",()=>{
+  for(const language of ["tr","en"]){const h=harness({language});const links=h.flatten(h.root).filter(x=>x.tagName==="A");
+    assert.equal(links.some(x=>/^\/guide(?:\?|$)/.test(String(x.href))),false);
+    assert.ok(links.some(x=>x.href===(language==="tr"?"https://github.com/nihatbirbudak/devtrellis/blob/main/README.tr.md":"https://github.com/nihatbirbudak/devtrellis#install")));
   }
 });

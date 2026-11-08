@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Working with messages : Example Flow Docs</title>
+<link href="/css/style.css" rel="stylesheet" type="text/css">
+<script src="/js/jquery.js"></script>
+</head>
+<body>
+<div class="header"><div class="header-content"><a href="/"><img src="/images/logo.png" alt="Example Flow"></a><ul><li><a href="/docs/">documentation</a></li></ul></div></div>
+<div class="docs">
+<div class="grid">
+<div class="col-3-12 docs-sidebar"><ul class="toc"><li class="tocheader"><ul id="toc-user-guide"><li><a href="/docs/user-guide/">User Guide</a></li></ul></li></ul>
+<script>document.getElementById("toc-user-guide").className = "active";</script>
+</div>
+<div class="col-9-12">
+<div class="docs-content">
+<h1 class="docs-title">Working with messages</h1>
+<div>
+<p>A flow passes messages between nodes. A message is a plain object with a set of properties.</p>
+<iframe width="560" height="315" src="https://www.youtube.com/embed/abcdefghijk" frameborder="0" allow="accelerometer; encrypted-media" allowfullscreen></iframe>
+<p>Messages usually carry a <code class="language-plaintext highlighter-rouge">payload</code> property.</p>
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w"> </span><span class="nl">"payload"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello"</span><span class="w"> </span><span class="p">}</span></code></pre></div></div>
+<h3 id="understanding-the-structure">Understanding the structure of a message</h3>
+<p>The debug sidebar shows the structure of each message.</p>
+<p><img src="/docs/user-guide/images/debug-message.png" style="border: 1px solid #ccc" width="300"></p>
+<h4 id="changing-properties">Changing message properties</h4>
+<p>The change node sets, moves or deletes properties. Older guides are at <a href="http://example.org/old-guide">the archive</a>.</p>
+<h4 id="moving-properties">Moving message properties</h4>
+<p>Moving a property removes it from the old location.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="footer"><p>Copyright notice outside the document.</p></div>
+</body>
+</html>

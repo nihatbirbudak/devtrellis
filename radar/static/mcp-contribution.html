@@ -11,6 +11,7 @@
     waiting:["Önizleme bekleniyor…","Waiting for a preview…"],
     intro:["Bu ekran yalnız seçilen kopyayı gösterir. Gönderme kararı sana aittir; asistanın hazırladığı taslak onayın yerine geçmez.","This screen shows only the selected copy. You decide whether to send it; an assistant's draft is not your approval."],
     privacyNote:["Otomatik temizlik her kişisel veya özel ayrıntıyı bulamayabilir. Başlığı, metni, bağlantıları ve tüm paketi kontrol et. Özel bilgi varsa paylaşmadan yerelde tut ve yeni bir kamuya açık kopya hazırla.","Automatic redaction may miss personal or private details. Check the title, text, links and full packet. If private information remains, keep it local and prepare a new public copy."],
+    nvidiaNotice:["DevTrellis, NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz. Deneme çıktısını yerelde tut; kişisel araştırmanı yerelde sürdürebilirsin. NVIDIA sağlayıcı adı, erişimin deneme türünde olduğunu tek başına göstermez. Farklı bir NVIDIA erişimin varsa paylaşım koşullarını ayrıca kontrol et.","DevTrellis does not publish output generated through NVIDIA API trial access to the community. Keep trial output local; you can continue personal research locally. The NVIDIA provider name alone does not establish the access type. If you have a different form of NVIDIA access, check its sharing terms separately."],
     privacy:["Paylaşılacak kopyayı kontrol ettim: yalnız kamuya açık araştırma içeriyor; özel veya kişisel bilgi içermiyor.","I reviewed the copy: it contains only public research and no private or personal information."],
     consent:["Bu içeriği paylaşmaya hakkım var; gösterilen metin izniyle gönderilmesini onaylıyorum.","I have the right to share this content and approve sending it under the content license shown."],
     permissionNote:["İzin yalnız bu metin içindir; bağlı kaynakların veya kodun izinlerini değiştirmez. Gönderim insan incelemesine gider.","Permission covers this text only; it does not change linked source or code licenses. Submissions go for human review."],
@@ -69,7 +70,11 @@
     const history=submissionsLink();if(history)root.append(history);
     if(!current){root.append(make("p","",text("waiting")));return;}
     const packet=current.packet,p=packet.provenance||{};
-    root.append(make("p","notice",text("destination")+": "+current.destination),make("h2","",packet.title),make("p","",packet.summary),make("div","report",packet.body||""));
+    root.append(make("p","notice",text("destination")+": "+current.destination));
+    if(p.provider==="nvidia"){
+      const notice=make("p","notice",text("nvidiaNotice"));notice.id="review-nvidia-notice";root.append(notice);
+    }
+    root.append(make("h2","",packet.title),make("p","",packet.summary),make("div","report",packet.body||""));
     const facts=make("dl","facts");
     for(const [label,value] of [["author",packet.author],["license",packet.license],["model",p.model&&p.model!=="unknown"?p.model:text("missingModel")],["generated",p.generated_at?date(p.generated_at):text("missingDate")],["updated",date(packet.updated_at)]]){
       facts.append(make("dt","",text(label)),make("dd","",value||text("unknown")));

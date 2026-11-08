@@ -16,6 +16,7 @@
     loading:["Yerel kayıtlar okunuyor…","Reading local records…"],
     failed:["İşlem tamamlanamadı. MCP bağlantısını kontrol edip yeniden dene. Durum değişmişse önce Durumu yenile'yi seç.","The action could not be completed. Check the MCP connection and retry. If the status has changed, refresh it first."],
     invalid:["Yerel gönderim yanıtı geçersiz; işlem yapılmadı.","The local submission response is invalid; no action was taken."],
+    unavailable:["Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.","The confirmation dialog could not open; nothing was done. Reload the page and try again."],
     destination:["Topluluk","Community"]
   };
   const root=document.getElementById("submissions-root");
@@ -96,9 +97,19 @@
     }catch(error){errorMessage=error.message||text("failed");}
     finally{busy=false;render();}
   }
+  // Gömülü tarayıcılar ve MCP paneli window.confirm'i sessizce "hayır" sayabilir; geri çekme sayfa içi pencereyle sorulur.
+  function confirmWithdraw(item){
+    const dialog=globalThis.DevTrellisConfirm||globalThis.window?.DevTrellisConfirm;
+    if(dialog?.ask)return dialog.ask({message:text("confirm"),confirmLabel:text("withdraw"),tone:"danger",returnFocus:document.getElementById("withdraw-"+item.local_id)});
+    errorMessage=text("unavailable");render();
+    return Promise.resolve(false);
+  }
   async function mutate(item,operation){
     if(busy||!csrf||!items.includes(item)||(operation==="withdraw"&&!item.submission))return;
-    if(operation==="withdraw"&&!window.confirm(text("confirm")))return;
+    if(operation==="withdraw"){
+      const confirmed=await confirmWithdraw(item);
+      if(!confirmed||busy||!items.includes(item)||!item.submission)return;
+    }
     busy=true;errorMessage="";render();
     try{
       const value=await api("submissions/"+item.local_id+"/"+operation,operation==="withdraw"?{expected_version:item.submission.version}:{});

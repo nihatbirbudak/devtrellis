@@ -42,3 +42,16 @@ test("opsiyonel iddia iki dilde çevrilmeden gösterilir; eski köken kayıtlar�
     assert.equal(provenanceFacts({...value, claim_text: undefined}, createTranslator(language), () => "Unknown").length, 4);
   }
 });
+
+test("NVIDIA seçimindeki yardım deneme yayın politikasını iki dilde ve erişim türü ayrımıyla açıklar",()=>{
+  const html=fs.readFileSync(require("node:path").join(__dirname,"../radar/static/platform.html"),"utf8");
+  const section=html.match(/<section id="provider-nvidia-help"[^>]*hidden[^>]*>([\s\S]*?)<\/section>/)[1];
+  const notice=section.match(/<p id="provider-nvidia-publication-notice"[^>]*>([^<]+)<\/p>/)[1];
+  for(const language of ["en","tr"]){
+    const text=createTranslator(language)(notice);
+    assert.match(text,language==="tr"?/NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz/:/does not publish output generated through NVIDIA API trial access/);
+    assert.match(text,language==="tr"?/kişisel araştırmanı yerelde sürdürebilirsin/:/continue personal research locally/);
+    assert.match(text,language==="tr"?/tek başına göstermez/:/alone does not establish the access type/);
+    assert.match(text,language==="tr"?/Farklı bir NVIDIA erişimin/:/different form of NVIDIA access/);
+  }
+});

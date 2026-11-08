@@ -38,7 +38,7 @@ class ToplulukTestleri(unittest.TestCase):
         return client
 
     def session(self, client=None):
-        return (client or self.client).get("/api/community/session").json()
+        return (client or self.client).post("/api/community/session", json={}, headers={"Origin": ORIGIN}).json()
 
     def post(self, path, payload, client=None, csrf=None):
         client = client or self.client
@@ -74,7 +74,8 @@ class ToplulukTestleri(unittest.TestCase):
         return response.json()["card"]
 
     def test_cookie_guvenligi_oturum_yenilenmesi_ve_cikis(self):
-        initial = self.client.get("/api/community/session")
+        self.assertNotIn("set-cookie", self.client.get("/api/community/session").headers)
+        initial = self.client.post("/api/community/session", json={}, headers={"Origin": ORIGIN})
         cookie = initial.headers["set-cookie"]
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
@@ -217,6 +218,26 @@ class ToplulukTestleri(unittest.TestCase):
         self.assertEqual(self.client.get("/api/community/cards", params={"query": "özel sözcük"}).json()["total"], 0)
         self.assertEqual(self.client.get("/api/community/cards", params={"query": "%' OR 1=1"}).json()["total"], 0)
 
+    def test_summary_search_preserves_metadata_and_default_full_read_contract(self):
+        self.login()
+        packet = self.packet(body=("Published evidence. " * 400).rstrip())
+        published = self.review(self.submit(packet))
+        anonymous = self.client_for()
+        params = {"query": "Published evidence", "kind": "research", "limit": 3}
+        full = anonymous.get("/api/community/cards", params=params)
+        summary = anonymous.get("/api/community/cards", params={**params, "view": "summary"})
+        self.assertEqual(summary.status_code, 200, summary.text)
+        expected = full.json()
+        expected["items"][0]["packet"].pop("body")
+        expected["view"] = "summary"
+        self.assertEqual(summary.json(), expected)
+        self.assertGreater(len(full.content) - len(summary.content), len(packet["body"].encode()) - 50)
+        self.assertEqual(anonymous.get("/api/community/cards", params={**params, "view": "full"}).json(), full.json())
+        path = f'/api/community/cards/{published["id"]}'
+        self.assertEqual(anonymous.get(path).json()["packet"], packet)
+        self.assertEqual(anonymous.get(path + "/packet").json(), packet)
+        self.assertEqual(anonymous.get("/api/community/cards", params={"view": "unknown"}).status_code, 422)
+
     def test_haber_akisi_ayri_depodan_gelir(self):
         feed_depo = self.app.state.feed_depo
         source = {"id": "feed", "name": "Yayıncı", "topic": "ai", "benefit": "Gelişme", "enabled": True, "interval_hours": 24}
@@ -287,9 +308,10 @@ class ToplulukTestleri(unittest.TestCase):
         self.submit(self.packet(title="Özel Python nebula raporu"), key="private-query-new-0001")
         anonymous = self.client_for()
         for query in ("nebula python", "python gizli"):
-            result = anonymous.get("/api/community/cards", params={"query": query, "kind": "research"}).json()
-            self.assertEqual(result["total"], 0)
-            self.assertEqual(result["items"], [])
+            for view in ("full", "summary"):
+                result = anonymous.get("/api/community/cards", params={"query": query, "kind": "research", "view": view}).json()
+                self.assertEqual(result["total"], 0)
+                self.assertEqual(result["items"], [])
         public = anonymous.get("/api/community/cards", params={"query": "ölçümler python"}).json()
         self.assertEqual(public["total"], 1)
         self.assertEqual(public["items"][0]["packet"]["body"], "Kamusal ölçümler.")
@@ -334,7 +356,7 @@ class ToplulukTestleri(unittest.TestCase):
         local = uygulama(self.root / "local.sqlite3", public_url="http://127.0.0.1:8782", local_pilot=True,
                          feed_db_path=self.root / "local-feed.sqlite3", sources=[])
         with TestClient(local, base_url="http://127.0.0.1:8782") as client:
-            response = client.get("/api/community/session")
+            response = client.post("/api/community/session", json={}, headers={"Origin": "http://127.0.0.1:8782"})
             self.assertEqual(response.status_code, 200)
             self.assertNotIn("; Secure", response.headers["set-cookie"])
 
@@ -584,6 +606,8 @@ class ToplulukTestleri(unittest.TestCase):
             self.assertIn(self.inbox_post().status_code, (200, 201))
         blocked = client.post("/api/community/inbox", json=self.inbox_payload(),
                               headers=self.inbox_headers(**{"X-Forwarded-For": "203.0.113.99"}))
+        self.assertEqual(blocked.status_code, 429)
+        blocked = client.post("/api/community/inbox", json=self.inbox_payload(), headers=self.inbox_headers())
         self.assertEqual(blocked.status_code, 429)
         self.assertEqual(blocked.headers["retry-after"], "60")
         for batch in range(4):

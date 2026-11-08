@@ -1,8 +1,15 @@
 // Yerel ve topluluk arayüzünün markasını, dil tercihini ve sabit metinlerini tek yerde yönetir.
 (() => {
   "use strict";
-  const BRAND = "DevTrellis";
+const BRAND = "DevTrellis";
   const EN = {
+    "DevTrellis, NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz. Deneme çıktısını yerelde tut; kişisel araştırmanı yerelde sürdürebilirsin. NVIDIA sağlayıcı adı, erişimin deneme türünde olduğunu tek başına göstermez. Farklı bir NVIDIA erişimin varsa paylaşım koşullarını ayrıca kontrol et.": "DevTrellis does not publish output generated through NVIDIA API trial access to the community. Keep trial output local; you can continue personal research locally. The NVIDIA provider name alone does not establish the access type. If you have a different form of NVIDIA access, check its sharing terms separately.",
+    "Sıralamalı arama kullanılamıyor; sözcük araması sonuçları gösteriliyor.": "Ranked search is unavailable; word-search results are shown.",
+    "Sunucu arama sıralaması bilgisini sağlamıyor; sonuçların ilgililik sırası doğrulanamadı.": "The server does not provide search-order information; relevance ordering could not be confirmed.",
+    "Eşleşen terimler: {terms}": "Matched terms: {terms}",
+    "Eşleşmeyen terimler: {terms}": "Unmatched terms: {terms}",
+    "Sözcük eşleşmesi; bu soruyu yanıtlamaya yeterliliği veya doğruluğu değerlendirilmedi.": "Word match only; answer sufficiency and accuracy have not been assessed.",
+    "Cevap yeterliliği bilgisi yok; araştırmanın kapsamını ve kaynaklarını kontrol et.": "Answer-sufficiency information is unavailable; check the research scope and sources.",
     "Topluluğu tanı":"Meet the community",
     "Hakkımızda":"About us",
     "Topluluk kuralları":"Community guidelines",
@@ -10,6 +17,21 @@
     "Destek":"Support",
     "Başvuru ve destek kutusu":"Applications and support inbox",
     "Topluluk kütüphane sayımı geçersiz.":"The community library count is invalid.",
+    "Arama görünümü full veya summary olmalı.":"The search view must be full or summary.",
+    "Arama yöntemi all veya ranked olmalı.":"The search mode must be all or ranked.",
+    "Topluluk arama görünümü geçersiz.":"The community search view is invalid.",
+    "Topluluk arama yöntemi yanıtı geçersiz.":"The community search mode response is invalid.",
+    "Topluluk arama kapsamı eksik.":"The community search coverage is missing.",
+    "Kamu düzeltme özeti geçersiz.":"The public correction summary is invalid.",
+    "Düzeltme sayfalama bilgisi geçersiz.":"The correction pagination is invalid.",
+    "Düzeltme listesi eksik veya sınırı aşıyor.":"The correction list is incomplete or exceeds its limit.",
+    "Kamu düzeltmesi özel veya beklenmeyen alan içeriyor.":"The public correction contains private or unexpected fields.",
+    "Düzeltme kimliği geçersiz.":"The correction ID is invalid.",
+    "Düzeltmenin tam sürümü geçersiz.":"The exact correction version is invalid.",
+    "Düzeltme tarihi geçersiz.":"The correction date is invalid.",
+    "Arama kapsamı geçersiz.":"The search coverage is invalid.",
+    "Arama terimleri geçersiz.":"The search terms are invalid.",
+    "Arama kapsamı tutarsız.":"The search coverage is inconsistent.",
     "Araştırma sürümü pozitif olmalı.":"The research version must be positive.",
     "İstenen araştırma sürümü alınamadı.":"The requested research version could not be retrieved.",
     "Bu oturumun kullanım bildirimi sınırına ulaşıldı.":"The usage notification limit for this session was reached.",
@@ -235,6 +257,8 @@
     "{number}. kaynak başlığı en fazla 160 karakter olabilir.":"Source {number} title can contain up to 160 characters.",
     "Dil":"Language",
     "UFUK — Topluluk":"UFUK — Community",
+    "DevTrellis — Topluluk":"DevTrellis — Community",
+    "DevTrellis Topluluk":"DevTrellis Community",
     "Topluluk":"Community",
     "Topluluk önizlemesi · Davetli katkı":"Community preview · Contributions by invitation",
     "Giriş yap":"Sign in",
@@ -567,6 +591,7 @@
   EN["Bu kayıtta düzenlenecek araştırma sorusu bulunmuyor."] = "This record has no research question to edit.";
   Object.assign(EN, {
     "Araştırmayı oku": "Read research",
+    "Önizleme": "Preview",
     "Ayrıntıları oku": "Read details",
     "Proje bağlantısı": "Project link",
     "Araştırma bağlantısı": "Research link",
@@ -605,6 +630,11 @@
     "Onay bu önizlemeye ait değil veya inceleme yenilenmiş; incelemeyi yeniden açın.": "The approval does not match this preview or the review was refreshed; open it again.",
     "Teslim denenmiş; yerelde kaldığı söylenemez. Önce gönderim sonucunu doğrulayın veya geri çekin.": "Delivery was attempted; keeping the copy local cannot be confirmed. First verify the delivery result or withdraw the submission."
   });
+  Object.assign(EN, {"Son toplama": "Last collection", "sürüm duyurusu": "release announcements",
+    "Rapor nasıl okunur": "How to read a report", "Kamu düzeltmeleri": "Public corrections"});
+  // Sayfa içi onay penceresi (confirm-dialog.js) düğmeleri ve açılamama iletisi.
+  Object.assign(EN, {"Taslağı bırak": "Discard draft", "Değişiklikleri bırak": "Discard changes", "Yeni taslak aç": "Open new draft",
+    "Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.": "The confirmation dialog could not open; nothing was done. Reload the page and try again."});
   const TR = {};
   function register(messages = {}) {
     if (messages.en && typeof messages.en === "object") Object.assign(EN, messages.en);
@@ -644,7 +674,12 @@
   if (typeof module !== "undefined" && module.exports) module.exports = {BRAND, EN, createTranslator, register, provenanceFacts, loadTopicLabels};
   if (typeof document === "undefined") return;
   let stored = null;
-  try { stored = localStorage.getItem("ufuk.ui.language"); } catch { /* Depolama kapalıysa tarayıcı tercihi kullanılır. */ }
+  for (const key of ["devtrellis.ui.language", "ufuk.ui.language"]) {
+    try {
+      const value = localStorage.getItem(key);
+      if (["en", "tr"].includes(value)) { stored = value; break; }
+    } catch { /* Depolama kapalıysa tarayıcı tercihi kullanılır. */ }
+  }
   const language = ["en", "tr"].includes(stored) ? stored : navigator.language?.toLowerCase().startsWith("tr") ? "tr" : "en";
   const t = createTranslator(language);
 
@@ -671,7 +706,7 @@
     for (const select of document.querySelectorAll("[data-language]")) {
       select.value = language;
       select.addEventListener("change", () => {
-        try { localStorage.setItem("ufuk.ui.language", select.value); } catch { /* Dil geçişi depolama iznine bağlıdır. */ }
+        try { localStorage.setItem("devtrellis.ui.language", select.value); } catch { /* Dil geçişi depolama iznine bağlıdır. */ }
         window.location.reload();
       });
     }

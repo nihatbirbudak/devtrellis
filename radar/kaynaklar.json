@@ -185,13 +185,13 @@
     "name": "llama.cpp",
     "topic": "ai",
     "url": "https://github.com/ggml-org/llama.cpp/releases",
-    "fetch_url": "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/ggml-org/llama.cpp/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -394,13 +394,13 @@
     "name": "Claude Agent SDK Python",
     "topic": "ai",
     "url": "https://github.com/anthropics/claude-agent-sdk-python/releases",
-    "fetch_url": "https://api.github.com/repos/anthropics/claude-agent-sdk-python/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/anthropics/claude-agent-sdk-python/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -604,13 +604,13 @@
     "name": "Pipecat",
     "topic": "jarvis",
     "url": "https://github.com/pipecat-ai/pipecat/releases",
-    "fetch_url": "https://api.github.com/repos/pipecat-ai/pipecat/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/pipecat-ai/pipecat/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -632,13 +632,13 @@
     "name": "Piper · Yerel ses sentezi",
     "topic": "jarvis",
     "url": "https://github.com/OHF-Voice/piper1-gpl/releases",
-    "fetch_url": "https://api.github.com/repos/OHF-Voice/piper1-gpl/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/OHF-Voice/piper1-gpl/releases.atom",
+    "kind": "atom",
     "interval_hours": 84,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -660,13 +660,13 @@
     "name": "SpeechBrain · Konuşma araştırmaları",
     "topic": "jarvis",
     "url": "https://github.com/speechbrain/speechbrain/releases",
-    "fetch_url": "https://api.github.com/repos/speechbrain/speechbrain/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/speechbrain/speechbrain/releases.atom",
+    "kind": "atom",
     "interval_hours": 84,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -1133,13 +1133,13 @@
     "name": "LeRobot",
     "topic": "robotik",
     "url": "https://github.com/huggingface/lerobot/releases",
-    "fetch_url": "https://api.github.com/repos/huggingface/lerobot/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/huggingface/lerobot/releases.atom",
+    "kind": "atom",
     "interval_hours": 84,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -1670,13 +1670,13 @@
     "name": "NVIDIA AI-Q / Deep Researcher Agent",
     "topic": "ai",
     "url": "https://github.com/NVIDIA-AI-Blueprints/deep-researcher-agent",
-    "fetch_url": "https://api.github.com/repos/NVIDIA-AI-Blueprints/deep-researcher-agent/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/NVIDIA-AI-Blueprints/deep-researcher-agent/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -1695,13 +1695,13 @@
     "name": "LangChain Deep Agents",
     "topic": "ai",
     "url": "https://github.com/langchain-ai/deepagents",
-    "fetch_url": "https://api.github.com/repos/langchain-ai/deepagents/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/langchain-ai/deepagents/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"
@@ -1720,13 +1720,13 @@
     "name": "GPT Researcher",
     "topic": "ai",
     "url": "https://github.com/assafelovic/gpt-researcher",
-    "fetch_url": "https://api.github.com/repos/assafelovic/gpt-researcher/releases?per_page=30",
-    "kind": "github_releases",
+    "fetch_url": "https://github.com/assafelovic/gpt-researcher/releases.atom",
+    "kind": "atom",
     "interval_hours": 24,
     "enabled": true,
     "language": "en",
     "fetch_hosts": [
-      "api.github.com"
+      "github.com"
     ],
     "item_hosts": [
       "github.com"

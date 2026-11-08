@@ -471,12 +471,14 @@ class ToplayiciTests(unittest.TestCase):
             body = json.dumps([{'id': page, 'name': f'Version {page}', 'html_url': f'https://github.com/demo/project/releases/tag/{page}'}]).encode()
             next_url = 'https://api.github.com/repositories/123/releases?per_page=30&page=' + str(page + 1)
             return toplayici.FetchResult(200, body, {'link': '<' + next_url + '>; rel="next"'}, url)
-        with patch.object(toplayici, '_fetch', side_effect=response) as fetch:
+        with patch.object(toplayici, 'APPROVED_FETCH_HOSTS', toplayici.APPROVED_FETCH_HOSTS | {'api.github.com'}), \
+             patch.object(toplayici, '_fetch', side_effect=response) as fetch:
             result = toplayici.collect_source(self.source)
         self.assertEqual(fetch.call_count, 4)
         self.assertEqual(len(result['items']), 3)
         self.assertTrue(result['next_url'].endswith('page=4'))
-        with patch.object(toplayici, '_fetch', side_effect=response) as fetch:
+        with patch.object(toplayici, 'APPROVED_FETCH_HOSTS', toplayici.APPROVED_FETCH_HOSTS | {'api.github.com'}), \
+             patch.object(toplayici, '_fetch', side_effect=response) as fetch:
             resumed = toplayici.collect_source(self.source, continuation=result['next_url'])
         self.assertEqual([item['external_id'] for item in resumed['items']], ['anthropic:1', 'anthropic:4', 'anthropic:5'])
         self.assertTrue(resumed['next_url'].endswith('page=6'))
@@ -485,9 +487,10 @@ class ToplayiciTests(unittest.TestCase):
 
     def test_github_canonical_sayfalama_dogrulanmamis_depo_numarasina_gidemez(self):
         source = {**self.source, 'kind':'github_releases', 'fetch_url':'https://api.github.com/repos/demo/project/releases', 'fetch_hosts':['api.github.com'], 'repository_id':123}
-        with self.assertRaises(toplayici.CollectionError):
-            toplayici._sayfa_adresi('https://api.github.com/repositories/456/releases?page=2', source)
-        self.assertIn('/repositories/123/', toplayici._sayfa_adresi('https://api.github.com/repositories/123/releases?page=2', source))
+        with patch.object(toplayici, 'APPROVED_FETCH_HOSTS', toplayici.APPROVED_FETCH_HOSTS | {'api.github.com'}):
+            with self.assertRaises(toplayici.CollectionError):
+                toplayici._sayfa_adresi('https://api.github.com/repositories/456/releases?page=2', source)
+            self.assertIn('/repositories/123/', toplayici._sayfa_adresi('https://api.github.com/repositories/123/releases?page=2', source))
 
     def test_arsivlenmis_proje_surumleri_korunur_ama_aktif_bakim_sayilmaz(self):
         source = {**self.source, 'kind':'github_releases', 'fetch_url':'https://api.github.com/repos/demo/project/releases', 'fetch_hosts':['api.github.com']}

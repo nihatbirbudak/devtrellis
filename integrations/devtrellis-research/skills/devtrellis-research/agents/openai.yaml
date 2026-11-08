@@ -1,6 +1,6 @@
 interface:
   display_name: "DevTrellis Research"
-  short_description: "Find public research first and review contributions"
-  default_prompt: "Use $devtrellis-research to find existing public research before investigating this technology topic."
+  short_description: "Prepare DevTrellis contributions and deeper research"
+  default_prompt: "Use $devtrellis-research to prepare an optional contribution or deeper research after DevTrellis lookup."
 policy:
   allow_implicit_invocation: true

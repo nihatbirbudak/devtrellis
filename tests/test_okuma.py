@@ -342,22 +342,32 @@ class KaliciOkumaTestleri(unittest.TestCase):
 
     def test_okuma_sirasinda_degisiklik_eski_revizyonla_saklanir(self):
         entered, release = threading.Event(), threading.Event()
-        self.addCleanup(release.set)
 
         def slow_fetch(url, source):
             entered.set()
-            self.assertTrue(release.wait(2))
+            # Kaynak değişimi tamamlanmadan yanıt üretme; işçide test assertion'ı çalıştırma.
+            release.wait()
             return yanit()
 
         self.fetcher.side_effect = slow_fetch
-        self.manager.baslat(self.item)
-        self.assertTrue(entered.wait(1))
-        self.depo.kaydet("youtube", [{**self.raw, "excerpt": "Changed during read."}])
-        release.set()
-        self.manager.worker.join(2)
+        try:
+            self.manager.baslat(self.item)
+            self.assertTrue(entered.wait(timeout=10), "Okuma işçisi kaynağa ulaşmadı.")
+            self.assertEqual(self.manager.oku(self.item)["status"], "okunuyor")
+            self.depo.kaydet("youtube", [{**self.raw, "excerpt": "Changed during read."}])
+        finally:
+            # Assertion başarısız olsa da yalnız bu testin bekleyen işçisini serbest bırak.
+            release.set()
+            if self.manager.worker is not None:
+                self.manager.worker.join(timeout=10)
+        self.assertFalse(self.manager.worker.is_alive(), "Okuma işçisi tamamlanmadı.")
         result = self.manager.oku(self.item)
+        self.assertEqual(result["status"], "hazir", result["last_error"])
+        self.assertEqual(result["body"], METIN)
         self.assertTrue(result["stale"])
+        self.assertEqual(result["current_revision"], 2)
         self.assertEqual(result["source_revision"], 1)
+        self.fetcher.assert_called_once()
 
     def test_yarim_kalan_okuma_acilista_hata_gosterir_yeniden_ag_acmaz(self):
         original = self.tamamla()

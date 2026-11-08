@@ -1,7 +1,8 @@
 // Public community pages and private, explicitly reviewed requests. Form data stays in memory until Send.
 (() => {
   "use strict";
-  const LANGUAGE_KEY = "ufuk.ui.language";
+  const LANGUAGE_KEY = "devtrellis.ui.language";
+  const LEGACY_LANGUAGE_KEY = "ufuk.ui.language";
   const REPOSITORY = "https://github.com/nihatbirbudak/devtrellis";
   const PAGES = ["about", "guidelines", "contribute", "support"];
   const CATEGORIES = {contribute: ["research", "code", "translation", "design", "sources", "other"],
@@ -188,7 +189,9 @@
     return PAGES.includes(page) ? page : "about";
   }
   function initialLanguage(storage) {
-    try { const value = storage?.getItem(LANGUAGE_KEY); if (value === "tr" || value === "en") return value; } catch {}
+    for (const key of [LANGUAGE_KEY, LEGACY_LANGUAGE_KEY]) {
+      try { const value = storage?.getItem(key); if (value === "tr" || value === "en") return value; } catch {}
+    }
     return "en";
   }
   function requestPayload(kind, draft, language) {
@@ -296,7 +299,7 @@
         main.append(sections(text("guidelineSections")), link(text("guidelinesAction"), "/support", "button secondary"));
       } else if (page === "contribute") {
         const research = node("section", undefined, "pages-callout");
-        research.append(node("h2", text("researchTitle")), node("p", text("researchText")), link(text("contributeAction"), "/guide?language=" + language, "button secondary"));
+        research.append(node("h2", text("researchTitle")), node("p", text("researchText")), link(text("contributeAction"), REPOSITORY + (language === "tr" ? "/blob/main/README.tr.md" : "#install"), "button secondary"));
         main.append(research, node("h2", text("rolesTitle"), "pages-section-title"), sections(text("roles"), "pages-role-grid"), link(text("codeAction"), REPOSITORY + "/issues", "pages-text-link"));
         renderRequest(main);
       } else {
@@ -306,7 +309,7 @@
         }
         main.append(faq);
         const actions = node("div", undefined, "pages-actions");
-        actions.append(link(text("guide"), "/guide?language=" + language, "button secondary"), link(text("publicIssue"), REPOSITORY + "/issues", "pages-text-link"));
+        actions.append(link(text("guide"), REPOSITORY + (language === "tr" ? "/blob/main/README.tr.md" : "#install"), "button secondary"), link(text("publicIssue"), REPOSITORY + "/issues", "pages-text-link"));
         main.append(actions); renderRequest(main);
       }
     }
@@ -398,7 +401,7 @@
       if (busy || stage !== "preview" || !prepared || receipt) return;
       busy = true; errorKey = ""; render(); let postStarted = false;
       try {
-        const sessionResponse = await fetcher("/api/community/session", {credentials: "same-origin", headers: {Accept: "application/json"}});
+        const sessionResponse = await fetcher("/api/community/session", {method: "POST", credentials: "same-origin", headers: {Accept: "application/json", "Content-Type": "application/json"}, body: "{}"});
         if (!sessionResponse.ok) throw new Error("sessionFailed");
         const session = await sessionResponse.json();
         if (!session || typeof session.csrf_token !== "string" || !session.csrf_token || session.csrf_token.length > 256) throw new Error("sessionFailed");
@@ -429,7 +432,7 @@
       pageContent(main);
       const footer = node("footer", undefined, "pages-footer");
       footer.append(node("strong", "DevTrellis"), node("span", text("footer")), link(text("code"), REPOSITORY),
-        link(text("guide"), "/guide?language=" + language));
+        link(text("guide"), REPOSITORY + (language === "tr" ? "/blob/main/README.tr.md" : "#install")));
       main.append(footer); root.append(main);
     }
     // UfukUI.initialize binds language changes to reload. Share its preference key,

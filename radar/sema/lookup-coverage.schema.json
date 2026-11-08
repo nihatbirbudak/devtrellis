@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrellis.example/schemas/lookup-coverage-draft.json",
+  "title": "DRAFT future lookup/coverage/errors; no route implemented by these files",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/lookup"
+    },
+    {
+      "$ref": "#/$defs/coverage"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "lookup": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-source-lookup"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "address_key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "library_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "result": {
+          "enum": [
+            "found",
+            "version_mismatch",
+            "ambiguous",
+            "not_found",
+            "withdrawn"
+          ]
+        },
+        "answer_eligible": {
+          "type": "boolean"
+        },
+        "version_match": {
+          "enum": [
+            "exact",
+            "in_range",
+            "adjacent",
+            "mismatch",
+            "unspecified",
+            "alias",
+            "not_applicable"
+          ]
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "https://devtrellis.example/schemas/source-card-v4-draft.json"
+          },
+          "minItems": 0,
+          "maxItems": 1
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "card": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              "applies_to": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "product": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    },
+                    "versions": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "version_scheme": {
+                      "enum": [
+                        "semver",
+                        "pep440",
+                        "exact"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "product",
+                    "versions",
+                    "version_scheme"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1,
+                "maxItems": 3
+              },
+              "version_match": {
+                "enum": [
+                  "exact",
+                  "in_range",
+                  "adjacent",
+                  "mismatch",
+                  "unspecified",
+                  "alias"
+                ]
+              },
+              "source_key": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "card",
+              "applies_to",
+              "version_match",
+              "source_key"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 3
+        },
+        "origin_fetches": {
+          "const": 0
+        },
+        "model_calls": {
+          "const": 0
+        },
+        "tombstone": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "card": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{32}$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                },
+                "withdrawn_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "public_reason": {
+                  "enum": [
+                    "withdrawn",
+                    "rights_changed",
+                    "superseded",
+                    "source_unavailable"
+                  ]
+                },
+                "library_revision": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "card",
+                "withdrawn_at",
+                "public_reason",
+                "library_revision"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "address_key",
+        "library_revision",
+        "result",
+        "answer_eligible",
+        "version_match",
+        "cards",
+        "candidates",
+        "origin_fetches",
+        "model_calls",
+        "tombstone"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "found"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "cards": {
+                "minItems": 1
+              },
+              "tombstone": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": [
+                  "version_mismatch",
+                  "ambiguous",
+                  "not_found",
+                  "withdrawn"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "answer_eligible": {
+                "const": false
+              },
+              "cards": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "version_mismatch"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "version_match": {
+                "enum": [
+                  "mismatch",
+                  "adjacent",
+                  "alias"
+                ]
+              },
+              "candidates": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "withdrawn"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tombstone": {
+                "type": "object"
+              },
+              "candidates": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-coverage"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "identity_version": {
+          "const": "k0-canonical-json-v1"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "library_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "addresses": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "card": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{32}$"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                },
+                "source_key": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "availability": {
+                  "enum": [
+                    "current",
+                    "stale",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "card",
+                "source_key",
+                "availability"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "tombstones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "address_key": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "card": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              "library_revision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "address_key",
+              "card",
+              "library_revision"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 100000
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "identity_version",
+        "generated_at",
+        "valid_until",
+        "library_revision",
+        "complete",
+        "addresses",
+        "tombstones"
+      ],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-contract-error"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "code": {
+          "enum": [
+            "invalid_request",
+            "unsupported_contract",
+            "rate_limited",
+            "temporarily_unavailable"
+          ]
+        },
+        "retry_after_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "code",
+        "retry_after_seconds"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

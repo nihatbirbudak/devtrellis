@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrellis.example/schemas/contribution-candidate-v4-r2.json",
+  "title": "K1 v4 r2 submission body: POST /api/community/v4/submissions",
+  "$comment": "Shape only. The server runs the machine gate (radar.denetim, denetim-kapisi-v0.2.2) on `candidate`: it rejects server-only fields, quotes shorter than 40 characters or 6 lettered words, secrets, agent directives, query parameters, unknown/trial providers and more. Passing this schema is not passing the gate.",
+  "type": "object",
+  "properties": {
+    "candidate": {
+      "oneOf": [
+        {"$ref": "#/$defs/source_card"},
+        {"$ref": "#/$defs/report"}
+      ]
+    },
+    "consent": {
+      "$comment": "Decision 4: consent is the contributor's explicit Share choice on the previewed package. preview_sha256 = SHA-256 of json.dumps(candidate, sort_keys=True, ensure_ascii=False, separators=(',', ':')) in UTF-8. Keep local never posts.",
+      "type": "object",
+      "properties": {
+        "choice": {"const": "share"},
+        "preview_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "required": ["choice", "preview_sha256"],
+      "additionalProperties": false
+    },
+    "idempotency_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8,128}$"}
+  },
+  "required": ["candidate", "consent", "idempotency_key"],
+  "additionalProperties": false,
+  "$defs": {
+    "https_url": {"type": "string", "pattern": "^https://", "format": "uri", "maxLength": 2048},
+    "applies_to": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
+          "versions": {"type": "string", "minLength": 1, "maxLength": 80},
+          "version_scheme": {"enum": ["semver", "pep440", "exact"]}
+        },
+        "required": ["product", "versions", "version_scheme"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "text": {"type": "string", "minLength": 1, "maxLength": 240},
+        "quote": {"type": "string", "minLength": 1, "maxLength": 300},
+        "source_url": {"$ref": "#/$defs/https_url"},
+        "checked_on": {"type": "string", "format": "date"},
+        "claim_type": {"enum": ["source_statement", "procedure", "version_scope", "measurement", "interpretation"]},
+        "applies_to": {"$ref": "#/$defs/applies_to"}
+      },
+      "required": ["text", "quote", "source_url", "checked_on"],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "$comment": "Decision 2: required. Every stage carries access_type. The gate rejects trial for any provider, nvidia without non_trial, unknown provider, and unknown access_type for any provider except claude (manager decision Y-1).",
+      "type": "object",
+      "properties": {
+        "origin": {"enum": ["human", "model_assisted", "mixed"]},
+        "stages": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {"enum": ["nvidia", "codex", "claude", "other"]},
+              "model": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 160}, {"type": "null"}]},
+              "access_type": {"enum": ["trial", "non_trial", "unknown"]},
+              "basis": {"enum": ["contributor_declaration", "reviewed_public_reference", "unknown"]},
+              "terms_url": {"anyOf": [{"$ref": "#/$defs/https_url"}, {"type": "null"}]}
+            },
+            "required": ["provider", "model", "access_type", "basis", "terms_url"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["origin", "stages"],
+      "additionalProperties": false
+    },
+    "rights": {
+      "$comment": "Explicit license choice for the contributor's own text only. Quotes are covered by the source-linked short quote basis (<=300 characters); there is no separate rights gate.",
+      "type": "object",
+      "properties": {"own_text_license": {"enum": ["CC0-1.0", "CC-BY-4.0"]}},
+      "required": ["own_text_license"],
+      "additionalProperties": false
+    },
+    "source_card": {
+      "type": "object",
+      "properties": {
+        "kind": {"const": "source_card"},
+        "schema_version": {"const": 4},
+        "language": {"const": "en"},
+        "claims": {
+          "type": "array",
+          "items": {"allOf": [{"$ref": "#/$defs/claim"}, {"required": ["claim_type", "applies_to"]}]},
+          "minItems": 1,
+          "maxItems": 6,
+          "$comment": "All claims of a source card share one source_url."
+        },
+        "not_covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}, "maxItems": 3},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "rights": {"$ref": "#/$defs/rights"}
+      },
+      "required": ["kind", "schema_version", "language", "claims", "provenance", "rights"],
+      "additionalProperties": false
+    },
+    "report": {
+      "$comment": "Decision 1: research_report and topic_summary use the gate's RAPOR_ALANLARI shape.",
+      "type": "object",
+      "properties": {
+        "kind": {"enum": ["research_report", "topic_summary"]},
+        "schema_version": {"const": 4},
+        "language": {"const": "en"},
+        "title": {"type": "string", "minLength": 8, "maxLength": 200},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "short_answer": {"type": "string", "minLength": 1, "maxLength": 1200},
+        "answers": {
+          "$comment": "Optional: 3-5 questions the report answers (search aid, engineering report A2). Free text, not tied to sources.",
+          "type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}, "minItems": 3, "maxItems": 5
+        },
+        "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}, "minItems": 1, "maxItems": 60},
+        "recommendations": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 400}, "maxItems": 20},
+        "not_covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 10},
+        "applies_to": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 400}, {"$ref": "#/$defs/applies_to"}]},
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 200}, "url": {"$ref": "#/$defs/https_url"}},
+            "required": ["title", "url"],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 30
+        },
+        "generated_at": {"type": "string", "format": "date-time"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "rights": {"$ref": "#/$defs/rights"}
+      },
+      "required": ["kind", "schema_version", "language", "title", "claims", "provenance", "rights"],
+      "additionalProperties": false
+    }
+  }
+}

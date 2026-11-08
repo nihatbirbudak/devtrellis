@@ -329,12 +329,34 @@ class ArastirmaGelisimiTestleri(unittest.TestCase):
         card = self.parent()
         path = f'/api/community/cards/{card["id"]}/events'
         payload = self.event(card, "web_view")
-        session = self.client.get("/api/community/session").json()
+        session = self.client.post("/api/community/session", json={}, headers={"Origin": ORIGIN}).json()
         self.assertFalse(session["authenticated"])
         self.assertEqual(self.client.post(path, json=payload, headers={"Origin": ORIGIN}).status_code, 403)
         response = self.client.post(path, json=payload, headers={"Origin": ORIGIN, "X-Ufuk-CSRF": session["csrf_token"]})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["engagement"]["web_views"], 1)
+
+    def test_cookieless_browser_view_only_accepts_same_origin_view_without_account(self):
+        card = self.parent()
+        path = f'/api/community/cards/{card["id"]}/events'
+        payload = self.event(card, "web_view")
+        headers = {"Origin": ORIGIN, "Sec-Fetch-Site": "same-origin", "X-DevTrellis-View": "1"}
+        with patch.object(self.store, "oturum_ac", side_effect=AssertionError("Views must not create sessions")):
+            response = self.client.post(path, json=payload, headers=headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertNotIn("set-cookie", response.headers)
+            self.assertEqual(response.json()["engagement"]["web_views"], 1)
+            self.assertTrue(self.client.post(path, json=payload, headers=headers).json()["duplicate"])
+        for extra in ({"Origin": "https://foreign.example.org"}, {"Sec-Fetch-Site": "cross-site"},
+                      {"Cookie": "other=private"}, {"Authorization": "Bearer private"},
+                      {"X-Ufuk-CSRF": "private"}, {"X-DevTrellis-Client": "1"}, {"X-DevTrellis-View": "0"}):
+            self.assertEqual(self.client.post(path, json=payload, headers={**headers, **extra}).status_code, 403)
+        self.assertEqual(self.client.post(path, json=payload, headers={"X-DevTrellis-View": "1"}).status_code, 403)
+        for kind in ("mcp_read", "helpful", "used_in_research", "needs_update", "disputed"):
+            self.assertEqual(self.client.post(path, json=self.event(card, kind), headers=headers).status_code, 403)
+        with self.store.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_sessions").fetchone()[0], 0)
+        self.assertEqual(self.store.yayini_oku(card["id"])["engagement"]["web_views"], 1)
 
     def test_explicit_client_events_reject_browser_context_and_do_not_need_account(self):
         card = self.parent()

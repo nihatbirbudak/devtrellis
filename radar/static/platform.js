@@ -596,19 +596,39 @@
     finally { state.interestBusy = false; byId("interest-fields").disabled = false; byId("interest-save").disabled = false; }
   }
 
-  function closeDialog(id) {
+  // Gömülü tarayıcılar window.confirm'i sessizce "hayır" sayabilir; onay sayfa içi pencereyle sorulur.
+  function confirmAction(options, errorId) {
+    const dialog = globalThis.DevTrellisConfirm || globalThis.window?.DevTrellisConfirm;
+    if (dialog?.ask) return dialog.ask(options);
+    message(errorId, t("Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene."));
+    return Promise.resolve(false);
+  }
+
+  async function closeDialog(id) {
+    const discardDraft = errorId => confirmAction({message: t("Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?"),
+      confirmLabel: t("Taslağı bırak"), tone: "danger"}, errorId);
     if (id === "provider-dialog") {
       if (state.providerBusy) return;
-      if (state.provider && providerSnapshot() !== state.providerSnapshot && !window.confirm(t("Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?"))) return;
+      if (state.provider && providerSnapshot() !== state.providerSnapshot) {
+        const provider = state.provider;
+        if (!(await discardDraft("provider-error")) || state.providerBusy || state.provider !== provider) return;
+      }
     }
     if (id === "entry-dialog") {
       if (state.editorBusy) return;
-      if (state.editor && editorSnapshot() !== state.editorSnapshot && !window.confirm(t("Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?"))) return;
+      if (state.editor && editorSnapshot() !== state.editorSnapshot) {
+        const editor = state.editor;
+        if (!(await discardDraft("entry-error")) || state.editorBusy || state.editor !== editor) return;
+      }
       state.editor = null;
     }
     if (id === "interest-dialog") {
       if (state.interestBusy) return;
-      if (byId("interest-input").value !== state.interestSnapshot && !window.confirm(t("İlgi alanlarındaki değişiklikler kaydedilmedi. Değişiklikleri bırakmak istiyor musun?"))) return;
+      if (byId("interest-input").value !== state.interestSnapshot) {
+        const confirmed = await confirmAction({message: t("İlgi alanlarındaki değişiklikler kaydedilmedi. Değişiklikleri bırakmak istiyor musun?"),
+          confirmLabel: t("Değişiklikleri bırak"), tone: "danger"}, "interest-error");
+        if (!confirmed || state.interestBusy) return;
+      }
     }
     if (id === "share-dialog") {
       if (state.shareBusy) return;
@@ -633,7 +653,11 @@
         const actions = element("div", "community-share-actions");
         async function action(kind) {
           if (refresh.disabled) return;
-          if (kind === "withdraw" && !window.confirm(t("Topluluğa gönderdiğin bu kopyayı geri çekmek istiyor musun? Yerel raporun korunur."))) return;
+          if (kind === "withdraw") {
+            const confirmed = await confirmAction({message: t("Topluluğa gönderdiğin bu kopyayı geri çekmek istiyor musun? Yerel raporun korunur."),
+              confirmLabel: t("Kopyayı geri çek"), tone: "danger", returnFocus: withdraw}, "community-submissions-error");
+            if (!confirmed || refresh.disabled) return;
+          }
           refresh.disabled = true; withdraw.disabled = true; message("community-submissions-error", "");
           try {
             await request(`/api/platform/community/submissions/${encodeURIComponent(record.local_id)}/${kind}`, kind === "withdraw" ? {expected_version: submission.version} : {});

@@ -52,6 +52,12 @@ The operator must create a moderator account for the review queue. A moderator c
 
 The public developments feed reads a separate feed database populated by the collection command. It shows collected source descriptions; this is distinct from moderated research/project cards. The community process does not currently run its own daily collector or AI summary worker. The planned daily selection adds an explicit review stage for generated summaries.
 
+### Source identity, machine-gated contributions and address lookup (K0, K1, K2) — merge candidate status
+
+- **K0 — public document tracking** (`radar/kaynak_*`, `araclar/source-track.py`, [source tracking](docs/source-tracking.md)): opt-in, one canonical address rule and SHA-256 address key shared by server and client; source-family document contracts, usage signals and dot-segment canonicalization. The "20 real addresses unchanged on second check" gate is **not yet passed** (18/20 in the last recorded run); tracking stays opt-in.
+- **K1 — v4 contribution path** (`radar/katki_v4*`, [operator notes](docs/community-k1.md)): disabled unless the operator passes `--k1-config` and `--k1-db`. Candidates (source cards, research reports, topic summaries) run through the machine gate `radar/denetim` (single source, v0.2.3). `auto_publish` is **off by default**: gate-passed records wait for a moderator. With it on, a passed record is published without a human and carries a visible "not human-reviewed" label; a stop switch (moderator, operator CLI or settings file), per-identity limits and retention apply. Lookup, coverage and topics endpoints serve the K2 client. Turning `auto_publish` on is the project owner's decision.
+- **K2 — assistant client** (`mcp_topluluk.py` `lookup_source`, answer cards): a documentation address is canonicalized locally and only its key is sent; a card separates server facts, contributor declarations and untrusted text. The personal application and the standalone bridge pass `/api/platform/community/{sources,coverage,topics}` through to the community unchanged (older communities answer `unsupported_contract`); `DEVTRELLIS_COMMUNITY_URL` points them at a pilot community (`https`, or plain `http` on loopback only).
+
 ## Source coverage
 
 Topics are centrally defined: AI tools, home automation, robotics and perception, agriculture and greenhouse, media production, software development, software security, and data/databases. Existing topic identifiers remain compatible. The catalogue is a starting set of public feeds and project sources.

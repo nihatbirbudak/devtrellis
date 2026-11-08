@@ -1,8 +1,10 @@
 """Özel taleplerin hesapsız teslimini ve kamu kütüphanesinden ayrılığını sınar."""
 import json
+import sqlite3
 import tempfile
 import unittest
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -27,7 +29,7 @@ class RequestAPITests(unittest.TestCase):
         return client
 
     def headers(self, client=None):
-        session = (client or self.client).get("/api/community/session").json()
+        session = (client or self.client).post("/api/community/session", json={}, headers={"Origin": ORIGIN}).json()
         return {"Origin": ORIGIN, "X-Ufuk-CSRF": session["csrf_token"]}
 
     def payload(self):
@@ -126,6 +128,15 @@ class RequestAPITests(unittest.TestCase):
                 self.assertEqual(result.status_code, 200)
                 self.assertNotIn(PRIVATE, result.text)
                 self.assertEqual(result.headers["cache-control"], "no-store")
+
+    def test_one_hundred_anonymous_reads_do_not_create_sessions(self):
+        for _ in range(100):
+            response = self.client.get("/")
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("set-cookie", response.headers)
+        self.assertIsNone(self.client.cookies.get("devtrellis_session"))
+        with closing(sqlite3.connect(self.app.state.community.path)) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM community_sessions").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

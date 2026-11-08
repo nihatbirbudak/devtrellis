@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>example-broker.conf(5)</title>
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<header class="banner"><a href="/">Example Broker</a> <a href="/documentation/">Documentation</a></header>
+<div class="container">
+  <div class="refentry">
+    <a name="example-broker.conf"></a>
+    <div class="titlepage"></div>
+    <div class="refnamediv"><h2>Name</h2><p>example-broker.conf — the configuration file for the example broker</p></div>
+    <div class="refsynopsisdiv"><h2>Synopsis</h2><div class="cmdsynopsis"><p><code class="command">example-broker.conf</code></p></div></div>
+    <div class="refsect1"><a name="idm1"></a><h2>Description</h2>
+      <p>The broker reads this file at start-up. Each line holds one option and its value.</p>
+    </div>
+    <div class="refsect1"><a name="idm2"></a><h2>General Options</h2>
+      <div class="variablelist"><dl class="variablelist">
+        <dt><span class="term"><code class="option">listener</code> <em class="replaceable"><code>port</code></em></span></dt>
+        <dd><p>Listen for incoming network connections on the given port.</p></dd>
+        <dt><span class="term"><code class="option">log_dest</code> <em class="replaceable"><code>destination</code></em></span></dt>
+        <dd><p>Send log messages to a particular destination.</p></dd>
+      </dl></div>
+      <div class="refsect2"><a name="idm3"></a><h3>Examples</h3><pre class="programlisting">listener 1883
+log_dest stdout</pre></div>
+    </div>
+    <div class="refsect1"><a name="idm4"></a><h2>Bridges</h2>
+      <p>A bridge connects two brokers.</p>
+      <div class="refsect2"><a name="idm5"></a><h3>Examples</h3><pre class="programlisting">connection bridge-01
+address 192.0.2.10:1883</pre></div>
+    </div>
+    <div class="refsect1"><a name="idm6"></a><h2>See Also</h2>
+      <p><a class="link" href="example-broker-8.html" target="_top">example-broker(8)</a>, <a class="link" href="https://example.org/manual/" target="_top">online manual</a></p>
+    </div>
+  </div>
+</div>
+<footer><p>Copyright notice for the website, outside the manual page.</p></footer>
+</body>
+</html>

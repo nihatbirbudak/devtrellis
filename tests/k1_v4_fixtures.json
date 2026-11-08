@@ -1,0 +1,549 @@
+{
+  "fixture_only": true,
+  "notes": [
+    "All documents, IDs, rights/publication states are synthetic; no report text used.",
+    "Identity hashes use exact K0 canonical-JSON formula. body/section hashes are deterministic markers, not extractor output.",
+    "Quote/context hashes show proposed UTF-8 input; final K1 normalization/context algorithm not implemented."
+  ],
+  "identity_inputs": {
+    "address": {
+      "canonical_url": "https://docs.example.org/widget/2.0/reference.html",
+      "language": "en"
+    },
+    "source": {
+      "canonical_url": "https://docs.example.org/widget/2.0/reference.html",
+      "language": "en",
+      "representation": "public-doc-anonymous-v2",
+      "request_variant": {
+        "accept": "text/html, application/xhtml+xml;q=0.9",
+        "accept-language": "en",
+        "accept-encoding": "identity",
+        "user-agent": "UfukRadar/0.1"
+      },
+      "extractor_version": "dom-sections-v1"
+    }
+  },
+  "synthetic_quote_input": "Widget 2.0 stores projects locally.",
+  "synthetic_context_input": "Widget 2.0 stores projects locally.\nCloud synchronization is disabled by default.",
+  "contribution_candidate_input": {
+    "kind": "source_card",
+    "schema_version": 4,
+    "language": "en",
+    "claims": [
+      {
+        "text": "Widget 2.0 stores project files locally.",
+        "quote": "Widget 2.0 stores projects locally.",
+        "source_url": "https://docs.example.org/widget/2.0/reference.html",
+        "checked_on": "2026-11-06",
+        "claim_type": "source_statement",
+        "applies_to": [
+          {
+            "product": "widget",
+            "versions": "2.0",
+            "version_scheme": "exact"
+          }
+        ]
+      }
+    ]
+  },
+  "public_card": {
+    "schema": "devtrellis-source-card",
+    "schema_version": 4,
+    "id": "11111111111111111111111111111111",
+    "version": 1,
+    "language": "en",
+    "source": {
+      "canonical_url": "https://docs.example.org/widget/2.0/reference.html",
+      "language": "en",
+      "representation": "public-doc-anonymous-v2",
+      "request_variant": {
+        "accept": "text/html, application/xhtml+xml;q=0.9",
+        "accept-language": "en",
+        "accept-encoding": "identity",
+        "user-agent": "UfukRadar/0.1"
+      },
+      "extractor_version": "dom-sections-v1",
+      "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+      "source_key": "5a01ad76dd5bfc6dc68650c0aea22fd6d6fcdb0b05d6179793f88fd8462e2a3f",
+      "body_hash": "b390f010fcfa961ed8a19831cd6aa61d662e0731fb3d7292f8d2ee254a81ca28"
+    },
+    "claims": [
+      {
+        "id": "22222222222222222222222222222222",
+        "text": "Widget 2.0 stores project files locally.",
+        "claim_type": "source_statement",
+        "applies_to": [
+          {
+            "product": "widget",
+            "versions": "2.0",
+            "version_scheme": "exact"
+          }
+        ],
+        "evidence": {
+          "quote": "Widget 2.0 stores projects locally.",
+          "source_url": "https://docs.example.org/widget/2.0/reference.html",
+          "section_id": "595ad6a4c4a6458f4b74d8657e76dff4d8b289a41db08965ebfe4250d34c95a9",
+          "section_hash": "a7ec25695be06d7c727ada761d61b61920d734ca3313212e3123fa459cdb29ef",
+          "quote_hash": "14ab007d08bdacd1e0c80cdeb8b24fde3044fecf36b52600e10479d84acd19b6",
+          "supporting_context_hash": "741df4052c826491940e69b2cae41b9d678dcba1153c7f807ee10b8125fbd3c2",
+          "extractor_version": "dom-sections-v1",
+          "normalization_version": "visible-text-exact-v1",
+          "checked_on": "2026-11-06"
+        },
+        "quote_match": {
+          "state": "exact",
+          "quote_verified_at": "2026-11-06T12:00:00Z"
+        },
+        "claim_review": {
+          "state": "not_reviewed",
+          "reviewed_at": null
+        },
+        "evidence_state": "current"
+      }
+    ],
+    "not_covered": [
+      "Widget 1.x behavior",
+      "Cloud synchronization setup"
+    ],
+    "source_freshness": {
+      "state": "fresh",
+      "validation_kind": "fixture_full_fetch",
+      "byte_verified": true,
+      "signal_checked_at": null,
+      "representation_checked_at": "2026-11-06T12:00:00Z",
+      "content_fetched_at": "2026-11-06T12:00:00Z",
+      "fresh_until": "2026-11-06T12:05:00Z",
+      "unchanged_observed_since": "2026-11-06T12:00:00Z",
+      "last_attempt_at": "2026-11-06T12:00:00Z"
+    },
+    "provenance": {
+      "origin": "human",
+      "stages": []
+    },
+    "rights": {
+      "own_text_license": "CC0-1.0",
+      "quotes": [
+        {
+          "claim_id": "22222222222222222222222222222222",
+          "source_license": "CC0-1.0",
+          "basis": "license",
+          "terms_url": "https://docs.example.org/fixture-license",
+          "attribution": "Synthetic Widget documentation"
+        }
+      ]
+    },
+    "publication": {
+      "state": "published",
+      "path": "machine_source_card",
+      "policy_version": "source-card-gates-draft-v1"
+    },
+    "corrections": {
+      "open": 0,
+      "latest_public_version": null,
+      "public_note": null
+    },
+    "link": "https://devtrellis.example/c/11111111111111111111111111111111/v/1"
+  },
+  "http_examples": [
+    {
+      "http_status": 200,
+      "body": {
+        "schema": "devtrellis-source-lookup",
+        "schema_version": 1,
+        "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+        "library_revision": 10,
+        "result": "found",
+        "answer_eligible": true,
+        "version_match": "exact",
+        "cards": [
+          {
+            "schema": "devtrellis-source-card",
+            "schema_version": 4,
+            "id": "11111111111111111111111111111111",
+            "version": 1,
+            "language": "en",
+            "source": {
+              "canonical_url": "https://docs.example.org/widget/2.0/reference.html",
+              "language": "en",
+              "representation": "public-doc-anonymous-v2",
+              "request_variant": {
+                "accept": "text/html, application/xhtml+xml;q=0.9",
+                "accept-language": "en",
+                "accept-encoding": "identity",
+                "user-agent": "UfukRadar/0.1"
+              },
+              "extractor_version": "dom-sections-v1",
+              "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+              "source_key": "5a01ad76dd5bfc6dc68650c0aea22fd6d6fcdb0b05d6179793f88fd8462e2a3f",
+              "body_hash": "b390f010fcfa961ed8a19831cd6aa61d662e0731fb3d7292f8d2ee254a81ca28"
+            },
+            "claims": [
+              {
+                "id": "22222222222222222222222222222222",
+                "text": "Widget 2.0 stores project files locally.",
+                "claim_type": "source_statement",
+                "applies_to": [
+                  {
+                    "product": "widget",
+                    "versions": "2.0",
+                    "version_scheme": "exact"
+                  }
+                ],
+                "evidence": {
+                  "quote": "Widget 2.0 stores projects locally.",
+                  "source_url": "https://docs.example.org/widget/2.0/reference.html",
+                  "section_id": "595ad6a4c4a6458f4b74d8657e76dff4d8b289a41db08965ebfe4250d34c95a9",
+                  "section_hash": "a7ec25695be06d7c727ada761d61b61920d734ca3313212e3123fa459cdb29ef",
+                  "quote_hash": "14ab007d08bdacd1e0c80cdeb8b24fde3044fecf36b52600e10479d84acd19b6",
+                  "supporting_context_hash": "741df4052c826491940e69b2cae41b9d678dcba1153c7f807ee10b8125fbd3c2",
+                  "extractor_version": "dom-sections-v1",
+                  "normalization_version": "visible-text-exact-v1",
+                  "checked_on": "2026-11-06"
+                },
+                "quote_match": {
+                  "state": "exact",
+                  "quote_verified_at": "2026-11-06T12:00:00Z"
+                },
+                "claim_review": {
+                  "state": "not_reviewed",
+                  "reviewed_at": null
+                },
+                "evidence_state": "current"
+              }
+            ],
+            "not_covered": [
+              "Widget 1.x behavior",
+              "Cloud synchronization setup"
+            ],
+            "source_freshness": {
+              "state": "fresh",
+              "validation_kind": "fixture_full_fetch",
+              "byte_verified": true,
+              "signal_checked_at": null,
+              "representation_checked_at": "2026-11-06T12:00:00Z",
+              "content_fetched_at": "2026-11-06T12:00:00Z",
+              "fresh_until": "2026-11-06T12:05:00Z",
+              "unchanged_observed_since": "2026-11-06T12:00:00Z",
+              "last_attempt_at": "2026-11-06T12:00:00Z"
+            },
+            "provenance": {
+              "origin": "human",
+              "stages": []
+            },
+            "rights": {
+              "own_text_license": "CC0-1.0",
+              "quotes": [
+                {
+                  "claim_id": "22222222222222222222222222222222",
+                  "source_license": "CC0-1.0",
+                  "basis": "license",
+                  "terms_url": "https://docs.example.org/fixture-license",
+                  "attribution": "Synthetic Widget documentation"
+                }
+              ]
+            },
+            "publication": {
+              "state": "published",
+              "path": "machine_source_card",
+              "policy_version": "source-card-gates-draft-v1"
+            },
+            "corrections": {
+              "open": 0,
+              "latest_public_version": null,
+              "public_note": null
+            },
+            "link": "https://devtrellis.example/c/11111111111111111111111111111111/v/1"
+          }
+        ],
+        "candidates": [],
+        "origin_fetches": 0,
+        "model_calls": 0,
+        "tombstone": null
+      }
+    },
+    {
+      "http_status": 200,
+      "body": {
+        "schema": "devtrellis-source-lookup",
+        "schema_version": 1,
+        "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+        "library_revision": 10,
+        "result": "version_mismatch",
+        "answer_eligible": false,
+        "version_match": "mismatch",
+        "cards": [],
+        "candidates": [
+          {
+            "card": {
+              "id": "11111111111111111111111111111111",
+              "version": 1
+            },
+            "applies_to": [
+              {
+                "product": "widget",
+                "versions": "2.0",
+                "version_scheme": "exact"
+              }
+            ],
+            "version_match": "mismatch",
+            "source_key": "5a01ad76dd5bfc6dc68650c0aea22fd6d6fcdb0b05d6179793f88fd8462e2a3f"
+          }
+        ],
+        "origin_fetches": 0,
+        "model_calls": 0,
+        "tombstone": null
+      }
+    },
+    {
+      "http_status": 404,
+      "body": {
+        "schema": "devtrellis-source-lookup",
+        "schema_version": 1,
+        "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+        "library_revision": 10,
+        "result": "not_found",
+        "answer_eligible": false,
+        "version_match": "not_applicable",
+        "cards": [],
+        "candidates": [],
+        "origin_fetches": 0,
+        "model_calls": 0,
+        "tombstone": null
+      }
+    },
+    {
+      "http_status": 410,
+      "body": {
+        "schema": "devtrellis-source-lookup",
+        "schema_version": 1,
+        "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+        "library_revision": 11,
+        "result": "withdrawn",
+        "answer_eligible": false,
+        "version_match": "not_applicable",
+        "cards": [],
+        "candidates": [],
+        "origin_fetches": 0,
+        "model_calls": 0,
+        "tombstone": {
+          "card": {
+            "id": "11111111111111111111111111111111",
+            "version": 1
+          },
+          "withdrawn_at": "2026-11-06T12:03:00Z",
+          "public_reason": "withdrawn",
+          "library_revision": 11
+        }
+      }
+    },
+    {
+      "http_status": 200,
+      "body": {
+        "schema": "devtrellis-coverage",
+        "schema_version": 1,
+        "identity_version": "k0-canonical-json-v1",
+        "generated_at": "2026-11-06T12:00:00Z",
+        "valid_until": "2026-11-06T12:05:00Z",
+        "library_revision": 10,
+        "complete": true,
+        "addresses": {
+          "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9": [
+            {
+              "card": {
+                "id": "11111111111111111111111111111111",
+                "version": 1
+              },
+              "source_key": "5a01ad76dd5bfc6dc68650c0aea22fd6d6fcdb0b05d6179793f88fd8462e2a3f",
+              "availability": "current"
+            }
+          ]
+        },
+        "tombstones": []
+      }
+    },
+    {
+      "http_status": 200,
+      "body": {
+        "schema": "devtrellis-coverage",
+        "schema_version": 1,
+        "identity_version": "k0-canonical-json-v1",
+        "generated_at": "2026-11-06T12:03:00Z",
+        "valid_until": "2026-11-06T12:08:00Z",
+        "library_revision": 11,
+        "complete": true,
+        "addresses": {},
+        "tombstones": [
+          {
+            "address_key": "46cf3688387566118432e792f032a6fe67abb4dbd9fd89b4e2eeaaaaf7c211a9",
+            "card": {
+              "id": "11111111111111111111111111111111",
+              "version": 1
+            },
+            "library_revision": 11
+          }
+        ]
+      }
+    },
+    {
+      "http_status": 422,
+      "body": {
+        "schema": "devtrellis-contract-error",
+        "schema_version": 1,
+        "code": "invalid_request",
+        "retry_after_seconds": null
+      }
+    }
+  ],
+  "acceptance_scenarios": [
+    {
+      "id": "identity_extractor_change",
+      "input": "Same public URL/language; extractor changes.",
+      "expected": "address_key unchanged; source_key changes; no inherited quote proof.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "identity_language_change",
+      "input": "Same public URL; en changes to tr.",
+      "expected": "Both keys differ; no cross-language automatic hit.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "identity_moving_alias",
+      "input": "/latest/ and /2.0/ text happens to match.",
+      "expected": "Keys distinct; reviewed alias separate, not exact version.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "private_url",
+      "input": "URL encodes credentials, session or private project.",
+      "expected": "Reject locally before hashing/network; never clean then send; generic error.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "first_quote",
+      "input": "Only hashes and supplied checked_on exist.",
+      "expected": "No first exact-match proof; controlled validation required.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "quote_not_truth",
+      "input": "Quote exact; claim makes unsupported causal inference.",
+      "expected": "Exact match cannot imply claim truth or approved interpretation.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "context_changed",
+      "input": "Quote unchanged; supporting context/link/table changed.",
+      "expected": "Stale; never rebind from quote alone.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "other_section_changed",
+      "input": "Another section changed; versioned quote/context mapping exact.",
+      "expected": "May rebind without model after K1 mapping checks; new binding.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "ambiguous_section",
+      "input": "Repeated headings or ambiguous extraction.",
+      "expected": "Dependent claims unknown/stale, not current.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "304_missing_headers",
+      "input": "304 omits prior Vary/Cache-Control.",
+      "expected": "Merge constraints; byte_verified false; no new quote_verified_at.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "304_no_prior",
+      "input": "304 without same representation/sent validator.",
+      "expected": "No success; previous timestamps retained.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "check_failed",
+      "input": "Timeout, rejected policy, lease lost.",
+      "expected": "No refreshed success timestamp; bounded retry.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "stale_coverage_absent",
+      "input": "Expired/incomplete/unknown-identity manifest misses address.",
+      "expected": "Not negative proof; safe public lookup fallback, no private leakage.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "fresh_coverage_absent",
+      "input": "Complete compatible fresh snapshot misses address.",
+      "expected": "Absent in snapshot only; fast path no network; safe bypass optional.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "withdrawal_old_coverage",
+      "input": "Old manifest lists withdrawn card.",
+      "expected": "410 minimal tombstone; no old cached quote.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "wrong_version",
+      "input": "Request Widget 1.x; card only 2.0.",
+      "expected": "version_mismatch; answer_eligible false; no claims as applicable answer.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "nvidia_trial",
+      "input": "Any output-contributing NVIDIA stage trial.",
+      "expected": "No public publication; editing/provider switch cannot erase origin.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "nvidia_unknown",
+      "input": "Missing/unknown NVIDIA access mode.",
+      "expected": "Not automatically eligible; local/review.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "nvidia_non_trial",
+      "input": "Contributor declares NVIDIA non_trial.",
+      "expected": "Not sufficient; rights/consent/provenance/validation gates remain.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "consent_changed_packet",
+      "input": "Packet/terms changed after share preview.",
+      "expected": "New preview/choice; previous digest cannot publish modified packet.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "keep_local",
+      "input": "User selects keep local.",
+      "expected": "No contribution write; public reading independent.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "third_party_quote",
+      "input": "Own text CC0; quote permission unknown.",
+      "expected": "No quote relicensing; automatic publication fails.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "legacy_tr_permissions",
+      "input": "Legacy TR/CC-BY lacks v4 fields.",
+      "expected": "Preserve old version/permission; separate English card with explicit review.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "withdrawn_legacy_migration",
+      "input": "Former NVIDIA report withdrawn.",
+      "expected": "No resurrection; rewrite separate origin and normal approval.",
+      "status": "not_implemented_in_this_document"
+    },
+    {
+      "id": "source_lookup_pure",
+      "input": "GET existing address key.",
+      "expected": "No origin fetch/model/check/publication/popularity side effect.",
+      "status": "not_implemented_in_this_document"
+    }
+  ]
+}

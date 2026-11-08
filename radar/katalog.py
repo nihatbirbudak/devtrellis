@@ -3,7 +3,7 @@
 import json
 
 from radar.depo import kart_gorunumu
-from radar.konular import KONULAR
+from radar.konular import KONULAR, konu_kimligi
 
 
 KISISEL_PUAN_SQL = ("UFUK_PERSONAL_SCORE(i.topic,i.score,COALESCE(e.title_tr,i.title),i.excerpt,"
@@ -35,6 +35,7 @@ def kartlari_listele(depo, *, query="", topic="all", source="", include_archive=
     if (type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int
             or not 0 <= offset <= 1000000 or not isinstance(query, str) or len(query) > 200):
         raise ValueError("Arama veya sayfa sınırı geçersiz.")
+    topic = konu_kimligi(topic)
     if topic not in ("all", *KONULAR):
         raise ValueError("Konu filtresi geçersiz.")
     if not isinstance(source, str) or len(source) > 64:

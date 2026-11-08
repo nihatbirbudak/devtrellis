@@ -19,7 +19,10 @@ IPV4_PATTERN = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
 IPV6_PATTERN = re.compile(r"(?<![\w:])(?:[0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}(?:%[\w.-]+)?(?![\w:])", re.I)
 PATTERNS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
-    re.compile(r"\b[\w.!#$%&'*+/=?^`{|}~-]+@[\w.-]+\.[\w-]{2,}\b", re.I),
+    # E-posta. Alan kısmının tamamı rakam ve noktaysa (ör. yol parçasındaki `enterprise-server@3.14` sürüm adı)
+    # e-posta sayılmaz; ilk etiketi rakam olan gerçek alan (`ali@3.14.com`, `ali@2024.org`) yine e-postadır.
+    # IP adresli posta kutusu (`kullanici@10.0.0.1`) IPv4 deseniyle yakalanır.
+    re.compile(r"\b[\w.!#$%&'*+/=?^`{|}~-]+@(?!\d[\d.]*(?![\w.-]))[\w.-]+\.[\w-]{2,}\b", re.I),
     re.compile(r"\b(?:sk-|nvapi-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),

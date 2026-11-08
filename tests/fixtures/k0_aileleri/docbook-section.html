@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Example Manual: Table Constraints</title>
+<link rel="stylesheet" href="/media/css/docs.css">
+<script src="/media/js/site.js"></script>
+</head>
+<body>
+<div class="container">
+  <nav class="site-nav"><a href="/">Home</a> <a href="/docs/">Documentation</a></nav>
+  <form class="search" action="/search/"><input type="text" name="q"><input type="submit" value="Search"></form>
+  <div id="docContent">
+    <div class="navheader">
+      <table width="100%" summary="Navigation header">
+        <tr><th colspan="5" align="center">5.5. Constraints</th></tr>
+        <tr>
+          <td width="10%" align="left"><a accesskey="p" href="ddl-default.html" title="5.4. Default Values">Prev</a></td>
+          <td width="10%" align="left"><a accesskey="u" href="ddl.html" title="Chapter 5. Data Definition">Up</a></td>
+          <th width="60%" align="center">Chapter 5. Data Definition</th>
+          <td width="10%" align="right"><a accesskey="h" href="index.html" title="Example Manual">Home</a></td>
+          <td width="10%" align="right"><a accesskey="n" href="ddl-system-columns.html" title="5.6. System Columns">Next</a></td>
+        </tr>
+      </table>
+      <hr>
+    </div>
+    <div class="sect1" id="DDL-CONSTRAINTS">
+      <div class="titlepage"><div><div><h2 class="title" style="clear: both">5.5. Constraints <a href="#DDL-CONSTRAINTS" class="id_link">#</a></h2></div></div></div>
+      <div class="toc"><dl class="toc">
+        <dt><span class="sect2"><a href="ddl-constraints.html#DDL-CONSTRAINTS-CHECK">5.5.1. Check Constraints</a></span></dt>
+        <dt><span class="sect2"><a href="ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE">5.5.2. Unique Constraints</a></span></dt>
+      </dl></div>
+      <a id="id-1.5.4.6.2" class="indexterm" name="id-1.5.4.6.2"></a>
+      <p>Data types limit the kind of value a column can hold. Constraints add further rules that the stored rows must satisfy.</p>
+      <div class="sect2" id="DDL-CONSTRAINTS-CHECK">
+        <div class="titlepage"><div><div><h3 class="title">5.5.1. Check Constraints <a href="#DDL-CONSTRAINTS-CHECK" class="id_link">#</a></h3></div></div></div>
+        <p>A check constraint requires that a value satisfies a <code class="literal">Boolean</code> expression.</p>
+<pre class="programlisting">CREATE TABLE items (
+    price numeric CHECK (price &gt; 0)
+);</pre>
+        <div class="note"><h3 class="title">Note</h3><p>A check constraint is evaluated only for the row being inserted or updated.</p></div>
+        <div class="sect3" id="DDL-CONSTRAINTS-CHECK-EXAMPLES">
+          <div class="titlepage"><div><div><h4 class="title">Examples <a href="#DDL-CONSTRAINTS-CHECK-EXAMPLES" class="id_link">#</a></h4></div></div></div>
+          <p>The first example limits a numeric column to positive values.</p>
+        </div>
+      </div>
+      <div class="sect2" id="DDL-CONSTRAINTS-UNIQUE">
+        <div class="titlepage"><div><div><h3 class="title">5.5.2. Unique Constraints <a href="#DDL-CONSTRAINTS-UNIQUE" class="id_link">#</a></h3></div></div></div>
+        <p>A unique constraint ensures that the values in a column are distinct among all rows.</p>
+        <div class="note"><h3 class="title">Note</h3><p>Two null values are not considered equal unless the constraint says so.</p></div>
+        <div class="tip"><h3 class="title">Tip</h3><p>Name the constraint to make error messages easier to read; see <a class="link" href="sql-createtable.html" title="CREATE TABLE">CREATE TABLE</a>.</p></div>
+        <div class="sect3" id="DDL-CONSTRAINTS-UNIQUE-EXAMPLES">
+          <div class="titlepage"><div><div><h4 class="title">Examples <a href="#DDL-CONSTRAINTS-UNIQUE-EXAMPLES" class="id_link">#</a></h4></div></div></div>
+          <p>The second example declares a unique pair of columns.</p>
+        </div>
+      </div>
+    </div>
+    <div class="navfooter">
+      <hr>
+      <table width="100%" summary="Navigation footer">
+        <tr><td width="40%" align="left"><a accesskey="p" href="ddl-default.html">Prev</a></td><td width="20%" align="center"><a accesskey="u" href="ddl.html">Up</a></td><td width="40%" align="right"><a accesskey="n" href="ddl-system-columns.html">Next</a></td></tr>
+        <tr><td width="40%" align="left" valign="top">5.4. Default Values</td><td width="20%" align="center"><a accesskey="h" href="index.html">Home</a></td><td width="40%" align="right" valign="top">5.6. System Columns</td></tr>
+      </table>
+    </div>
+  </div>
+  <footer class="site-footer"><p>Site footer text that is not part of the document.</p></footer>
+</div>
+</body>
+</html>

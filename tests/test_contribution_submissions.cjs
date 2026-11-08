@@ -5,7 +5,7 @@ const code=fs.readFileSync(path.join(__dirname,"../radar/static/contribution-sub
 const turn=()=>new Promise(resolve=>setImmediate(resolve));
 const localId="a".repeat(32),remoteId="b".repeat(32);
 const copy=value=>JSON.parse(JSON.stringify(value));
-function harness({language="en",status="pending",empty=false,missing=false,failLoad=false,rows=null}={}){
+function harness({language="en",status="pending",empty=false,missing=false,failLoad=false,rows=null,confirmDialog=true}={}){
   class Node{
     constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.listeners={};this.attributes={};this._text="";this.disabled=false;}
     set textContent(value){this._text=String(value);this.children=[];}
@@ -37,7 +37,8 @@ function harness({language="en",status="pending",empty=false,missing=false,failL
     }
     return {ok:true,json:async()=>value};
   };
-  const window={location:{search:"?lang="+language},confirm:message=>{fixture.confirmations.push(message);return fixture.confirm;}};
+  const DevTrellisConfirm={ask:async options=>{fixture.confirmations.push(options.message);fixture.confirmOptions.push(options);return fixture.confirm;}};fixture.confirmOptions=[];
+  const window={location:{search:"?lang="+language},confirm:()=>{throw new Error("window.confirm must not be used");},...(confirmDialog?{DevTrellisConfirm}:{})};
   vm.runInNewContext(code,{document,window,fetch,URLSearchParams,Set,console});
   return {fixture,root,flatten,byId:document.getElementById,ready:async()=>{await turn();await turn();}};
 }
@@ -112,4 +113,26 @@ test("geçmişte başarısız sayfa eski kayıtları korur; kayıt sayısı azal
   app.fixture.failPage=false;app.fixture.badPage=true;await app.byId("submissions-next").dispatch("click");assert.match(app.root.textContent,/response is invalid/);assert.match(app.byId("submissions-range").textContent,/1–25 \/ 55/);
   app.fixture.badPage=false;await app.byId("submissions-next").dispatch("click");await app.byId("submissions-next").dispatch("click");assert.match(app.byId("submissions-range").textContent,/51–55 \/ 55/);
   app.fixture.rows=rows.slice(0,10);await app.byId("submissions-reload").dispatch("click");assert.equal(app.byId("submissions-range"),undefined);assert.match(app.root.textContent,/Saved research 0/);assert.equal(app.fixture.calls.at(-1).url,"/api/platform/community/submissions?offset=0&limit=25");
+});
+
+test("geri çekme onayı sayfa içi pencereden gelir; düğme etiketi ve odak dönüşü iki dilde verilir",async()=>{
+  for(const language of ["en","tr"]){
+    const app=harness({language,status:"published"});await app.ready();
+    const trigger=app.byId("withdraw-"+localId);await trigger.dispatch("click");
+    const options=app.fixture.confirmOptions.at(-1);
+    assert.equal(options.confirmLabel,language==="en"?"Withdraw submission":"Gönderiyi geri çek");
+    assert.equal(options.tone,"danger");assert.equal(options.returnFocus,trigger);
+    assert.match(options.message,language==="en"?/Withdraw this submission\?/:/geri çekmek istiyor musun\?/);
+    assert.equal(app.fixture.calls.filter(call=>call.options.method==="POST").length,0);
+  }
+});
+
+test("onay bileşeni yüklenmezse geri çekme sessizce düşmez; görünür ileti çıkar ve istek gitmez",async()=>{
+  for(const language of ["en","tr"]){
+    const app=harness({language,status:"published",confirmDialog:false});await app.ready();
+    await app.byId("withdraw-"+localId).dispatch("click");
+    assert.equal(app.fixture.calls.filter(call=>call.options.method==="POST").length,0);
+    const alert=app.flatten(app.root).find(node=>node.attributes.role==="alert");
+    assert.equal(alert.textContent,language==="en"?"The confirmation dialog could not open; nothing was done. Reload the page and try again.":"Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.");
+  }
 });

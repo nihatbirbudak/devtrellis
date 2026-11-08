@@ -69,11 +69,11 @@
     if (error.status === 401 || error.status === 403) return t("Oturumun sona ermiş olabilir. Taslağını koruyup yeniden giriş yap.");
     return t(error.message || "İşlem tamamlanamadı. Yeniden deneyebilirsin.");
   }
-  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText, publicCardId, publicCardVersion, createEventRegistry};
+  if (typeof module !== "undefined" && module.exports) module.exports = {safeURL, parsePacket, validatePacket, filterCards, errorText, publicCardId, publicCardVersion, createEventRegistry, cleanFeedSummary, groupedFeed};
   if (typeof document === "undefined") return;
   UI?.initialize();
   const byId = id => document.getElementById(id);
-  const state = {session: null, topicLabels: {}, tab: "feed", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, detailLoading: false, publicCardOpen: false, reviewBusy: false};
+  const state = {session: null, topicLabels: {}, tab: "research", offset: 0, total: 0, generation: 0, loading: false, loginBusy: false, logoutBusy: false, fileBusy: false, composer: null, composerSnapshot: "", submitBusy: false, detail: null, detailLoading: false, publicCardOpen: false, reviewBusy: false};
   let eventStorage;
   try { eventStorage = window.sessionStorage; } catch { eventStorage = null; }
   const eventRecord = createEventRegistry(eventStorage, globalThis.crypto);
@@ -162,6 +162,7 @@
   function metricList(engagement, compact = false) {
     const list = node("dl", compact ? "research-metrics compact" : "research-metrics");
     for (const [key, label] of Object.entries(METRICS)) {
+      if (!count(engagement?.[key])) continue;
       const fact = node("div", "research-metric");
       fact.append(node("dt", "", t(label)), node("dd", "", count(engagement?.[key]))); list.append(fact);
     }
@@ -171,7 +172,7 @@
     if (!card.engagement || !validCardId(card.id) || !Number.isSafeInteger(card.version) || card.version < 1) return null;
     const key = `${card.id}:${card.version}`, section = node("section", "research-engagement"), metrics = node("div"), actions = node("div", "engagement-actions");
     const feedback = node("p", "field-help"); feedback.setAttribute("role", "status"); feedback.setAttribute("aria-live", "polite");
-    section.append(node("h3", "", t("Kullanım ve geri bildirim · sürüm {version}", {version: card.version})), metrics, node("p", "field-help", t("Bunlar benzersiz kişi sayısı veya doğruluk puanı değildir. AI erişimi, yararlanıldığı anlamına gelmez; bildirimler okuyucu beyanıdır.")), actions, feedback);
+    section.append(node("h3", "", t("Kullanım ve geri bildirim · sürüm {version}", {version: card.version})), metrics, node("p", "field-help", (UI?.language === "en" ? "Counters are not unique people or an accuracy score; AI access does not prove use, and feedback is a reader statement." : "Sayaçlar benzersiz kişi sayısı veya doğruluk puanı değildir; AI erişimi kullanım kanıtı sayılmaz ve geri bildirimler okuyucu beyanıdır.")), actions, feedback);
     if (card.published_version && card.published_version !== card.version) {
       const current = node("a", "", t("Güncel yayımlanmış sürümü aç")); current.href = `/?card=${card.id}`;
       section.append(node("p", "notice", t("Önceki bir sürümü okuyorsun. Sayaçlar ve bildirimler bu sürüme aittir.")), current);
@@ -185,7 +186,7 @@
       const busy = eventBusy.has(key);
       for (const [kind, control] of controls) {
         const record = eventRecord(card.id, card.version, kind);
-        control.disabled = busy || record.sent || !state.session?.csrf_token;
+        control.disabled = busy || record.sent;
         control.textContent = record.sent ? `${t(FEEDBACK[kind])} ✓` : record.busy ? t("Kaydediliyor…") : t(FEEDBACK[kind]);
       }
       const view = eventRecord(card.id, card.version, "web_view"); retry.hidden = !view.error; retry.disabled = busy;
@@ -199,7 +200,7 @@
       if (record.sent || eventBusy.has(key)) return;
       record.busy = true; record.error = false; eventBusy.add(key); lastKind = kind; refresh();
       try {
-        const result = await request(`/cards/${encodeURIComponent(card.id)}/events`, {kind, version: card.version, event_id: record.event_id});
+        const result = await request(`/cards/${encodeURIComponent(card.id)}/events`, {kind, version: card.version, event_id: record.event_id}, {anonymousView: kind === "web_view"});
         if (!result.engagement || typeof result.engagement !== "object") throw new Error("Invalid event response");
         card.engagement = result.engagement; record.sent = true; record.save();
         if (state.detail?.id === card.id && state.detail.version === card.version) state.detail.engagement = result.engagement;
@@ -212,17 +213,70 @@
     return section;
   }
   function message(id, text) { byId(id).textContent = text || ""; byId(id).hidden = !text; }
+  // Gömülü tarayıcılar window.confirm'i sessizce "hayır" sayabilir; onay sayfa içi pencereyle sorulur.
+  function confirmAction(options, errorId) {
+    const dialog = globalThis.DevTrellisConfirm || globalThis.window?.DevTrellisConfirm;
+    if (dialog?.ask) return dialog.ask(options);
+    message(errorId, t("Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene."));
+    return Promise.resolve(false);
+  }
   function dateLabel(value) {
     const date = value ? new Date(value) : null;
     return !date || Number.isNaN(date.getTime()) ? t("Bilinmiyor") : new Intl.DateTimeFormat(UI?.language === "en" ? "en-US" : "tr-TR", {day: "numeric", month: "long", year: "numeric"}).format(date);
   }
-  async function request(path, payload) {
-    const options = {credentials: "same-origin", headers: {Accept: "application/json"}};
+  function cleanFeedSummary(value) {
+    const cleaned = String(value || "").replace(/(?:The post|This post)\s+.{0,240}?\s+appeared first on\s+.{0,180}$/gi, "")
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<[^>]*>/g, " ")
+      .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, "$1").replace(/(^|\n)\s*(?:[-*+]|\d+[.)])\s+/g, "$1")
+      // Flattened lists are recognized only after a release heading. Lowercase
+      // variables and numeric operands remain multiplication, not list markers.
+      // A version-like bullet needs an uppercase subject (v2 API); ambiguous
+      // expressions such as rate * v2 for scale keep their original operator.
+      .replace(/(^|[\s:])(What's Changed|Changes|Release notes|New release)\s+\*\s+([^\n]+)/gi,
+        (_, prefix, heading, items) => prefix + heading + ": " + items.replace(
+          /\s+\*\s+(?=(?:\p{Lu}\p{L}[\p{L}\p{N}_-]*|v\d[\p{L}\p{N}._-]*(?=\s+\p{Lu})|\d+\p{L}[\p{L}\p{N}_-]*|\p{Lu}(?=\s+\p{L})|#\d+)(?=\s|$))/gu,
+          (marker, offset) => {
+            const left = items.slice(0, offset).match(/\S+$/)?.[0] || "";
+            const right = items.slice(offset + marker.length).match(/^\S+/)?.[0] || "";
+            // Ambiguous scalar/variable products (2 * X, x * v2) stay intact.
+            return /^(?:\p{L}|[+-]?\d+(?:\.\d+)?)$/u.test(left)
+              && /^(?:\p{Lu}+|v\d[\p{L}\p{N}._-]*)$/u.test(right) ? marker : "; ";
+          }))
+      .replace(/\*\*|__|`+/g, "")
+      .replace(/(^|[\s([{])\*([^\s*](?:[^*\n]*[^\s*])?)\*(?=$|[\s.,!?:;)\]}])/g, "$1$2")
+      .replace(/(^|[\s([{])_([^\s_](?:[^_\n]*[^\s_])?)_(?=$|[\s.,!?:;)\]}])/g,
+        (match, prefix, text) => /[*?\[\]\\/]/.test(text) ? match : prefix + text)
+      .replace(/\s+/g, " ").trim();
+    if (!cleaned) return "";
+    if (cleaned.length <= 400) return /[.!?…]["'”’)]?$/.test(cleaned) ? cleaned : cleaned + "…";
+    const prefix = cleaned.slice(0, 400);
+    const endings = [...prefix.matchAll(/[.!?](?=\s|$)/g)];
+    if (endings.length) return prefix.slice(0, endings.at(-1).index + 1);
+    const word = prefix.lastIndexOf(" ");
+    return prefix.slice(0, word > 200 ? word : 399).trimEnd() + "…";
+  }
+  function groupedFeed(items) {
+    const groups = [];
+    for (const item of items) {
+      const release = /\/releases\/(?:tag\/|v?\d)/i.test(item.url || "");
+      const last = groups.at(-1);
+      if (release && last?.release && last.source === item.source_name) last.items.push(item);
+      else groups.push({release, source: item.source_name, items: [item]});
+    }
+    return groups;
+  }
+  async function request(path, payload, {anonymousView = false} = {}) {
+    const options = {credentials: anonymousView ? "omit" : "same-origin", cache: "no-store", headers: {Accept: "application/json"}};
     if (payload !== undefined) {
-      if (!state.session?.csrf_token) throw new Error(t("Çalışma alanı henüz hazır değil. Sayfayı yeniden yükleyip dene."));
+      if (!anonymousView && !state.session?.csrf_token) {
+        const response = await fetch("/api/community/session", {method: "POST", credentials: "same-origin", headers: {Accept: "application/json", "Content-Type": "application/json"}, body: "{}"});
+        if (!response.ok) throw new Error(t("Çalışma alanı henüz hazır değil. Sayfayı yeniden yükleyip dene."));
+        state.session = await response.json(); renderSession();
+      }
       options.method = "POST";
       options.headers["Content-Type"] = "application/json";
-      options.headers["X-Ufuk-CSRF"] = state.session.csrf_token;
+      if (anonymousView) options.headers["X-DevTrellis-View"] = "1";
+      else options.headers["X-Ufuk-CSRF"] = state.session.csrf_token;
       options.body = JSON.stringify(payload);
     }
     let response;
@@ -251,7 +305,9 @@
   }
   async function loadSession() { state.session = await request("/session"); renderSession(); }
   function selectTab(tab, focus = false) {
-    if ((tab === "mine" && !state.session?.user) || (tab === "review" && state.session?.user?.role !== "moderator")) tab = "feed";
+    if ((tab === "mine" && !state.session?.user) || (tab === "review" && state.session?.user?.role !== "moderator")) tab = "research";
+    ++state.generation;
+    byId("community-list").replaceChildren();
     state.tab = tab;
     for (const item of document.querySelectorAll("[data-tab]")) {
       const active = item.dataset.tab === tab;
@@ -287,6 +343,7 @@
     byId("community-count").textContent = t("Kayıtlar yükleniyor…");
     message("community-error", "");
     const query = byId("search-query").value.trim();
+    const rankedRequested = tab === "research" && Boolean(query);
     const params = new URLSearchParams({query, offset: String(offset), limit: String(PAGE_SIZE)});
     try {
       let data;
@@ -297,6 +354,7 @@
         data = await request(`/${tab}?${params}`);
       } else {
         params.set("kind", tab);
+        if (rankedRequested) params.set("search_mode", "ranked");
         data = await request(`/cards?${params}`);
       }
       if (generation !== state.generation) return;
@@ -304,7 +362,24 @@
       state.total = data.total || 0;
       const list = byId("community-list");
       list.replaceChildren();
-      for (const item of data.items || []) list.append(tab === "feed" ? feedCard(item) : contributionCard(item));
+      if (rankedRequested) {
+        if (data.search?.mode === "all" && data.search?.fallback === true) {
+          list.append(node("p", "field-help search-status", t("Sıralamalı arama kullanılamıyor; sözcük araması sonuçları gösteriliyor.")));
+        } else if (data.search?.mode !== "ranked" || data.search?.fallback !== false) {
+          list.append(node("p", "field-help search-status", t("Sunucu arama sıralaması bilgisini sağlamıyor; sonuçların ilgililik sırası doğrulanamadı.")));
+        }
+      }
+      if (tab === "feed") {
+        for (const group of groupedFeed(data.items || [])) {
+          if (group.items.length === 1) list.append(feedCard(group.items[0]));
+          else {
+            const details = node("details", "feed-release-group");
+            details.append(node("summary", "", `${group.source || t("Kaynak")} · ${group.items.length} ${t("sürüm duyurusu")}`));
+            for (const item of group.items) details.append(feedCard(item));
+            list.append(details);
+          }
+        }
+      } else for (const item of data.items || []) list.append(contributionCard(item, rankedRequested));
       if (!(data.items || []).length) {
         if (query || (tab === "feed" && byId("search-interest").value.trim())) list.append(emptyState(t("Bu aramada kayıt bulunamadı."), t("Onaylanan katkılar burada görünür. Aramayı değiştirebilir veya daha sonra tekrar bakabilirsin."), true));
         else if (tab === "mine") list.append(emptyState(t("Henüz katkı yok."), t("Bir paylaşım dosyası getirerek ilk katkını hazırlayabilirsin.")));
@@ -312,7 +387,8 @@
         else if (tab === "feed") list.append(emptyState(t("Gelişmeler henüz toplanmadı."), t("Bu kurulumun yöneticisi kayıtlı kaynakları topladığında burada görünecek.")));
         else list.append(emptyState(t("Henüz yayımlanmış kayıt yok."), t("Onaylanan katkılar burada görünür. Aramayı değiştirebilir veya daha sonra tekrar bakabilirsin.")));
       }
-      byId("community-count").textContent = t("{total} kayıt", {total: state.total});
+      byId("community-count").textContent = (UI?.language === "en" && state.total === 1 ? "1 record" : t("{total} kayıt", {total: state.total})) +
+        (tab === "feed" && data.coverage?.last_checked_at ? ` · ${t("Son toplama")}: ${dateLabel(data.coverage.last_checked_at)}` : "");
     } catch (error) {
       if (generation !== state.generation) return;
       byId("community-list").replaceChildren();
@@ -330,14 +406,28 @@
     if (item.topic_label || item.topic) meta.append(node("span", "badge", state.topicLabels[item.topic] || item.topic_label || item.topic));
     const heading = node("h3");
     heading.append(link(item.title, item.url));
-    body.append(meta, heading, node("p", "summary", item.excerpt || ""), link(`${item.source_name || t("Kaynak")} ↗`, item.url, "card-source"));
+    body.append(meta, heading, node("p", "summary", cleanFeedSummary(item.excerpt)), link(`${item.source_name || t("Kaynak")} ↗`, item.url, "card-source"));
     body.append(node("p", "entry-note", t("Yayın: {date}", {date: dateLabel(item.published_at)})));
     if (item.last_seen_at) body.append(node("p", "entry-note", t("Son görüldü: {date}", {date: dateLabel(item.last_seen_at)})));
     article.append(body);
     return article;
   }
   const statusLabel = status => t({pending: "İnceleme bekliyor", published: "Yayımlandı", rejected: "Reddedildi", withdrawn: "Geri çekildi", hidden: "Yayından kaldırıldı"}[status] || "Bilinmiyor");
-  function contributionCard(card) {
+  function searchMatchInfo(match) {
+    if (!match || typeof match !== "object" || Array.isArray(match)) return null;
+    const section = node("div", "search-match");
+    for (const [key, label] of [["matched_terms", "Eşleşen terimler: {terms}"], ["missing_terms", "Eşleşmeyen terimler: {terms}"]]) {
+      const terms = match[key];
+      if (Array.isArray(terms) && terms.length <= 40 && terms.every(term => typeof term === "string" && term.length <= 200) && terms.length) {
+        section.append(node("p", "field-help", t(label, {terms: terms.join(", ")})));
+      }
+    }
+    section.append(node("p", "field-help", t(match.answer_sufficiency === "not_assessed"
+      ? "Sözcük eşleşmesi; bu soruyu yanıtlamaya yeterliliği veya doğruluğu değerlendirilmedi."
+      : "Cevap yeterliliği bilgisi yok; araştırmanın kapsamını ve kaynaklarını kontrol et.")));
+    return section;
+  }
+  function contributionCard(card, showSearchMatch = false) {
     const packet = card.packet;
     const article = node("article", "card");
     const body = node("div", "card-body");
@@ -348,18 +438,34 @@
     const heading = node("h3");
     if (privateView) heading.textContent = packet.title;
     else if (validCardId(card.id)) {
-      const titleLink = node("a", "card-title-link", packet.title); titleLink.href = `/?card=${card.id}`;
-      titleLink.addEventListener("click", event => {
+      const titleLink = node("a", "card-title-link", packet.title);
+      titleLink.href = packet.kind === "research" && !privateView ? `/r/${card.id}/v/${card.version}?lang=${UI?.language || "en"}` : `/?card=${card.id}`;
+      if (packet.kind !== "research") titleLink.addEventListener("click", event => {
         if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault(); return openCard(card, "read", event.currentTarget);
       }); heading.append(titleLink);
     } else heading.append(button(packet.title, event => openCard(card, "read", event.currentTarget), "card-title-link"));
-    body.append(meta, heading, node("p", "summary", packet.summary));
-    if (!privateView && card.engagement) body.append(metricList(card.engagement, true));
+    body.append(meta, heading);
+    if (packet.kind === "research") {
+      const facts = node("dl", "card-research-facts");
+      const evidence = packet.provenance?.modified ? "Denetlenmemiş" :
+        ({verified: "Kaynak eşleşmesi kaydedilmiş", unverified: "Denetlenmemiş", insufficient: "Yetersiz dayanak", unknown: "Bilinmiyor"}[packet.provenance?.evidence_status] || "Bilinmiyor");
+      for (const [label, value] of [[t("Araştırma sorusu"), packet.provenance?.question || packet.title],
+        [t("Kartın kanıt durumu"), t(evidence)],
+        [t("Araştırmanın üretim tarihi"), packet.provenance?.generated_at ? dateLabel(packet.provenance.generated_at) : t("Üretim tarihi kaydedilmemiş")],
+        [t("Güncellendi"), dateLabel(packet.updated_at)]]) {
+        const row = node("div"); row.append(node("dt", "", label), node("dd", "", value)); facts.append(row);
+      }
+      body.append(facts);
+    }
+    body.append(node("p", "summary", packet.summary));
+    const matchInfo = showSearchMatch ? searchMatchInfo(card.search_match) : null;
+    if (matchInfo) body.append(matchInfo);
+
     if (!privateView && card.relationships?.children_total) body.append(node("p", "entry-note", t("Geliştiren çalışmalar: {count}", {count: count(card.relationships.children_total)})));
     const sources = originalLinks(packet, true); if (sources) body.append(sources);
-    if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", tag))); body.append(tags); }
-    body.append(node("p", "entry-note", t("Güncellendi: {date}", {date: dateLabel(packet.updated_at)})));
+    if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", state.topicLabels[tag] || tag))); body.append(tags); }
+    if (packet.kind !== "research") body.append(node("p", "entry-note", t("Güncellendi: {date}", {date: dateLabel(packet.updated_at)})));
     if (packet.provenance) {
       body.append(node("p", "entry-note", t("Kaynak araştırmanın modeli: {model}", {model: !packet.provenance.model || packet.provenance.model === "unknown" ? t("Model kaydedilmemiş") : packet.provenance.model})));
       body.append(node("p", "entry-note", packet.provenance.generated_at ? t("Araştırma tarihi: {date}", {date: dateLabel(packet.provenance.generated_at)}) : t("Üretim tarihi kaydedilmemiş")));
@@ -368,8 +474,14 @@
     if (card.submission_type === "anonymous" || card.owner?.verified === false) body.append(node("p", "entry-note", t("Hesapsız katkı · Yazar kimliği doğrulanmamış")));
     if (privateView && card.published_version && ["pending", "rejected"].includes(card.status)) body.append(node("p", "private-version-note", t("Yayımlanan sürüm: {version}. Bu taslak onaylanana kadar önceki sürüm görünür kalır.", {version: card.published_version})));
     if (privateView && (card.moderation_note || card.review_note || card.note)) body.append(node("p", "private-version-note", t("İnceleme notu: {note}", {note: card.moderation_note || card.review_note || card.note})));
+    if (!privateView && card.engagement) body.append(metricList(card.engagement, true));
     const actions = node("div", "card-actions community-card-actions");
-    actions.append(button(t(privateView ? "Oku" : packet.kind === "project" ? "Ayrıntıları oku" : "Araştırmayı oku"), event => openCard(card, "read", event.currentTarget), privateView ? "text-button" : "button read-primary"));
+    if (!privateView && packet.kind === "research") {
+      const read = node("a", "button read-primary", t("Araştırmayı oku"));
+      read.href = `/r/${card.id}/v/${card.version}?lang=${UI?.language || "en"}`;
+      actions.append(read, button(t("Önizleme"), event => openCard(card, "read", event.currentTarget)));
+    }
+    else actions.append(button(t(privateView ? "Oku" : "Ayrıntıları oku"), event => openCard(card, "read", event.currentTarget), privateView ? "text-button" : "button read-primary"));
     if (!privateView) actions.append(button(t("Kendi modelimle araştır"), () => openResearchApp(card), "text-button research-optional"));
     if (state.tab === "mine") {
       actions.append(button(t("Düzelt"), () => openComposer(card.packet, card)));
@@ -380,12 +492,48 @@
     article.append(body, actions);
     return article;
   }
-  function packetContent(packet, titleId, relationships = null) {
+  function markdownNodes(value) {
+    const root = node("div", "markdown-content");
+    let list = null, code = null;
+    const appendInline = (target, value) => {
+      const pattern = /(`[^`\n]+`|\[[^\]\n]{1,200}\]\([^\s)]+\))/g;
+      let last = 0;
+      for (const match of value.matchAll(pattern)) {
+        target.append(document.createTextNode(value.slice(last, match.index)));
+        const token = match[0];
+        if (token.startsWith("`")) target.append(node("code", "", token.slice(1, -1)));
+        else {
+          const [label, raw] = token.slice(1, -1).split("](");
+          const url = safeURL(raw);
+          target.append(url ? link(label, url) : document.createTextNode(token));
+        }
+        last = match.index + token.length;
+      }
+      target.append(document.createTextNode(value.slice(last)));
+    };
+    for (const line of String(value || "").split(/\r?\n/)) {
+      if (line.trim().startsWith("```")) { code = code ? null : node("pre"); if (code) { code.append(node("code")); root.append(code); } list = null; continue; }
+      if (code) { code.firstChild.append(document.createTextNode(line + "\n")); continue; }
+      if (!line.trim()) { list = null; continue; }
+      const heading = /^\s{0,3}(#{1,4})\s+(.+)$/.exec(line);
+      const item = /^\s{0,3}([-*]|[0-9]+\.)\s+(.+)$/.exec(line);
+      if (heading) { const element = node(`h${Math.min(heading[1].length + 1, 5)}`); appendInline(element, heading[2]); root.append(element); list = null; }
+      else if (item) {
+        const kind = item[1].endsWith(".") ? "ol" : "ul";
+        if (!list || list.tagName.toLowerCase() !== kind) { list = node(kind); root.append(list); }
+        const li = node("li"); appendInline(li, item[2]); list.append(li);
+      } else { const p = node("p"); appendInline(p, line.trim()); root.append(p); list = null; }
+    }
+    return root;
+  }
+  function packetContent(packet, titleId, relationships = null, corrections = null) {
     const content = node("div");
     const heading = node("h2", "detail-title", packet.title);
     if (titleId) heading.id = titleId;
     content.append(node("p", "card-preview-kind", t(packet.kind === "project" ? "Proje" : "Araştırma")), heading, node("p", "detail-summary", packet.summary));
-    content.append(node("h3", "reader-body-heading", t(packet.kind === "project" ? "Projenin ayrıntıları" : "Tam araştırma metni")), node("div", "detail-body", packet.body || t("Bu kayıtta ek metin bulunmuyor. Özet ve özgün kaynakları okuyabilirsin.")));
+    const reportBody = markdownNodes(packet.body || t("Bu kayıtta ek metin bulunmuyor. Özet ve özgün kaynakları okuyabilirsin."));
+    if (["tr", "en"].includes(packet.provenance?.language)) reportBody.lang = packet.provenance.language;
+    content.append(node("h3", "reader-body-heading", t(packet.kind === "project" ? "Projenin ayrıntıları" : "Tam araştırma metni")), reportBody);
     const originals = originalLinks(packet); if (originals) content.append(originals);
     const lineage = lineagePanel(packet, relationships); if (lineage) content.append(lineage);
     const meta = node("dl", "detail-meta");
@@ -395,12 +543,33 @@
       const provenance = node("section", "provenance-panel"); provenance.append(node("h3", "", t("Araştırmanın kökeni")));
       const facts = node("dl", "detail-meta");
       for (const [label, value] of UI?.provenanceFacts?.(packet.provenance || {model: "unknown", generated_at: null}, t, dateLabel) || []) facts.append(node("dt", "", label), node("dd", "", value));
-      provenance.append(facts, node("p", "field-help", t("Bu bilgiler kaynak araştırmaya aittir; kart metni sonradan düzenlenmiş olabilir. İçe alınan kayıtların model ve kaynak bilgileri yazar beyanıdır.")), node("p", "field-help", t("Modelin markası veya fiyatı doğruluk kanıtı değildir; kaynakları, tarihi ve raporun sınırlarını kontrol et.")));
+      provenance.append(facts);
+      const guidance = node("a", "field-help", t("Rapor nasıl okunur")); guidance.href = `/report-guide?lang=${UI?.language || "en"}`; provenance.append(guidance);
       if (packet.provenance?.modified) provenance.append(node("p", "notice", t("Kart içeriği özgün rapordan sonra değiştirildi; yeniden kanıt denetimi yapılmadı.")));
       content.append(provenance);
     }
+    if (corrections?.items?.length) {
+      const section = node("section", "public-corrections"); section.append(node("h3", "", t("Kamu düzeltmeleri")));
+      const list = node("ul");
+      for (const item of corrections.items) {
+        const row = node("li", "", item.summary || "");
+        const target = item.correction;
+        if (target && validCardId(target.research_id) && Number.isSafeInteger(target.version) && target.version > 0) {
+          const anchor = node("a", "", UI?.language === "tr" ? "Düzeltici sürüm" : "Correcting version");
+          anchor.href = `/r/${target.research_id.toLowerCase()}/v/${target.version}?lang=${UI?.language || "en"}`;
+          row.append(document.createTextNode(" · "), anchor);
+        }
+        if (item.withdrawn === true) row.append(node("span", "", UI?.language === "tr"
+          ? " · Özel itiraz geri çekildi; kamu düzeltme izi korunuyor."
+          : " · Private objection withdrawn; the public correction trace remains."));
+        list.append(row);
+      }
+      section.append(list); content.append(section);
+    }
     if (packet.tags?.length) { const tags = node("div", "tags"); packet.tags.forEach(tag => tags.append(node("span", "tag", tag))); content.append(tags); }
-    content.append(node("p", "field-help", t("Yalnız kart metni seçilen izinle paylaşılır; bağlantılı kod ve kaynak yayınları yeniden lisanslanmaz.")));
+    const permissions = node("details", "reader-permissions");
+    permissions.append(node("summary", "", t("Metin izni")), node("p", "field-help", t("Yalnız kart metni seçilen izinle paylaşılır; bağlantılı kod ve kaynak yayınları yeniden lisanslanmaz.")));
+    content.append(permissions);
     return content;
   }
   async function openCard(card, mode, trigger, publicOnly = false, requestedVersion = null) {
@@ -413,13 +582,20 @@
       const suffix = Number.isSafeInteger(requestedVersion) && requestedVersion > 0 ? `?version=${requestedVersion}` : "";
       const latest = privateView ? card : await request(`/cards/${encodeURIComponent(card.id)}${suffix}`);
       state.detail = latest.card || latest;
-      byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title", state.detail.relationships));
+      byId("card-content").replaceChildren(packetContent(state.detail.packet, "card-title", state.detail.relationships, state.detail.public_corrections));
       if (!privateView) {
         const engagement = engagementPanel(state.detail); if (engagement) byId("card-content").append(engagement);
         const optional = node("section", "reader-optional");
         optional.append(node("p", "field-help", t("Bu metni burada okumak için hesap, yerel uygulama veya yapay zekâ modeli gerekmez. Yeni bir araştırma yapmak istersen kendi modelini kullanabilirsin.")));
         if (!state.detail.published_version || state.detail.published_version === state.detail.version) optional.append(button(t("Kendi modelimle araştır"), () => openResearchApp(state.detail), "button secondary"));
-        if (validCardId(card.id)) { const permalink = node("a", "reader-permalink", t("Bu kaydın kalıcı bağlantısı")); permalink.href = `/?card=${card.id}${requestedVersion ? `&version=${requestedVersion}` : ""}`; optional.append(permalink); }
+        const version = state.detail.version;
+        if (validCardId(card.id) && Number.isSafeInteger(version) && version > 0) {
+          const permalink = node("a", "reader-permalink", t("Bu kaydın kalıcı bağlantısı"));
+          permalink.href = state.detail.packet.kind === "research"
+            ? `/r/${card.id.toLowerCase()}/v/${version}?lang=${UI?.language === "tr" ? "tr" : "en"}`
+            : `/?card=${card.id}${requestedVersion ? `&version=${requestedVersion}` : ""}`;
+          optional.append(permalink);
+        }
         byId("card-content").append(optional);
       }
       byId("card-download").hidden = privateView;
@@ -587,7 +763,10 @@
     } finally { state.submitBusy = false; byId("compose-submit").disabled = false; byId("compose-back").disabled = false; byId("compose-submit").textContent = t("İncelemeye gönder"); }
   }
   async function withdraw(card, trigger) {
-    if (trigger.disabled || !window.confirm(t("Katkıyı geri çekmek istiyor musun? Yayımlanmış sürümü de okuyuculardan kaldırılır."))) return;
+    if (trigger.disabled) return;
+    const confirmed = await confirmAction({message: t("Katkıyı geri çekmek istiyor musun? Yayımlanmış sürümü de okuyuculardan kaldırılır."),
+      confirmLabel: t("Geri çek"), tone: "danger", returnFocus: trigger}, "community-error");
+    if (!confirmed || trigger.disabled) return;
     trigger.disabled = true;
     message("community-error", "");
     try { await request(`/submissions/${encodeURIComponent(card.id)}/withdraw`, {expected_version: card.version}); message("community-status", t("Katkı geri çekildi.")); loadRecords(); }
@@ -599,7 +778,13 @@
     const note = byId("review-note").value.trim();
     message("review-error", "");
     if (["reject", "hide"].includes(decision) && !note) { message("review-error", t("Bu karar için bir gerekçe ekle.")); return; }
-    if (!window.confirm(t(decision === "publish" ? "Bu katkıyı şimdi yayımlamak istiyor musun?" : decision === "hide" ? "Bu katkıyı yayından kaldırmak istiyor musun?" : "Bu katkıyı reddetmek istiyor musun?"))) return;
+    const detail = state.detail;
+    const confirmed = await confirmAction({
+      message: t(decision === "publish" ? "Bu katkıyı şimdi yayımlamak istiyor musun?" : decision === "hide" ? "Bu katkıyı yayından kaldırmak istiyor musun?" : "Bu katkıyı reddetmek istiyor musun?"),
+      confirmLabel: decision === "publish" ? t("Onayla ve yayımla") : decision === "hide" ? t("Yayından kaldır") : t("Reddet"),
+      tone: decision === "publish" ? "default" : "danger", returnFocus: byId(`review-${decision}`)}, "review-error");
+    // Onay beklenirken başka kayıt açıldıysa veya karar başladıysa eski onay kullanılmaz.
+    if (!confirmed || state.reviewBusy || state.detail !== detail) return;
     state.reviewBusy = true;
     byId("review-publish").disabled = true;
     byId("review-reject").disabled = true;
@@ -615,11 +800,16 @@
     } catch (error) { message("review-error", errorText(error)); }
     finally { state.reviewBusy = false; byId("review-publish").disabled = false; byId("review-reject").disabled = false; byId("review-hide").disabled = false; byId("review-note").disabled = false; }
   }
-  function closeDialog(id) {
+  async function closeDialog(id) {
     if (id === "login-dialog" && state.loginBusy) return;
     if (id === "compose-dialog") {
       if (state.submitBusy) return;
-      if (state.composer && snapshot() !== state.composerSnapshot && !window.confirm(t("Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?"))) return;
+      if (state.composer && snapshot() !== state.composerSnapshot) {
+        const composer = state.composer;
+        const confirmed = await confirmAction({message: t("Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?"),
+          confirmLabel: t("Taslağı bırak"), tone: "danger"}, "compose-error");
+        if (!confirmed || state.submitBusy || state.composer !== composer) return;
+      }
       state.composer = null;
     }
     if (id === "card-dialog" && state.reviewBusy) return;
