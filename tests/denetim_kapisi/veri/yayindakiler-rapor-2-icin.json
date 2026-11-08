@@ -1,0 +1,135 @@
+{
+ "kayitlar": [
+  {
+   "kind": "research_report",
+   "schema_version": 4,
+   "language": "en",
+   "title": "Tracking GitHub repository releases with the REST API and webhooks",
+   "summary": "How to read a repository's releases through the GitHub REST API, page through them, accept release webhooks safely, and combine webhooks with polling so missed or repeated deliveries do not corrupt tracked state.",
+   "short_answer": "List releases with GET /repos/{owner}/{repo}/releases and follow the link header until no rel=\"next\" remains; per_page is capped at 100 and larger values are silently reduced. Drafts appear only for users with push access, and \"latest\" is ordered by commit date. For webhooks, verify X-Hub-Signature-256 with a constant-time comparison, answer 2XX within 10 seconds, deduplicate on X-GitHub-Delivery, and redeliver missed deliveries yourself within 3 days, since GitHub does not retry automatically.",
+   "claims": [
+    {
+     "text": "The list releases endpoint does not return Git tags that have no associated release.",
+     "quote": "This returns a list of releases, which does not include regular Git tags that have not been associated with a release.",
+     "source_url": "https://docs.github.com/en/rest/releases/releases",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "Draft releases are listed only for users who have push access to the repository.",
+     "quote": "Information about published releases are available to everyone. Only users with push access will receive listings for draft releases.",
+     "source_url": "https://docs.github.com/en/rest/releases/releases",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "For the list releases endpoint, per_page has a maximum of 100 and a default of 30.",
+     "quote": "The number of results per page (max 100). For more information, see \"Using pagination in the REST API.\" Default: 30",
+     "source_url": "https://docs.github.com/en/rest/releases/releases",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "The \"latest\" release is the newest non-draft, non-prerelease release ordered by created_at, which is the commit date rather than the publish date.",
+     "quote": "The latest release is the most recent non-prerelease, non-draft release, sorted by the created_at attribute. The created_at attribute is the date of the commit used for the release, and not the date when the release was drafted or published.",
+     "source_url": "https://docs.github.com/en/rest/releases/releases",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "A paginated response carries a link header, and the header is absent when all results fit on one page or the endpoint is not paginated.",
+     "quote": "When a response is paginated, the response headers will include a link header. If the endpoint does not support pagination, or if all results fit on a single page, the link header will be omitted.",
+     "source_url": "https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "A per_page value above the maximum is reduced to the maximum without an error.",
+     "quote": "If you specify a value greater than the maximum, GitHub does not return an error. Instead, the value is automatically reduced to the maximum",
+     "source_url": "https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "Each webhook delivery carries a hash signature in the X-Hub-Signature-256 header.",
+     "quote": "The hash signature will appear in each delivery as the value of the X-Hub-Signature-256 header.",
+     "source_url": "https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "The signature should be compared with a constant-time comparison, not a plain equality operator.",
+     "quote": "Never use a plain == operator. Instead consider using a method like secure_compare or crypto.timingSafeEqual, which performs a \"constant time\" string comparison",
+     "source_url": "https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "GitHub treats a delivery as failed when the receiver does not return a 2XX response within 10 seconds.",
+     "quote": "Your server should respond with a 2XX response within 10 seconds of receiving a webhook delivery. If your server takes longer than that to respond, then GitHub terminates the connection and considers the delivery a failure.",
+     "source_url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "The event type is given by the X-GitHub-Event header and the action by the top-level action key of the payload.",
+     "quote": "To determine the event type, you can use the X-GitHub-Event request header. To determine the action type, you can use the top-level action key in the event payload.",
+     "source_url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "GitHub does not retry failed deliveries on its own, and deliveries can be redelivered only for the past 3 days.",
+     "quote": "You can redeliver webhook deliveries that occurred in the past 3 days. GitHub does not automatically redeliver failed deliveries.",
+     "source_url": "https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks",
+     "checked_on": "2026-11-06"
+    },
+    {
+     "text": "A redelivered webhook keeps the X-GitHub-Delivery value of the original delivery.",
+     "quote": "If you request a redelivery, the X-GitHub-Delivery header will be the same as in the original delivery.",
+     "source_url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
+     "checked_on": "2026-11-06"
+    }
+   ],
+   "recommendations": [
+    "Recommendation / inference: acknowledge a delivery once its signature checks out, queue the payload, and process it afterwards, to stay inside the 10-second window.",
+    "Recommendation / inference: store processed X-GitHub-Delivery values and skip repeats; since a redelivery reuses the original value, this also absorbs your own redeliveries.",
+    "Recommendation / inference: key tracked state on the release id, so the same release seen by webhook and by poll merges into one record.",
+    "Recommendation / inference: run a periodic reconciliation poll as a safety net for outages longer than the 3-day redelivery window."
+   ],
+   "not_covered": [
+    "The release webhook payload and its action values (that reference was outside the permitted sources).",
+    "REST endpoints for listing or redelivering deliveries programmatically.",
+    "Rate limits and conditional requests (see the companion report).",
+    "Live measurement or testing; GitHub Enterprise Server differences."
+   ],
+   "applies_to": "GitHub REST API (releases and pagination; examples in the documents send X-GitHub-Api-Version: 2026-03-10) and GitHub webhooks, as documented for github.com on docs.github.com/en.",
+   "sources": [
+    {
+     "title": "REST API endpoints for releases",
+     "url": "https://docs.github.com/en/rest/releases/releases"
+    },
+    {
+     "title": "Using pagination in the REST API",
+     "url": "https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api"
+    },
+    {
+     "title": "Best practices for using webhooks",
+     "url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks"
+    },
+    {
+     "title": "Validating webhook deliveries",
+     "url": "https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries"
+    },
+    {
+     "title": "Redelivering webhooks",
+     "url": "https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks"
+    }
+   ],
+   "provenance": {
+    "origin": "model_assisted",
+    "stages": [
+     {
+      "provider": "claude",
+      "model": "claude-opus-5-5",
+      "access_type": "unknown",
+      "basis": "contributor_declaration",
+      "terms_url": null
+     }
+    ]
+   },
+   "generated_at": "2026-11-06T12:45:37Z",
+   "id": "rapor-1"
+  }
+ ]
+}

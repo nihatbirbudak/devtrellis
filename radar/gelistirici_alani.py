@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 
 from radar.depo import simdi, tarih
 from radar.proje_profilleri import profiller
-from radar.konular import KONULAR
+from radar.konular import KONULAR, konu_kimligi
 
 
 TEMEL_ALANLAR = {"kind", "title", "summary", "body", "url", "tags", "sources", "author", "license"}
@@ -113,7 +113,8 @@ def arastirma_kokeni(value):
     alanlari_dogrula(value, fields, fields - {"modified", "claim_text"})
     if value["provider"] not in ("nvidia", "codex", "claude", "unknown"):
         raise ValueError("Araştırmanın sağlayıcısı tanınmıyor.")
-    if value["topic"] not in KONULAR or value["language"] not in ("tr", "en"):
+    topic = konu_kimligi(value["topic"])
+    if topic not in KONULAR or value["language"] not in ("tr", "en"):
         raise ValueError("Araştırmanın konusu veya dili geçersiz.")
     if value["evidence_status"] not in ("verified", "unverified", "insufficient", "unknown"):
         raise ValueError("Araştırmanın kanıt durumu geçersiz.")
@@ -123,7 +124,7 @@ def arastirma_kokeni(value):
     result = {"model": metin(value["model"], "Model", 160), "provider": value["provider"],
             "generated_at": stamp.isoformat(timespec="seconds") if stamp else None,
             "question": metin(value["question"], "Araştırma sorusu", 500, required=True),
-            "topic": value["topic"], "source_url": guvenli_url(value["source_url"]),
+            "topic": topic, "source_url": guvenli_url(value["source_url"]),
             "evidence_status": value["evidence_status"], "language": value["language"],
             "modified": value.get("modified", False)}
     if "claim_text" in value:
@@ -191,7 +192,7 @@ def kayit_dogrula(value):
 
 def paket_dogrula(value):
     alanlari_dogrula(value, PAKET_ALANLARI | {"provenance", "lineage"}, PAKET_ALANLARI)
-    if value["schema"] != "ufuk-share" or type(value["schema_version"]) is not int or value["schema_version"] not in {1, 2, 3}:
+    if value["schema"] not in ("ufuk-share", "devtrellis-share") or type(value["schema_version"]) is not int or value["schema_version"] not in {1, 2, 3}:
         raise ValueError("Bu paylaşım dosyasının biçimi veya sürümü desteklenmiyor.")
     if (value["schema_version"] == 1 and "provenance" in value) or (value["schema_version"] == 2 and not value.get("provenance")):
         raise ValueError("Model bilgisi için paylaşım biçimi 2 gerekli.")
@@ -419,7 +420,7 @@ class GelistiriciAlani:
 
     def akis(self, *, query="", interest="", offset=0, limit=30):
         query = metin(query, "Arama", 200)
-        interest = metin(interest, "İlgi alanı", 40)
+        interest = konu_kimligi(metin(interest, "İlgi alanı", 40))
         if type(offset) is not int or not 0 <= offset <= 9223372036854775807 or type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("Sayfalama için sıfır veya pozitif başlangıç ve 1–100 arası sınır gerekli.")
         conditions, parameters = [], []

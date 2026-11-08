@@ -34,7 +34,9 @@ MAX_ITEMS = 50
 MAX_PAGES = 3
 MAX_REDIRECTS = 3
 SOURCE_TIMEOUT = 35.0
-REQUEST_TIMEOUT = 10.0
+# Tek isteğin hareketsizlik sınırı. 10 sn, yavaş ama çalışan belge sunucularında (PostgreSQL, 7 Kasım 2026)
+# yanlış zaman aşımı üretti; toplam süre SOURCE_TIMEOUT ile sınırlı kalır (yönetici kararı, K0 üçüncü dilim).
+REQUEST_TIMEOUT = 20.0
 APPROVED_FETCH_HOSTS = izinli_alan_adlari()
 _REQUEST_FETCH_HOSTS = ContextVar("ufuk_request_fetch_hosts", default=frozenset())
 
@@ -50,7 +52,8 @@ def kaynaklari_yetkilendir(sources):
 
 
 _DNS_SLOTS = threading.BoundedSemaphore(2)
-_ROBOTS_CACHE: dict[tuple[str, tuple[str, ...]], tuple[float, Any]] = {}
+_ROBOTS_CACHE: dict[tuple[str, tuple[str, ...]], tuple[Any, ...]] = {}
+MAX_CONTENT_SIGNALS = 8
 _ROBOTS_LOCK = threading.Lock()
 # Paketle gelen kamusal kökler Windows'ta o ana kadar indirilmiş CA listesine
 # bağımlılığı kaldırır; sertifika zinciri ve alan adı doğrulaması açık kalır.
@@ -58,7 +61,60 @@ _TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 class CollectionError(ValueError):
-    """Kaynak adresi veya yanıtı güvenle işlenemediğinde kısa bir açıklama taşır."""
+    """Kaynak adresi veya yanıtı güvenle işlenemediğinde kısa bir açıklama taşır.
+
+    `code` isteğe bağlı sabit erişim nedenidir (ör. robots_disallowed, redirect_html_suffix, timeout);
+    adres, başlık veya yanıt metni taşımaz. Mesaj metni değişmez.
+    """
+
+    def __init__(self, *args, code=None):
+        super().__init__(*args)
+        self.code = code
+
+
+def _connection_code(error: BaseException, deadline: float) -> str:
+    """Düşük seviye bağlantı hatasını sabit bir nedene çevirir; ayrıntı veya adres saklamaz."""
+    if time.monotonic() >= deadline or isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionRefusedError):
+        return "connection_refused"
+    if isinstance(error, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ConnectionResetError, ConnectionAbortedError,
+                          BrokenPipeError, http.client.RemoteDisconnected)):
+        return "connection_closed"
+    if isinstance(error, ssl.SSLError):
+        return "tls_error"
+    if isinstance(error, http.client.HTTPException):
+        return "http_protocol_error"
+    return "connection_failed"
+
+
+def _status_code(result: "FetchResult", url: str) -> str:
+    """Belge yanıtının durumunu sabit nedene çevirir; yönlendirme hedefi yalnız göreli türüyle sınıflanır."""
+    status = result.status
+    if 300 <= status < 400:
+        location = result.headers.get("location")
+        if not location:
+            return "redirect_no_location"
+        try:
+            source, target = urllib.parse.urlsplit(url), urllib.parse.urlsplit(urllib.parse.urljoin(url, location))
+        except ValueError:
+            return "redirect_other_host"
+        if target.hostname != source.hostname:
+            return "redirect_other_host"
+        if target.path.rstrip("/") == source.path.rstrip("/"):
+            return "redirect_trailing_slash"
+        if target.path.removesuffix(".html").rstrip("/") == source.path.removesuffix(".html").rstrip("/"):
+            return "redirect_html_suffix"
+        return "redirect_same_host"
+    if status in (401, 403, 451):
+        return "http_forbidden"
+    if status in (404, 410):
+        return "http_not_found"
+    if status == 429:
+        return "http_rate_limited"
+    if 500 <= status < 600:
+        return "http_server_error"
+    return "http_status_other"
 
 
 FetchError = CollectionError
@@ -75,27 +131,27 @@ class FetchResult:
 def _remaining(deadline: float) -> float:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise CollectionError("Kaynak için ayrılan okuma süresi doldu.")
+        raise CollectionError("Kaynak için ayrılan okuma süresi doldu.", code="timeout")
     return remaining
 
 
 def _validate_url(url: str, allowed_hosts: set[str]) -> urllib.parse.SplitResult:
     if not isinstance(url, str) or len(url) > 4096:
-        raise CollectionError("Kaynak adresi geçersiz veya çok uzun.")
+        raise CollectionError("Kaynak adresi geçersiz veya çok uzun.", code="invalid_url")
     if any(ord(char) <= 32 or ord(char) == 127 for char in url) or "\\" in url:
-        raise CollectionError("Kaynak adresinde izin verilmeyen karakter var.")
+        raise CollectionError("Kaynak adresinde izin verilmeyen karakter var.", code="invalid_url")
     try:
         parsed = urllib.parse.urlsplit(url)
         port = parsed.port
         host = (parsed.hostname or "").lower()
     except ValueError as error:
-        raise CollectionError("Kaynak adresi ayrıştırılamadı.") from error
+        raise CollectionError("Kaynak adresi ayrıştırılamadı.", code="invalid_url") from error
     if parsed.scheme != "https" or port not in (None, 443):
-        raise CollectionError("Yalnız standart bağlantı noktasındaki HTTPS kaynakları okunabilir.")
+        raise CollectionError("Yalnız standart bağlantı noktasındaki HTTPS kaynakları okunabilir.", code="invalid_url")
     if parsed.username is not None or parsed.password is not None or parsed.fragment:
-        raise CollectionError("Kimlik bilgisi veya bölüm işareti içeren kaynak adresi okunamaz.")
+        raise CollectionError("Kimlik bilgisi veya bölüm işareti içeren kaynak adresi okunamaz.", code="invalid_url")
     if (host not in APPROVED_FETCH_HOSTS and host not in _REQUEST_FETCH_HOSTS.get()) or host not in allowed_hosts:
-        raise CollectionError("Kaynak veya yönlendirme alan adı okuma listesinde yok.")
+        raise CollectionError("Kaynak veya yönlendirme alan adı okuma listesinde yok.", code="host_not_allowed")
     return parsed
 
 
@@ -114,7 +170,7 @@ def _is_public_address(address: str) -> bool:
 def _resolve_public_host(host: str, deadline: float) -> tuple[int, tuple]:
     """DNS sonucunu sınırlı sürede alır ve yalnız genel adresleri bağlantıya verir."""
     if not _DNS_SLOTS.acquire(timeout=min(5.0, _remaining(deadline))):
-        raise CollectionError("DNS çözümleyicisi meşgul; kaynak daha sonra denenmeli.")
+        raise CollectionError("DNS çözümleyicisi meşgul; kaynak daha sonra denenmeli.", code="dns_busy")
     result_queue: queue.Queue = queue.Queue(maxsize=1)
 
     def resolve() -> None:
@@ -129,14 +185,15 @@ def _resolve_public_host(host: str, deadline: float) -> tuple[int, tuple]:
     try:
         addresses = result_queue.get(timeout=min(5.0, _remaining(deadline)))
     except queue.Empty as error:
-        raise CollectionError("DNS çözümleme süresi doldu.") from error
+        raise CollectionError("DNS çözümleme süresi doldu.", code="dns_timeout") from error
     if not addresses or any(not _is_public_address(entry[4][0]) for entry in addresses):
-        raise CollectionError("Kaynak genel internete ait güvenli bir adrese çözülmedi.")
+        raise CollectionError("Kaynak genel internete ait güvenli bir adrese çözülmedi.",
+                              code="dns_failed" if not addresses else "non_public_address")
     # IPv6 bulunup kullanılabilir bağlantı olmaması masaüstünde gereksiz bekleme doğurmasın.
     addresses.sort(key=lambda entry: entry[0] != socket.AF_INET)
     family, _, _, _, address = addresses[0]
     if family not in (socket.AF_INET, socket.AF_INET6):
-        raise CollectionError("Kaynağın ağ adresi türü desteklenmiyor.")
+        raise CollectionError("Kaynağın ağ adresi türü desteklenmiyor.", code="dns_failed")
     return family, address
 
 
@@ -164,7 +221,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 
 def _request_once(url: str, allowed_hosts: set[str], headers: dict[str, str],
-                  deadline: float, max_bytes: int = MAX_BODY_BYTES, stop_event=None) -> FetchResult:
+                  deadline: float, max_bytes: int = MAX_BODY_BYTES, stop_event=None,
+                  strict_validators=False, strict_representation=False) -> FetchResult:
     parsed = _validate_url(url, allowed_hosts)
     family, address = _resolve_public_host(parsed.hostname, deadline)
     connection = _PinnedHTTPSConnection(parsed.hostname, family, address,
@@ -197,14 +255,27 @@ def _request_once(url: str, allowed_hosts: set[str], headers: dict[str, str],
         connection.request("GET", target, headers=request_headers)
         response_socket.settimeout(min(REQUEST_TIMEOUT, _remaining(deadline)))
         response = connection.getresponse()
-        response_headers = {key.lower(): value for key, value in response.getheaders()}
+        response_headers = {}
+        for key, value in response.getheaders():
+            name = key.lower()
+            if name in {"cache-control", "vary", "x-robots-tag"} and name in response_headers:
+                # Bu alanlar HTTP listeleridir; önceki gizlilik/temsil kuralı kaybolmamalıdır.
+                response_headers[name] += ", " + value
+            elif (strict_representation and name in {"date", "age", "expires", "content-type", "content-encoding", "content-length", "content-language"}
+                    and name in response_headers and response_headers[name] != value):
+                raise CollectionError("Kaynak yanıtında çelişkili temsil başlıkları var.", code="conflicting_headers")
+            elif (strict_validators and name in {"etag", "last-modified"} and name in response_headers
+                    and response_headers[name] != value):
+                raise CollectionError("Kaynak yanıtında çelişkili sürüm doğrulayıcıları var.", code="conflicting_headers")
+            else:
+                response_headers[name] = value
         if response_headers.get("content-encoding", "identity").lower() != "identity":
-            raise CollectionError("Sıkıştırılmış beklenmeyen yanıt güvenlik sınırı nedeniyle okunmadı.")
+            raise CollectionError("Sıkıştırılmış beklenmeyen yanıt güvenlik sınırı nedeniyle okunmadı.", code="unsupported_content_encoding")
         content_length = response_headers.get("content-length")
         expected_size = (int(content_length) if content_length and content_length.isdigit()
                          and response.status not in (204, 304) else None)
         if expected_size is not None and expected_size > max_bytes:
-            raise CollectionError("Kaynak yanıtı boyut sınırını aşıyor.")
+            raise CollectionError("Kaynak yanıtı boyut sınırını aşıyor.", code="body_too_large")
         pieces: list[bytes] = []
         size = 0
         while True:
@@ -218,22 +289,71 @@ def _request_once(url: str, allowed_hosts: set[str], headers: dict[str, str],
                 break
             size += len(piece)
             if size > max_bytes:
-                raise CollectionError("Kaynak yanıtı boyut sınırını aşıyor.")
+                raise CollectionError("Kaynak yanıtı boyut sınırını aşıyor.", code="body_too_large")
             pieces.append(piece)
         _remaining(deadline)
         if expected_size is not None and size != expected_size:
-            raise CollectionError("Kaynak yanıtı tamamlanmadan bağlantı kapandı; eksik içerik kaydedilmedi.")
+            raise CollectionError("Kaynak yanıtı tamamlanmadan bağlantı kapandı; eksik içerik kaydedilmedi.", code="incomplete_body")
         return FetchResult(response.status, b"".join(pieces), response_headers, url)
     except CollectionError:
         raise
     except ssl.SSLCertVerificationError as error:
-        raise CollectionError("Kaynağın TLS sertifika zinciri doğrulanamadı; güvenli bağlantı kurulmadı.") from error
+        raise CollectionError("Kaynağın TLS sertifika zinciri doğrulanamadı; güvenli bağlantı kurulmadı.", code="tls_certificate") from error
     except (OSError, http.client.HTTPException, ValueError) as error:
-        raise CollectionError("Kaynak bağlantısı kurulamadı veya güvenli biçimde tamamlanamadı.") from error
+        raise CollectionError("Kaynak bağlantısı kurulamadı veya güvenli biçimde tamamlanamadı.",
+                              code=_connection_code(error, deadline)) from error
     finally:
         if timeout_timer is not None:
             timeout_timer.cancel()
         connection.close()
+
+
+def _content_signals(text: str) -> tuple[str, ...]:
+    """robots.txt içindeki Content-Signal satırlarını bu ajanın grubuna göre seçer.
+
+    Python'un robotparser'ı bu alanı atar. Grup kuralı robotparser ile aynıdır: ajan adı UA'nın ilk parçasında
+    geçen grup varsa onun satırları, yoksa `*` grubunun satırları; herhangi bir gruptan önce yazılan satırlar herkese
+    uygulanır. Değerler yorumlanmaz, sınırlı uzunlukta döner (yorum kaynak_kullanim'da).
+    """
+    token = USER_AGENT.split("/")[0].lower()
+    groups: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    shared: list[str] = []
+    for raw in text.splitlines()[:5000]:
+        line = raw.split("#", 1)[0].strip()
+        if ":" not in line:
+            continue
+        field, value = (part.strip() for part in line.split(":", 1))
+        field = field.lower()
+        if field == "user-agent":
+            if current is None or current["closed"]:
+                current = {"agents": [], "values": [], "closed": False}
+                groups.append(current)
+            current["agents"].append(value.lower())
+            continue
+        if current is not None:
+            current["closed"] = True
+        if field == "content-signal":
+            (current["values"] if current is not None else shared).append(value[:512])
+    specific = [group for group in groups if any(agent != "*" and agent in token for agent in group["agents"])]
+    chosen = specific or [group for group in groups if "*" in group["agents"]]
+    return tuple((shared + [value for group in chosen for value in group["values"]])[:MAX_CONTENT_SIGNALS])
+
+
+def robots_content_signals(url: str) -> tuple[str, ...] | None:
+    """anonim_belge_oku'nun önbelleğe aldığı robots dosyasındaki Content-Signal değerleri; ağ isteği yapmaz.
+
+    None: bu köken için önbellekte robots kaydı yok. Boş demet: robots okundu ama sinyal yok (404 dahil).
+    """
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    except (TypeError, ValueError):
+        return None
+    with _ROBOTS_LOCK:
+        cached = _ROBOTS_CACHE.get((f"https://{host}", (host,)))
+    if not cached or cached[0] <= time.monotonic():
+        return None
+    return cached[2] if len(cached) > 2 else ()
 
 
 def _robots_allowed(url: str, allowed_hosts: set[str], deadline: float) -> bool:
@@ -245,6 +365,7 @@ def _robots_allowed(url: str, allowed_hosts: set[str], deadline: float) -> bool:
     if cached and cached[0] > time.monotonic():
         rules = cached[1]
     else:
+        signals: tuple[str, ...] = ()
         result = _fetch(origin + "/robots.txt", allowed_hosts, {}, deadline,
                         check_robots=False, max_bytes=250_000)
         if result.status in (404, 410):
@@ -252,12 +373,14 @@ def _robots_allowed(url: str, allowed_hosts: set[str], deadline: float) -> bool:
         elif result.status in (401, 403):
             rules = False
         elif result.status == 200:
+            text = result.body.decode("utf-8", errors="replace")
             rules = urllib.robotparser.RobotFileParser()
-            rules.parse(result.body.decode("utf-8", errors="replace").splitlines())
+            rules.parse(text.splitlines())
+            signals = _content_signals(text)
         else:
-            raise CollectionError(f"Robots erişim kuralı doğrulanamadı (HTTP {result.status}).")
+            raise CollectionError(f"Robots erişim kuralı doğrulanamadı (HTTP {result.status}).", code="unavailable")
         with _ROBOTS_LOCK:
-            _ROBOTS_CACHE[key] = (time.monotonic() + 3600, rules)
+            _ROBOTS_CACHE[key] = (time.monotonic() + 3600, rules, signals)
     if isinstance(rules, bool):
         return rules
     crawl_delay = rules.crawl_delay(USER_AGENT) or rules.crawl_delay("*")
@@ -267,7 +390,7 @@ def _robots_allowed(url: str, allowed_hosts: set[str], deadline: float) -> bool:
         delay = max(delay, request_rate.seconds / request_rate.requests)
     if delay:
         if delay > 5 or delay >= _remaining(deadline):
-            raise CollectionError("Kaynağın robots bekleme şartı pilot sınırını aşıyor; toplama ertelendi.")
+            raise CollectionError("Kaynağın robots bekleme şartı pilot sınırını aşıyor; toplama ertelendi.", code="crawl_delay_exceeds_limit")
         time.sleep(delay)
     return rules.can_fetch(USER_AGENT, url)
 
@@ -519,6 +642,91 @@ def guvenli_sayfa_oku(url: str, source: dict) -> FetchResult:
     if result.status != 200:
         raise CollectionError(f"Makale okunamadı (HTTP {result.status}).")
     return result
+
+
+def kosullu_parametreleri_dogrula(url):
+    """Kaynak hafızasında sürüm ve dil parametrelerini korur; özel sorgu parametrelerini reddeder."""
+    try:
+        pairs = urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query, keep_blank_values=True, strict_parsing=True)
+    except (TypeError, ValueError):
+        raise CollectionError("Kaynak parametreleri geçersiz.") from None
+    if len(pairs) > 4 or len({key for key, _ in pairs}) != len(pairs) or any(
+            key not in {"v", "version", "tag", "lang", "language"}
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", value) for key, value in pairs):
+        raise CollectionError("Kaynak yalnız gözden geçirilmiş sürüm ve dil parametreleri içerebilir.")
+
+
+def kosullu_sayfa_oku(url: str, source: dict, *, etag=None, modified=None, language="en") -> FetchResult:
+    """Seçilmiş tek temsili koşullu okur; yönlendirmeler ve kimlik başlıkları kabul edilmez."""
+    allowed_hosts = set(source.get("item_hosts", [])) & APPROVED_FETCH_HOSTS
+    _validate_url(url, allowed_hosts)
+    kosullu_parametreleri_dogrula(url)
+    if not isinstance(language, str) or not re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?", language):
+        raise CollectionError("Kaynak dili geçersiz.")
+    headers = {"Accept-Language": language}
+    for name, value in (("If-None-Match", etag), ("If-Modified-Since", modified)):
+        if value is not None:
+            if (not isinstance(value, str) or not 1 <= len(value) <= 512
+                    or any(ord(char) < 32 or ord(char) == 127 or ord(char) > 255 for char in value)):
+                raise CollectionError("Kaynak doğrulayıcı başlığı geçersiz.")
+            headers[name] = value
+    deadline = time.monotonic() + SOURCE_TIMEOUT
+    if not _robots_allowed(url, allowed_hosts, deadline):
+        raise CollectionError("Kaynağın robots erişim kuralı bu okumaya izin vermiyor.")
+    # İlk pilotta temsil ve koşullu başlıkların başka sayfaya taşınması önlenir.
+    result = _request_once(url, allowed_hosts, headers, deadline, strict_validators=True)
+    if result.status not in (200, 304):
+        raise CollectionError("Kaynak koşullu kontrolü başarılı olmadı; erişim engeli veya yönlendirme aşılmadı.")
+    if result.status == 304 and not (etag or modified):
+        raise CollectionError("Önceki kaynak doğrulayıcısı olmadan 304 kabul edilemez.")
+    return result
+
+
+def anonim_belge_oku(url: str, request_headers: dict[str, str]) -> FetchResult:
+    """Seçilmiş v2 belgesini sabit anonim başlıklarla, yönlendirmeden güvenli katmanda okur."""
+    required = {"accept", "accept-language", "accept-encoding", "user-agent"}
+    allowed = required | {"if-none-match", "if-modified-since"}
+    if (not isinstance(request_headers, dict) or not required <= set(request_headers) <= allowed
+            or request_headers.get("user-agent") != USER_AGENT
+            or request_headers.get("accept") != "text/html, application/xhtml+xml;q=0.9"
+            or request_headers.get("accept-encoding") != "identity"
+            or not isinstance(request_headers.get("accept-language"), str)
+            or not re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?", request_headers["accept-language"])
+            or any(not isinstance(value, str) or not 1 <= len(value) <= 512
+                   or any(ord(char) < 32 or ord(char) == 127 or ord(char) > 255 for char in value)
+                   for value in request_headers.values())):
+        raise CollectionError("Anonim belge istek başlıkları geçersiz.", code="invalid_request")
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except (TypeError, ValueError):
+        raise CollectionError("Anonim belge adresi geçersiz.", code="invalid_url") from None
+    from radar.kaynak_havuzu import alan_adi_gecerli
+    if not alan_adi_gecerli(host):
+        raise CollectionError("Anonim belge kamusal bir alan adında olmalı.", code="host_not_allowed")
+    token = _REQUEST_FETCH_HOSTS.set(frozenset({host}))
+    try:
+        _validate_url(url, {host})
+        kosullu_parametreleri_dogrula(url)
+        deadline = time.monotonic() + SOURCE_TIMEOUT
+        try:
+            allowed = _robots_allowed(url, {host}, deadline)
+        except CollectionError as error:
+            # Robots okunamadıysa belge okunmaz; neden "robots_" önekiyle belge hatasından ayrılır.
+            raise CollectionError(str(error), code="robots_" + (error.code or "unavailable")) from error
+        if not allowed:
+            raise CollectionError("Kaynağın robots erişim kuralı bu okumaya izin vermiyor.", code="robots_disallowed")
+        # Existing defaults use title case; overriding those exact keys avoids
+        # duplicate wire headers with different spelling.
+        headers = {name.title(): value for name, value in request_headers.items()}
+        result = _request_once(url, {host}, headers, deadline, strict_validators=True, strict_representation=True)
+        if result.status not in (200, 304):
+            raise CollectionError("Anonim belge kontrolü başarısız; yönlendirme veya erişim engeli aşılmadı.",
+                                  code=_status_code(result, url))
+        if result.status == 304 and not ({"if-none-match", "if-modified-since"} & request_headers.keys()):
+            raise CollectionError("Gönderilmiş kaynak doğrulayıcısı olmadan 304 kabul edilemez.", code="unexpected_not_modified")
+        return result
+    finally:
+        _REQUEST_FETCH_HOSTS.reset(token)
 
 
 def kamusal_veri_oku(url, allowed_hosts, *, stop_event=None, deadline=None):

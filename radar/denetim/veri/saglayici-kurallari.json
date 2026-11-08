@@ -1,0 +1,52 @@
+{
+  "surum": "saglayici-kurallari-v3",
+  "aciklama": "Her model aşamasına sırayla uygulanır; ilk eşleşen kural sonucu verir. saglayici: aşamanın provider değeri listesi ya da '*' (hepsi); saglayici_haric: '*' kuralından muaf sağlayıcılar; model_kalibi: model adında ve koşul adresinde (terms_url) aranan düzenli ifade (büyük/küçük harf duyarsız; değer NFKC ile eşitlenir, baştaki ve sondaki boşluk kırpılır; provider 'other' yazılsa da NVIDIA modelini yakalar); erisim_turleri: access_type değerleri, null = alan yok, '*' = hepsi. Ayrıca sağlayıcı ya da model adında Latin dışı harf varsa ret (saglayici.py).",
+  "kurallar": [
+    {
+      "ad": "nvidia_deneme",
+      "saglayici": ["nvidia"],
+      "model_kalibi": "nvidia|nemotron|(?:^|[\\s/:])nv[-_]",
+      "erisim_turleri": ["trial", "unknown", null],
+      "sonuc": "kaldi",
+      "neden": "saglayici.nvidia_deneme",
+      "dayanak": "KD-020 (6 Kasım 2026): NVIDIA deneme çıktısı yayına girmez; K1 taslağı §5: unknown otomatik uygun sayılmaz."
+    },
+    {
+      "ad": "deneme_erisimi",
+      "saglayici": "*",
+      "model_kalibi": null,
+      "erisim_turleri": ["trial"],
+      "sonuc": "kaldi",
+      "neden": "saglayici.deneme_erisimi",
+      "dayanak": "Kabul raporu Y3 (7 Kasım 2026): NVIDIA'nın deneme kataloğu başka firmaların modellerini de (meta/llama, deepseek-ai ...) sunar; deneme erişimi sağlayıcıdan bağımsız ret, KD-020 dışlanamıyor."
+    },
+    {
+      "ad": "bilinmeyen_saglayici",
+      "saglayici": ["unknown"],
+      "model_kalibi": null,
+      "erisim_turleri": "*",
+      "sonuc": "kaldi",
+      "neden": "saglayici.bilinmeyen",
+      "dayanak": "Sağlayıcı bilinmezse NVIDIA deneme çıktısı dışlanamaz (KD-020)."
+    },
+    {
+      "ad": "erisim_turu_bilinmiyor",
+      "saglayici": "*",
+      "saglayici_haric": ["claude"],
+      "model_kalibi": null,
+      "erisim_turleri": ["unknown", null],
+      "sonuc": "kaldi",
+      "neden": "saglayici.erisim_turu_bilinmiyor",
+      "dayanak": "Yönetici kararı Y-1 (7 Kasım 2026; KD-020'nin uygulanması, K1 §5 'unknown otomatik uygun sayılmaz'): erişim türü unknown ya da yoksa claude dışındaki her sağlayıcıda ret (other, codex dahil; NVIDIA kataloğunda meta/llama, openai/gpt-oss gibi modeller var). claude + unknown geçer: Claude NVIDIA kataloğunda yok."
+    },
+    {
+      "ad": "nvidia_ucretli_beyan",
+      "saglayici": ["nvidia"],
+      "model_kalibi": "nvidia|nemotron|(?:^|[\\s/:])nv[-_]",
+      "erisim_turleri": ["non_trial"],
+      "sonuc": "uyari",
+      "neden": "saglayici.nvidia_beyan",
+      "dayanak": "K1 taslağı §5: non_trial tek başına izin değildir; beyan bağımsız hesap doğrulaması değildir."
+    }
+  ]
+}

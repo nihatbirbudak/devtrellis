@@ -1,0 +1,934 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devtrellis.example/schemas/public-record-v4-r2.json",
+  "title": "K1 v4 r2 public responses: record, tombstone, capabilities, contributor submission view",
+  "$comment": "Implemented in branch claude/k1-sunucu-20261107 (radar/katki_v4.py). Every field is server-made; clients never send them. The test tests/test_katki_v4.py compares emitted key sets with this file. quote_match=exact only says the quote occurs verbatim in the gate's visible text of the source on that day; it is not claim truth. Lookup, coverage and error bodies follow r1 lookup-coverage.schema.json, except that lookup `cards[]` items are r2 agent views and the lookup body has a root `freshness` ($defs.lookup_r2); topics shape is $defs.topics.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/record"
+    },
+    {
+      "$ref": "#/$defs/tombstone"
+    },
+    {
+      "$ref": "#/$defs/capabilities"
+    },
+    {
+      "$ref": "#/$defs/submission"
+    },
+    {
+      "$ref": "#/$defs/agent_view"
+    },
+    {
+      "$ref": "#/$defs/topics"
+    },
+    {
+      "$ref": "#/$defs/lookup_r2"
+    }
+  ],
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "id32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "datetime_z": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "record": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-record"
+        },
+        "schema_version": {
+          "const": 4
+        },
+        "contract": {
+          "const": "k1-v4-r2"
+        },
+        "kind": {
+          "enum": [
+            "source_card",
+            "research_report",
+            "topic_summary"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/id32"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "language": {
+          "const": "en"
+        },
+        "content": {
+          "$comment": "Candidate content fields copied verbatim when present: title, summary, short_answer, answers, recommendations, not_covered, applies_to, sources, generated_at. These free-text fields are not tied to any source (see publication.gate.fields_not_tied_to_sources).",
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "title",
+              "summary",
+              "short_answer",
+              "answers",
+              "recommendations",
+              "not_covered",
+              "applies_to",
+              "sources",
+              "generated_at"
+            ]
+          }
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id32"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "claim_type": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "source_statement",
+                      "procedure",
+                      "version_scope",
+                      "measurement",
+                      "interpretation"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "applies_to": {
+                "anyOf": [
+                  {
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidence": {
+                "type": "object",
+                "properties": {
+                  "quote": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "source_url": {
+                    "type": "string",
+                    "pattern": "^https://"
+                  },
+                  "address_key": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/hex64"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "$comment": "K0 address_key(source_url, 'en'); null if K0 rejects the URL."
+                  },
+                  "quote_hash": {
+                    "$ref": "#/$defs/hex64",
+                    "$comment": "SHA-256 of the gate-normalized quote (whitespace runs, typographic quotes and dashes mapped)."
+                  },
+                  "normalization_version": {
+                    "const": "gorunur-metin-bosluk-tirnak-tire-v1"
+                  },
+                  "visible_text_version": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "$comment": "Gate visible-text extractor version, e.g. gorunur-metin-bosluk-tirnak-tire-v3."
+                  },
+                  "checked_on": {
+                    "type": "string",
+                    "format": "date",
+                    "$comment": "Contributor-declared; the server-side check time is quote_match.quote_verified_at."
+                  },
+                  "section_id": {
+                    "type": "null",
+                    "$comment": "Reserved for K0 extract_document binding; null in this slice."
+                  },
+                  "section_hash": {
+                    "type": "null"
+                  },
+                  "supporting_context_hash": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "quote",
+                  "source_url",
+                  "address_key",
+                  "quote_hash",
+                  "normalization_version",
+                  "visible_text_version",
+                  "checked_on",
+                  "section_id",
+                  "section_hash",
+                  "supporting_context_hash"
+                ],
+                "additionalProperties": false
+              },
+              "quote_match": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "exact"
+                  },
+                  "quote_verified_at": {
+                    "$ref": "#/$defs/datetime_z"
+                  }
+                },
+                "required": [
+                  "state",
+                  "quote_verified_at"
+                ],
+                "additionalProperties": false
+              },
+              "claim_review": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "const": "not_reviewed"
+                  },
+                  "reviewed_at": {
+                    "type": "null"
+                  }
+                },
+                "required": [
+                  "state",
+                  "reviewed_at"
+                ],
+                "additionalProperties": false
+              },
+              "evidence_state": {
+                "const": "current"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "claim_type",
+              "applies_to",
+              "evidence",
+              "quote_match",
+              "claim_review",
+              "evidence_state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "$comment": "Copied from the candidate (contributor declaration)."
+        },
+        "rights": {
+          "type": "object",
+          "properties": {
+            "own_text_license": {
+              "enum": [
+                "CC0-1.0",
+                "CC-BY-4.0"
+              ]
+            },
+            "quotes": {
+              "type": "object",
+              "properties": {
+                "basis": {
+                  "const": "source_linked_short_quote"
+                },
+                "max_chars": {
+                  "const": 300
+                }
+              },
+              "required": [
+                "basis",
+                "max_chars"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "own_text_license",
+            "quotes"
+          ],
+          "additionalProperties": false
+        },
+        "publication": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "published"
+            },
+            "path": {
+              "enum": [
+                "machine_gate",
+                "moderator"
+              ]
+            },
+            "policy_version": {
+              "const": "k1-publication-gates-v1"
+            },
+            "published_at": {
+              "$ref": "#/$defs/datetime_z"
+            },
+            "human_reviewed": {
+              "type": "boolean",
+              "$comment": "true only on the moderator path; even then claims are not individually verified."
+            },
+            "gate": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "ran_at": {
+                  "$ref": "#/$defs/datetime_z"
+                },
+                "input_sha256": {
+                  "$ref": "#/$defs/hex64"
+                },
+                "checks_passed": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "fields_not_tied_to_sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "ran_at",
+                "input_sha256",
+                "checks_passed",
+                "warnings",
+                "fields_not_tied_to_sources"
+              ],
+              "additionalProperties": false
+            },
+            "label": {
+              "type": "object",
+              "$comment": "machine_gate: the gate's kanit_etiketi / kanit_etiketi_en verbatim ('İnsan incelemedi; …' / 'Not human-reviewed; …'). moderator: first clause replaced by who published.",
+              "properties": {
+                "tr": {
+                  "type": "string"
+                },
+                "en": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tr",
+                "en"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "path",
+            "policy_version",
+            "published_at",
+            "human_reviewed",
+            "gate",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        "corrections": {
+          "type": "object",
+          "properties": {
+            "open": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "latest_public_version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "public_note": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "open",
+            "latest_public_version",
+            "public_note"
+          ],
+          "additionalProperties": false
+        },
+        "link": {
+          "type": "string",
+          "pattern": "^https?://",
+          "$comment": "{origin}/api/community/v4/records/{id}/v/{version}"
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "contract",
+        "kind",
+        "id",
+        "version",
+        "language",
+        "content",
+        "claims",
+        "provenance",
+        "rights",
+        "publication",
+        "corrections",
+        "link"
+      ],
+      "additionalProperties": false
+    },
+    "tombstone": {
+      "$comment": "HTTP 410 for a record that was public and then withdrawn by the contributor or removed by a moderator. Never-published ids return 404 with no tombstone.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-record-tombstone"
+        },
+        "schema_version": {
+          "const": 4
+        },
+        "contract": {
+          "const": "k1-v4-r2"
+        },
+        "id": {
+          "$ref": "#/$defs/id32"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "withdrawn",
+            "removed"
+          ]
+        },
+        "removed_at": {
+          "$ref": "#/$defs/datetime_z"
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "contract",
+        "id",
+        "version",
+        "state",
+        "removed_at"
+      ],
+      "additionalProperties": false
+    },
+    "capabilities": {
+      "$comment": "GET /api/community/capabilities; 404 when the K1 path is disabled (client falls back explicitly).",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-capabilities"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "contract": {
+          "const": "k1-v4-r2"
+        },
+        "record_schema_version": {
+          "const": 4
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "submissions": {
+          "const": true
+        },
+        "auto_publish": {
+          "type": "boolean",
+          "$comment": "Configured setting (auto_publish in the settings file). The publishing stop switch is not exposed publicly."
+        },
+        "quote_rule": {
+          "const": "gorunur-metin-bosluk-tirnak-tire-v1"
+        },
+        "quote_basis": {
+          "const": "source_linked_short_quote"
+        },
+        "own_text_licenses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lookup": {
+          "type": "boolean",
+          "$comment": "GET /api/community/sources/{address_key}; source cards only."
+        },
+        "coverage": {
+          "type": "boolean",
+          "$comment": "GET /api/community/coverage (r1 lookup-coverage.schema.json coverage shape)."
+        },
+        "source_checks": {
+          "const": false
+        },
+        "does_not_prove_tr": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "topics": {
+          "type": "boolean",
+          "$comment": "GET /api/community/topics (devtrellis-topics v1)."
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "contract",
+        "record_schema_version",
+        "kinds",
+        "submissions",
+        "auto_publish",
+        "quote_rule",
+        "quote_basis",
+        "own_text_licenses",
+        "lookup",
+        "coverage",
+        "topics",
+        "source_checks",
+        "does_not_prove_tr"
+      ],
+      "additionalProperties": false
+    },
+    "submission": {
+      "$comment": "Private contributor view {\"submission\": …} returned with the capability token; never public.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id32"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "retry_wait",
+            "rejected",
+            "unverifiable",
+            "pending_review",
+            "published",
+            "review_rejected",
+            "withdrawn",
+            "removed"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next_attempt_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/datetime_z"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hold_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto_publish_off",
+                "publishing_stopped",
+                "auto_publish_daily_cap"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "enum": [
+                    "yayimlanir",
+                    "reddedilir",
+                    "yayimlanamaz"
+                  ]
+                },
+                "gate_version": {
+                  "type": "string"
+                },
+                "ran_at": {
+                  "$ref": "#/$defs/datetime_z"
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "uncheckable": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "checks": {
+                  "type": "array"
+                }
+              },
+              "required": [
+                "verdict",
+                "gate_version",
+                "ran_at",
+                "reasons",
+                "uncheckable",
+                "warnings"
+              ]
+            }
+          ]
+        },
+        "published_version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/datetime_z"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/datetime_z"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "revision",
+        "attempts",
+        "next_attempt_at",
+        "hold_reason",
+        "note",
+        "gate",
+        "published_version",
+        "link",
+        "created_at",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "agent_view": {
+      "$comment": "GET /api/community/v4/records/{id}/agent (engineering report K3). server = server-made facts; declared = contributor declarations; untrusted = contributor free text, claim texts, quotes and source URLs. server.content_sha256 = canonical SHA-256 of untrusted. /agent.txt renders the same with untrusted JSON between per-response random markers 'BEGIN UNTRUSTED <32 hex>' / 'END UNTRUSTED <32 hex>'.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-agent-view"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "contract": {
+          "const": "k1-v4-r2"
+        },
+        "server": {
+          "type": "object",
+          "required": [
+            "id",
+            "kind",
+            "version",
+            "language",
+            "content_sha256",
+            "published_at",
+            "path",
+            "human_reviewed",
+            "gate_version",
+            "gate_ran_at",
+            "checks_passed",
+            "warnings",
+            "fields_not_tied_to_sources",
+            "label",
+            "quote_rights",
+            "corrections",
+            "link",
+            "quote_matches"
+          ],
+          "additionalProperties": false
+        },
+        "declared": {
+          "type": "object",
+          "required": [
+            "provenance",
+            "generated_at",
+            "own_text_license",
+            "claims"
+          ],
+          "additionalProperties": false
+        },
+        "untrusted": {
+          "type": "object",
+          "required": [
+            "content",
+            "claims"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "contract",
+        "server",
+        "declared",
+        "untrusted"
+      ],
+      "additionalProperties": false
+    },
+    "topics": {
+      "$comment": "GET /api/community/topics. Terms come only from contribution-time applies_to product slugs; never from search queries or reads.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "devtrellis-topics"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "library_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "card": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "version"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "enum": [
+                  "research",
+                  "topic_summary",
+                  "source_card"
+                ]
+              },
+              "products": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "product": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "maxItems": 10,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "product",
+                    "versions"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "terms": {
+                "type": "array",
+                "maxItems": 60,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              }
+            },
+            "required": [
+              "card",
+              "kind",
+              "products",
+              "terms"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "schema_version",
+        "generated_at",
+        "valid_until",
+        "library_revision",
+        "complete",
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "lookup_r2": {
+      "$comment": "GET /api/community/sources/{address_key}. Body = r1 lookup-coverage.schema.json `lookup` plus root `freshness`; cards[] items are r2 agent views ($defs.agent_view). answer_eligible = version/scope/withdrawal eligibility only, independent of freshness; clients show freshness separately (state unknown until K0 source tracking is bound).",
+      "type": "object",
+      "properties": {
+        "freshness": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "enum": [
+                "fresh",
+                "stale",
+                "unknown"
+              ]
+            },
+            "checked_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "checked_at"
+          ],
+          "additionalProperties": false
+        },
+        "cards": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/agent_view"
+          }
+        }
+      },
+      "required": [
+        "freshness"
+      ]
+    }
+  }
+}

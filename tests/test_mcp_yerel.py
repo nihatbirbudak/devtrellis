@@ -38,6 +38,94 @@ class LocalBridgeTests(unittest.TestCase):
         with self.assertRaises((ConnectionError, OSError)):
             self.request(origin, "/api/health")
 
+    def test_standalone_search_opts_into_remote_summary_without_credentials(self):
+        from mcp_topluluk import CommunityClient, contribution_packet
+        from radar.arastirma_ozeti import arama_ozeti
+
+        packet = contribution_packet(title="Public report", summary="Summary with limitations.",
+            body="Long published research body.", sources=[{"title": "Original", "url": "https://example.org/docs"}],
+            model="unknown", provider="unknown", license="CC-BY-4.0")
+        card = {"id": "a" * 32, "status": "published", "version": 1, "published_version": 1,
+                "created_at": packet["created_at"], "updated_at": packet["updated_at"], "packet": packet}
+        calls = []
+
+        def remote(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            self.assertEqual(method, "GET")
+            self.assertEqual(path, "/api/community/cards")
+            self.assertEqual(kwargs["params"], {"query": "Public", "kind": "research", "limit": 3,
+                                                "view": "summary", "search_mode": "ranked"})
+            return arama_ozeti({"items": [card], "total": 1})
+
+        with patch("radar.topluluk_baglantisi.ToplulukBaglantisi.request", side_effect=remote), \
+                patch("radar.topluluk_baglantisi.IsletimSistemiKasasi.get", side_effect=AssertionError("No credentials")):
+            with mcp_yerel.yerel_kopru(self.directory) as origin:
+                result = CommunityClient(origin).search("Public", 3)
+                self.assertEqual(result["view"], "summary")
+                self.assertNotIn("body", result["items"][0]["packet"])
+                self.assertEqual(result["items"][0]["packet"]["sources"], packet["sources"])
+                self.assertEqual(len(calls), 1)
+        self.assert_closed(origin)
+
+    def test_standalone_passes_k1_contract_endpoints_through(self):
+        from mcp_topluluk import CommunityClient
+
+        coverage = {"schema": "devtrellis-coverage", "schema_version": 1, "identity_version": "k0-address-v1",
+                    "library_revision": 3, "generated_at": "2026-11-07T00:00:00Z", "complete": True,
+                    "addresses": [], "tombstones": []}
+        lookup = {"schema": "devtrellis-source-lookup", "schema_version": 1, "address_key": "a" * 64,
+                  "library_revision": 3, "result": "not_found", "answer_eligible": False,
+                  "version_match": "not_applicable", "cards": [], "candidates": [], "origin_fetches": 0,
+                  "model_calls": 0, "tombstone": None, "freshness": {"state": "unknown", "checked_at": None}}
+        seen = []
+
+        def remote(_bridge, path, *, params=None, etag=None):
+            seen.append((path, params, etag))
+            if etag == '"r3"':
+                return 304, None, {"etag": '"r3"'}
+            if path.startswith("/api/community/sources/"):
+                return 404, lookup, {}
+            return 200, coverage, {"etag": '"r3"'}
+
+        with patch("radar.topluluk_baglantisi.ToplulukBaglantisi.sozlesme_oku", autospec=True, side_effect=remote):
+            with mcp_yerel.yerel_kopru(self.directory) as origin:
+                client = CommunityClient(origin)
+                status, body, etag = client.contract_get("/api/platform/community/coverage")
+                self.assertEqual((status, body["library_revision"], etag), (200, 3, '"r3"'))
+                self.assertEqual(client.contract_get("/api/platform/community/coverage", etag='"r3"')[0], 304)
+                status, body, _ = client.contract_get("/api/platform/community/sources/" + "a" * 64, {"product": "widget"})
+                self.assertEqual((status, body["result"]), (404, "not_found"))
+                self.assertEqual(seen[-1], ("/api/community/sources/" + "a" * 64, {"product": "widget"}, None))
+                self.assertEqual(self.request(origin, "/api/platform/community/sources/not-a-key")[0], 400)
+                self.assertEqual({k.lower(): v for k, v in self.response_headers.items()}.get("cache-control"), "no-store")
+        self.assert_closed(origin)
+
+    def test_standalone_exact_report_read_sends_only_one_remote_get(self):
+        from mcp_topluluk import CommunityClient, contribution_packet
+
+        packet = contribution_packet(title="Versioned public report", summary="A public summary.",
+            body="Full body of the requested revision.", sources=[{"title": "Original", "url": "https://example.org/docs"}],
+            model="unknown", provider="unknown", license="CC-BY-4.0")
+        card = {"id": "b" * 32, "status": "published", "version": 2, "published_version": 2,
+                "created_at": packet["created_at"], "updated_at": packet["updated_at"], "packet": packet}
+        calls = []
+
+        def remote(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            self.assertEqual((method, path), ("GET", "/api/community/cards/" + card["id"]))
+            self.assertEqual(kwargs.get("params"), {"version": 2})
+            return card
+
+        with patch("radar.topluluk_baglantisi.ToplulukBaglantisi.request", side_effect=remote), \
+                patch("radar.topluluk_baglantisi.IsletimSistemiKasasi.get", side_effect=AssertionError("No credentials")):
+            with mcp_yerel.yerel_kopru(self.directory) as origin:
+                result = CommunityClient(origin).read(card["id"], 2)
+                self.assertEqual(result["packet"]["body"], packet["body"])
+                self.assertEqual(result["version"], 2)
+                self.assertNotIn("access_counted", result)
+                self.assertEqual(len(calls), 1)
+        self.assert_closed(origin)
+
     def test_real_lifecycle_no_egress_no_models_no_background_workers(self):
         instances = []
         real_app = mcp_yerel._application
@@ -67,9 +155,11 @@ class LocalBridgeTests(unittest.TestCase):
                 self.assertFalse(json.loads(body)["manual_ai"])
                 status, body = self.request(origin, "/api/platform/community/session")
                 self.assertEqual(status, 200)
-                self.assertEqual(set(json.loads(body)), {"csrf_token", "destination"})
+                self.assertEqual(set(json.loads(body)), {"csrf_token", "destination", "search_views", "search_modes", "source_memory"})
+                self.assertEqual(json.loads(body)["search_views"], ["full", "summary"])
                 self.assertEqual(self.request(origin, "/static/contribution-review.html")[0], 200)
-                for path in ("/static/contribution-submissions.html", "/static/contribution-submissions.js"):
+                for path in ("/static/contribution-submissions.html", "/static/contribution-submissions.js",
+                             "/static/confirm-dialog.js", "/static/confirm-dialog.css"):
                     self.assertEqual(self.request(origin, path)[0], 200)
                 self.assertEqual(json.loads(self.request(origin, "/api/platform/community/submissions")[1])["items"], [])
                 for path in ("/", "/api/providers", "/api/state", "/api/platform", "/api/research-requests",

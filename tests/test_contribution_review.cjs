@@ -128,3 +128,32 @@ test("yerel ve MCP önizleme araştırmanın tam kaynak sürümünü ve eklenen 
     assert.ok(app.fixture.requests.every(row=>!row.options.method));assert.ok(app.fixture.messages.every(row=>row.message.method!=="tools/call"));
   }
 });
+
+test("NVIDIA deneme uyarısı iki dilde yerel ve MCP önizlemede görünür; karar veya paket üretmez",async()=>{
+  for(const surface of ["local","mcp"])for(const language of ["en","tr"]){
+    const app=harness({surface,language});app.fixture.data.packet.provenance.provider="nvidia";
+    const original=copy(app.fixture.data.packet);
+    if(surface==="mcp"){app.initialize();app.deliver();}else await app.ready();
+    const warning=app.byId("review-nvidia-notice");assert.ok(warning);
+    assert.match(warning.textContent,language==="tr"?/NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz/:/does not publish output generated through NVIDIA API trial access/);
+    assert.match(warning.textContent,language==="tr"?/tek başına göstermez/:/alone does not establish the access type/);
+    assert.match(warning.textContent,language==="tr"?/kişisel araştırmanı yerelde sürdürebilirsin/:/continue personal research locally/);
+    assert.match(warning.textContent,language==="tr"?/Farklı bir NVIDIA erişimin/:/different form of NVIDIA access/);
+    assert.ok(app.root.children.indexOf(warning)<app.root.children.findIndex(node=>node.tagName==="H2"));
+    assert.deepEqual(app.fixture.data.packet,original);
+    assert.equal(app.byId("review-public").checked,false);assert.equal(app.byId("review-license").checked,false);assert.equal(app.byId("review-send").disabled,true);
+    assert.ok(app.fixture.requests.every(row=>!row.options.method));assert.ok(app.fixture.messages.every(row=>row.message.method!=="tools/call"));
+    const other=language==="tr"?"en":"tr";app.byId("review-language").value=other;await app.byId("review-language").dispatch("change");
+    assert.match(app.byId("review-nvidia-notice").textContent,other==="tr"?/Deneme çıktısını yerelde tut/:/Keep trial output local/);
+  }
+});
+
+test("sağlayıcısı NVIDIA olmayan veya kaydedilmemiş katkıya NVIDIA erişim türü atfedilmez",async()=>{
+  for(const surface of ["local","mcp"])for(const provider of [undefined,"codex","claude"]){
+    const app=harness({surface});if(provider)app.fixture.data.packet.provenance.provider=provider;
+    app.fixture.data.packet.provenance.model="nvidia/model-name-is-not-access-evidence";
+    if(surface==="mcp"){app.initialize();app.deliver();}else await app.ready();
+    assert.equal(app.byId("review-nvidia-notice"),undefined);
+    assert.ok(app.fixture.requests.every(row=>!row.options.method));assert.ok(app.fixture.messages.every(row=>row.message.method!=="tools/call"));
+  }
+});

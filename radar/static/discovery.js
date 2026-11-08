@@ -6,7 +6,7 @@
   const locale = UI?.language === "en" ? "en-US" : "tr-TR";
   window.UFUKDiscoveryFactory = function (context) {
     const {element, state, topics, post, toast, formatDate, refreshAfterMutation, changeView} = context;
-    let dialog = null, posting = false, requestKey = null;
+    let dialog = null, posting = false, confirming = false, requestKey = null;
     const emptyDraft = topic => ({question: "", need: "", topic: topic || Object.keys(topics)[0] || "ai", source_url: "", claim_text: "", context_text: ""});
     let draft = emptyDraft();
     const library = window.DevTrellisLibraryFactory?.({element, request: context.request, post, sourceLink: context.sourceLink, formatDate, toast});
@@ -16,10 +16,23 @@
       const node = element("button", `button button-${primary ? "primary" : "secondary"}`, text);
       node.type = "button"; node.addEventListener("click", action); return node;
     }
-    function open(opener, prefill = null) {
-      if (dialog || posting || !state.data) return;
+    // Gömülü tarayıcılar window.confirm'i sessizce "hayır" sayabilir; taslak bırakma sayfa içi pencereyle sorulur.
+    async function confirmReplaceDraft(returnFocus, report) {
+      const api = globalThis.DevTrellisConfirm || globalThis.window?.DevTrellisConfirm;
+      if (!api?.ask) { report(t("Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.")); return false; }
+      confirming = true;
+      try {
+        return await api.ask({message: t("Mevcut araştırma taslağını bırakıp bu araştırmanın bilgileriyle yeni bir taslak açmak istiyor musun?"),
+          confirmLabel: t("Yeni taslak aç"), tone: "danger", returnFocus});
+      } finally { confirming = false; }
+    }
+    async function open(opener, prefill = null) {
+      if (dialog || posting || confirming || !state.data) return;
       if (prefill) {
-        if (hasDraft() && !window.confirm?.(t("Mevcut araştırma taslağını bırakıp bu araştırmanın bilgileriyle yeni bir taslak açmak istiyor musun?"))) return;
+        if (hasDraft()) {
+          const confirmed = await confirmReplaceDraft(opener, text => toast(text, true));
+          if (!confirmed || dialog || posting || !state.data) return;
+        }
         draft = {...emptyDraft(prefill.topic), ...Object.fromEntries(["question", "need", "source_url", "claim_text", "context_text"].map(key => [key, typeof prefill[key] === "string" ? prefill[key] : ""]))};
         requestKey = null;
       }
@@ -30,9 +43,16 @@
       const bar = element("div", "reader-toolbar"), heading = element("h2", "", t("Bir konuyu araştır")); heading.id = "discovery-heading";
       bar.append(heading, button(t("Kapat"), () => { if (!posting) panel.close(); }));
       const form = element("form", "discovery-form");
-      const communitySearch = library?.searchBox({initialQuery: draft.question, onResearch: seed => {
-        if (hasDraft() && !window.confirm?.(t("Mevcut araştırma taslağını bırakıp bu araştırmanın bilgileriyle yeni bir taslak açmak istiyor musun?"))) return;
-        draft = emptyDraft(draft.topic); panel.close(); open(returnTo, seed);
+      const communitySearch = library?.searchBox({initialQuery: draft.question, onResearch: async seed => {
+        if (confirming) return;
+        if (hasDraft()) {
+          const confirmed = await confirmReplaceDraft(undefined, text => { error.textContent = text; error.hidden = false; });
+          if (!confirmed || dialog !== panel || posting) return;
+        }
+        // Tarayıcı close olayını sonraki görevde gönderir; yeni pencere eskisi gerçekten kapandıktan sonra açılır.
+        draft = emptyDraft(draft.topic);
+        panel.addEventListener("close", () => { open(returnTo, seed); }, {once: true});
+        panel.close();
       }});
       if (communitySearch) form.append(communitySearch);
       form.append(element("p", "workspace-help", t("Sorunu yaz. UFUK ilgili yayınları bulup bir derin araştırma hazırlasın. Geliştirme kararını rapordan sonra verirsin.")));
@@ -152,6 +172,6 @@
     });
     return {open, renderRequests, renderDiscovery, start: startDiscovery, communityIntent: (id, opener) => library?.intent(id, seed => open(opener, seed), opener), entry: () => {
       const control = button(t("Bir konu araştır"), event => open(event.currentTarget)); control.classList.add("discovery-entry"); return control;
-    }, busy: () => Boolean(dialog || posting || library?.busy())};
+    }, busy: () => Boolean(dialog || posting || confirming || library?.busy())};
   };
 })();

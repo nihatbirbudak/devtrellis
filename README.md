@@ -77,6 +77,9 @@ Access, limits and charges are your responsibility. Requests send selected conte
 
 Save a card, choose its content permission and preview all fields before exporting. Research needs a source link; projects need a public project link. Importing previews before saving. Uploading to a community installation is a separate explicit action.
 
+The optional K1 v4 contribution path (machine gate, moderation queue, stop switch) is disabled by default; see
+[docs/community-k1.md](docs/community-k1.md).
+
 Software is **MIT licensed**, including commercial use. Authors independently choose **CC BY 4.0** or **CC0 1.0** for their own card text. These permissions do not change linked software licenses or source article rights. Link to publications and write your own summary. Account identity, author claims, model output and factual verification are distinct.
 
 ## Development
@@ -87,3 +90,5 @@ node --test tests/*.cjs
 ```
 
 Tests use temporary data and fake providers unless documented otherwise; live probes are excluded from release archives. GitHub Actions runs the standard Python and JavaScript suites on Ubuntu and Windows with Python 3.12 and Node.js 22. Optional real Windows launcher tests remain a separate local acceptance step. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [PLATFORM.md](PLATFORM.md), and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+The optional [on-demand source memory pilot](SOURCE-MEMORY.md) is disabled by default and uses a separate database. It introduces no periodic crawler or automatic model calls.

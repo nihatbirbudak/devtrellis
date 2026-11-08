@@ -25,6 +25,10 @@
     }
     function packetView(packet) {
       const box = element("div", "share-packet-view");
+      if (packet.provenance?.provider === "nvidia") {
+        const notice = element("p", "notice share-disclosure", t("DevTrellis, NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz. Deneme çıktısını yerelde tut; kişisel araştırmanı yerelde sürdürebilirsin. NVIDIA sağlayıcı adı, erişimin deneme türünde olduğunu tek başına göstermez. Farklı bir NVIDIA erişimin varsa paylaşım koşullarını ayrıca kontrol et."));
+        notice.id = "direct-share-nvidia-notice"; box.append(notice);
+      }
       box.append(element("h3", "", packet.title), element("p", "share-summary", packet.summary), element("p", "share-report-text", packet.body || ""));
       const facts = element("dl", "share-facts");
       for (const [key, value] of [[t("Yazar"), packet.author], [t("Metin izni"), packet.license], [t("Güncellendi"), formatDate(packet.updated_at, true)], ...(UI?.provenanceFacts?.(packet.provenance || {model: "unknown", generated_at: null}, t, value => formatDate(value, true)) || [])]) facts.append(element("dt", "", key), element("dd", "", value || t("Belirtilmedi")));

@@ -71,17 +71,32 @@ _TANIMLAR = {
         constraints=["Özel veri kümeleri araştırmaya gönderilmez.", "Veri geçişi ve üretim değişikliği ayrıca onaylanır."]),
 }
 
+# Public input aliases do not add scheduler topics or change persisted identifiers.
+KONU_TAKMA_ADLARI = {
+    "home_automation": "jarvis", "robotics": "robotik",
+    "agriculture": "tarim", "media": "medya",
+}
+_ACIK_KIMLIKLER = {canonical: alias for alias, canonical in KONU_TAKMA_ADLARI.items()}
 KONULAR = tuple(_TANIMLAR)
 ESKI_KONULAR = frozenset(identifier for identifier, value in _TANIMLAR.items() if value["legacy"])
 
 
+def konu_kimligi(identifier):
+    """Bilinen kamu takma adını kalıcı kimliğe çevirir; diğer girdileri doğrulayıcıya bırakır."""
+    return KONU_TAKMA_ADLARI.get(identifier, identifier) if isinstance(identifier, str) else identifier
+
+
 def konu(identifier):
     """Konu tanımının bağımsız kopyasını verir; bilinmeyen kimliği sessizce değiştirmez."""
+    identifier = konu_kimligi(identifier)
     return {"id": identifier, **copy.deepcopy(_TANIMLAR[identifier])}
 
 
 def konulari_listele():
-    return [{"id": identifier, "label_tr": value["label_tr"], "label_en": value["label_en"]}
+    """Her konu bir kez listelenir; eski istemcinin id alanı ve kayıtları korunur."""
+    return [{"id": identifier, "public_id": _ACIK_KIMLIKLER.get(identifier, identifier),
+             "aliases": [_ACIK_KIMLIKLER[identifier]] if identifier in _ACIK_KIMLIKLER else [],
+             "label_tr": value["label_tr"], "label_en": value["label_en"]}
             for identifier, value in _TANIMLAR.items()]
 
 

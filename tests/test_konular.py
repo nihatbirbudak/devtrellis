@@ -120,7 +120,7 @@ class KonuTestleri(unittest.TestCase):
         self.assertEqual(ESKI_KONULAR, {"ai", "jarvis", "robotik", "tarim", "medya"})
         self.assertEqual(set(KONULAR) - ESKI_KONULAR, {"software", "security", "data"})
         self.assertEqual({value["id"] for value in konulari_listele()}, set(KONULAR))
-        self.assertTrue(all(set(value) == {"id", "label_tr", "label_en"} for value in konulari_listele()))
+        self.assertTrue(all(set(value) == {"id", "public_id", "aliases", "label_tr", "label_en"} for value in konulari_listele()))
         self.assertEqual({value["topic"] for value in profiller()}, set(KONULAR))
         self.assertEqual({value["topic"] for value in kesif_kaynaklari()}, set(KONULAR))
         from radar.arastirma_icerigi import profil_dogrula

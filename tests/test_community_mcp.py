@@ -7,6 +7,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from mcp_topluluk import CommunityClient, contribution_packet, create_server, local_address
 from radar.gelistirici_alani import paket_dogrula
@@ -39,11 +40,19 @@ class LocalApiHandler(BaseHTTPRequestHandler):
             status, result, content_type = self.server.failure
         elif self.path == "/api/platform/community/session":
             result = {"csrf_token": "a" * 64, "destination": "https://devtrellis.org"}
+            if self.server.summary_support:
+                result["search_views"] = ["full", "summary"]
+            if self.server.ranked_support:
+                result["search_modes"] = ["all", "ranked"]
         elif self.path.endswith("/search"):
-            result = {"items": [{"id": "research-1", "packet": {"title": "Existing report"}}],
-                      "total": 1, "destination": "https://devtrellis.org"}
-        elif self.path.endswith("/cards/research-1") or self.path.endswith("/cards/research-1/read"):
-            result = {"packet": contribution_packet(**report()), "id": "research-1"}
+            result = {"items": [{"id": "research-1", "version": 3, "status": "published",
+                      "packet": contribution_packet(**report()), "updated_at": "2026-11-05T09:00:00+00:00",
+                      "engagement": {"needs_update": 2, "disputed": 1},
+                      "relationships": {"parents": [], "children": [], "children_total": 0}}],
+                      "total": 1, "limit": payload["limit"], "offset": 0,
+                      "library": {"published_research_total": 11}, "destination": "https://devtrellis.org"}
+        elif urlsplit(self.path).path.endswith("/cards/research-1") or self.path.endswith("/cards/research-1/read"):
+            result = {"packet": contribution_packet(**report()), "id": "research-1", "version": 3}
         elif self.path.endswith("/cards/research-1/use"):
             result = {"duplicate": False, "engagement": {"used_in_research": 1}}
         elif self.path.endswith("/preview"):
@@ -89,6 +98,8 @@ class CommunityMcpTests(unittest.TestCase):
     def setUp(self):
         self.server.calls.clear()
         self.server.failure = None
+        self.server.summary_support = True
+        self.server.ranked_support = True
         self.client = CommunityClient(self.origin)
 
     def test_only_explicit_loopback_urls(self):
@@ -110,9 +121,125 @@ class CommunityMcpTests(unittest.TestCase):
         _, headers, payload = self.server.calls[-1]
         self.assertEqual(headers["X-Radar-CSRF"], "a" * 64)
         self.assertEqual(headers["Origin"], self.origin)
-        self.assertEqual(payload, {"query": "evidence", "limit": 3})
+        self.assertEqual(payload, {"query": "evidence", "limit": 3, "view": "summary", "search_mode": "ranked"})
         with self.assertRaises(ValueError):
             self.client.request("/api/platform")
+
+    def test_search_uses_old_local_request_when_summary_is_not_advertised(self):
+        self.server.summary_support = False
+        self.server.ranked_support = False
+        result = self.client.search("evidence", 3)
+        self.assertEqual(self.server.calls[-1][2], {"query": "evidence", "limit": 3})
+        self.assertEqual(len(self.server.calls), 2)
+        self.assertEqual(result["view"], "summary")
+        self.assertNotIn("body", result["items"][0]["packet"])
+
+    def test_summary_only_local_version_does_not_receive_ranked_option(self):
+        self.server.ranked_support = False
+        result = self.client.search("evidence")
+        self.assertEqual(self.server.calls[-1][2], {"query": "evidence", "limit": 3, "view": "summary"})
+        self.assertEqual(result["search"], {"mode": "all", "fallback": True})
+
+    def test_search_omits_body_but_keeps_evidence_and_full_version_read(self):
+        result = self.client.search("evidence", 3)
+        card = result["items"][0]
+        self.assertEqual(result["view"], "summary")
+        self.assertNotIn("body", card["packet"])
+        self.assertNotIn(report()["body"], json.dumps(result))
+        self.assertEqual((card["id"], card["version"], card["status"]), ("research-1", 3, "published"))
+        for field in ("title", "summary", "sources", "license"):
+            self.assertEqual(card["packet"][field], report()[field])
+        self.assertEqual(card["packet"]["provenance"]["evidence_status"], "unverified")
+        self.assertIsNone(card["packet"]["provenance"]["generated_at"])
+        self.assertEqual(card["packet"]["provenance"]["model"], "unknown")
+        self.assertIn("created_at", card["packet"])
+        self.assertIn("updated_at", card["packet"])
+        self.assertEqual(card["updated_at"], "2026-11-05T09:00:00+00:00")
+        self.assertEqual(card["engagement"], {"needs_update": 2, "disputed": 1})
+        self.assertEqual(card["relationships"]["children_total"], 0)
+        self.assertEqual(result["library"], {"published_research_total": 11})
+        self.assertEqual(result["destination"], "https://devtrellis.org")
+        full = self.client.read(card["id"], card["version"])
+        self.assertEqual(full["packet"]["body"], report()["body"])
+        self.assertEqual(full["version"], card["version"])
+        self.assertEqual(self.server.calls[-1][0], "/api/platform/community/cards/research-1?version=3")
+        self.assertIsNone(self.server.calls[-1][2])
+
+    def test_brief_preserves_limits_without_export_or_popularity(self):
+        result = self.client.search("evidence", view="brief")
+        self.assertEqual(result["view"], "brief")
+        self.assertFalse(result["exportable"])
+        card = result["items"][0]
+        self.assertNotIn("body", card["packet"])
+        self.assertNotIn("schema", card["packet"])
+        self.assertEqual(card["packet"]["sources"], report()["sources"])
+        self.assertEqual(card["engagement"], {"needs_update": 2, "disputed": 1})
+        self.assertEqual(len(self.server.calls), 2)
+
+    def test_partial_read_is_exact_and_does_not_generate_or_send_events(self):
+        identifier = "a" * 32
+        body = "# Result\nFirst finding.\n\n## Limits\nNot measured.\n"
+        card = {"id": identifier, "version": 3, "packet": contribution_packet(**report(body=body))}
+        with patch.object(self.client, "request", return_value=card) as request:
+            outline = self.client.read(identifier, 3, view="outline")
+            request.assert_called_once_with("/api/platform/community/cards/" + identifier, version=3)
+        self.assertNotIn("body", outline["packet"])
+        self.assertFalse(outline["complete_report"])
+        with patch.object(self.client, "request", return_value=card) as request:
+            part = self.client.read(identifier, 3, view="section", section_id=outline["sections"][1]["section_id"])
+            self.assertEqual(request.call_count, 1)
+        self.assertEqual(part["excerpt"]["text"], "## Limits\nNot measured.")
+        self.assertEqual(part["packet"]["sources"], card["packet"]["sources"])
+        self.assertEqual(card["packet"]["body"], body.strip())
+        with patch.object(self.client, "request", return_value={**card, "version": 4}):
+            with self.assertRaisesRegex(ValueError, "snapshot"):
+                self.client.read(identifier, 3, view="outline")
+
+    def test_partial_invalid_requests_fail_before_network(self):
+        for version, view, section in [(None, "outline", None), (3, "wrong", None),
+                                       (3, "full", "section-" + "a" * 64), (3, "section", "../private"),
+                                       (None, "section", "section-" + "a" * 64)]:
+            with self.subTest(view=view), self.assertRaises(ValueError):
+                self.client.read("a" * 32, version, view=view, section_id=section)
+        self.assertEqual(self.server.calls, [])
+
+    def test_read_is_one_get_without_session_or_counter_write(self):
+        for version, suffix in [(None, ""), (3, "?version=3"), (9223372036854775807, "?version=9223372036854775807")]:
+            with self.subTest(version=version):
+                self.server.calls.clear()
+                self.client.read("research-1", version)
+                self.assertEqual(len(self.server.calls), 1)
+                path, headers, payload = self.server.calls[0]
+                self.assertEqual(path, "/api/platform/community/cards/research-1" + suffix)
+                self.assertIsNone(payload)
+                self.assertNotIn("X-Radar-CSRF", headers)
+
+    def test_version_query_cannot_expand_the_local_request_boundary(self):
+        for version in [True, False, 0, -1, 9223372036854775808, 1.5, "3", "3&private=true"]:
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                self.client.read("research-1", version)
+        for path, payload in [("/api/platform/community/search", None),
+                              ("/api/platform/community/cards/research-1/read", None),
+                              ("/api/platform/community/cards/research-1?extra=1", None),
+                              ("/api/platform/community/cards/research-1", {})]:
+            with self.subTest(path=path, payload=payload), self.assertRaises(ValueError):
+                self.client.request(path, payload, version=3)
+        self.assertEqual(self.server.calls, [])
+
+    def test_search_does_not_modify_source_cards_and_handles_empty_results(self):
+        original = {"items": [{"id": "research-1", "packet": contribution_packet(**report())}], "total": 1}
+        before = json.dumps(original, sort_keys=True)
+        with patch.object(self.client, "request", return_value=original):
+            result = self.client.search("evidence")
+        self.assertEqual(json.dumps(original, sort_keys=True), before)
+        self.assertIsNot(result["items"][0]["packet"], original["items"][0]["packet"])
+        with patch.object(self.client, "request", return_value={"items": [], "total": 0}):
+            self.assertEqual(self.client.search("missing"), {"items": [], "total": 0, "view": "summary",
+                                                             "search": {"mode": "all", "fallback": True}})
+        for invalid in ({}, {"items": [None]}, {"items": [{"packet": None}]}):
+            with self.subTest(invalid=invalid), patch.object(self.client, "request", return_value=invalid):
+                with self.assertRaisesRegex(ValueError, "geçersiz"):
+                    self.client.search("evidence")
 
     def test_read_accepts_ids_and_rejects_paths_or_urls(self):
         self.assertEqual(self.client.read("research-1")["packet"]["provenance"]["model"], "unknown")
@@ -212,7 +339,7 @@ class CommunityMcpTests(unittest.TestCase):
             async with Client(create_server(client=self.client), raise_exceptions=True) as session:
                 listing = await session.list_tools()
                 tools = {tool.name: tool for tool in listing.tools}
-                self.assertEqual(set(tools), {"search_research", "read_research", "record_research_use", "open_submission_history", "preview_contribution", "contribution_decision"})
+                self.assertEqual(set(tools), {"lookup_source", "search_research", "read_research", "record_research_use", "open_submission_history", "preview_contribution", "contribution_decision"})
                 self.assertEqual(tools["contribution_decision"].meta["ui"]["visibility"], ["app"])
                 self.assertNotIn("author", tools["preview_contribution"].input_schema["properties"])
                 self.assertNotIn("question", tools["preview_contribution"].input_schema["properties"])
@@ -226,9 +353,21 @@ class CommunityMcpTests(unittest.TestCase):
                 self.assertTrue(invalid.is_error)
                 self.assertEqual(len(self.server.calls), before)
                 self.assertTrue(tools["search_research"].annotations.read_only_hint)
-                search = await session.call_tool("search_research", {"query": "evidence"})
+                self.assertTrue(tools["read_research"].annotations.read_only_hint)
+                self.assertFalse(tools["record_research_use"].annotations.read_only_hint)
+                self.assertIn("report_url", tools["search_research"].description)
+                self.assertIn("report_url", tools["read_research"].description)
+                self.assertEqual(tools["search_research"].input_schema["properties"]["limit"]["default"], 3)
+                search = await session.call_tool("search_research", {"query": "evidence", "view": "brief"})
                 self.assertFalse(search.is_error)
                 self.assertEqual(search.structured_content["total"], 1)
+                self.assertEqual(search.structured_content["view"], "brief")
+                self.assertNotIn("body", search.structured_content["items"][0]["packet"])
+                self.assertNotIn(report()["body"], str(search.content))
+                full = await session.call_tool("read_research", {"research_id": "research-1", "version": 3})
+                self.assertFalse(full.is_error)
+                self.assertEqual(full.structured_content["packet"]["body"], report()["body"])
+                self.assertEqual(full.structured_content["version"], 3)
                 preview = await session.call_tool("preview_contribution", report())
                 self.assertFalse(preview.is_error)
                 self.assertEqual(preview.structured_content["packet"]["body"], report()["body"])

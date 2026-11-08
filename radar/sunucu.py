@@ -1,18 +1,19 @@
 """Gazeteyi ve yerel kullanıcı seçimlerini yalnız aynı bilgisayarda sunar."""
 
+import hashlib
 import json
 import secrets
 import sqlite3
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from math import ceil
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from radar.baslangic import kartlari_ekle
 from radar.bakim import Bakim
@@ -32,13 +33,13 @@ from radar.kesif import Kesif, KesifMesgul
 from radar.arastirma_talepleri import ArastirmaTalepleri
 from radar.platform_api import router_olustur
 from radar.marka import PRODUCT_NAME, VERSION
-from radar.konular import KONULAR, konulari_listele
+from radar.konular import KONULAR, konu_kimligi, konulari_listele
 from radar.kaynak_ogrenme import KaynakOgrenme, KaynakOgrenmeCatismasi
 from radar.kaynak_arastirmacisi import (KaynakArastirmacisi, KaynakArastirmaciMesgul,
                                       KaynakArastirmaciSiniri, KaynakAdayCatismasi)
 
 ROOT = Path(__file__).resolve().parent
-Konu = Literal[*KONULAR]
+Konu = Annotated[Literal[*KONULAR], BeforeValidator(konu_kimligi)]
 
 
 class Tercih(BaseModel):
@@ -105,7 +106,7 @@ class KoleksiyonUyeleri(SurumluSecim):
 class KayitliArama(Secim):
     name: str = Field(min_length=1, max_length=60)
     query: str = Field(default="", max_length=200)
-    topic: str | None = Field(default=None, max_length=20)
+    topic: Annotated[str, BeforeValidator(konu_kimligi)] | None = Field(default=None, max_length=20)
     source_id: str | None = Field(default=None, max_length=64)
     collection_id: str | None = Field(default=None, max_length=128)
     read_status: Literal["all", "read", "unread"] = "all"
@@ -329,8 +330,26 @@ def uygulama(db_path=None, sources=None, seed=True, collector=None, port=8781, a
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self'; style-src 'self'; "
             "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
-        response.headers["Cache-Control"] = "no-store"
-        return response
+        # Mühendislik raporu H8/G24: yalnız kimliksiz ve kişisel veri taşımayan okuma uçları (rehber, konu listesi, durağan
+        # dosyalar) yeniden doğrulamayla önbelleğe alınabilir; durum, kayıt ve dışa aktarım uçları no-store kalır.
+        public_read = request.method in {"GET", "HEAD"} and (
+            (request.url.path in {"/guide", "/api/topics"} and response.status_code == 200) or
+            (request.url.path.startswith("/static/") and response.status_code in {200, 304}))
+        if not public_read:
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+        if request.url.path.startswith("/static/"):
+            return response  # StaticFiles kendi güçlü ETag'ini ve 304 yanıtını üretir.
+        body = b"".join([chunk async for chunk in response.body_iterator])
+        etag = '"' + hashlib.sha256(body).hexdigest() + '"'
+        headers = {key: value for key, value in response.headers.items() if key != "content-length"}
+        headers["ETag"] = etag
+        supplied = [value.strip() for value in request.headers.get("if-none-match", "").split(",")]
+        if "*" in supplied or etag in supplied:
+            headers.pop("content-type", None)
+            return Response(status_code=304, headers=headers)
+        return Response(content=b"" if request.method == "HEAD" else body, status_code=200, headers=headers)
 
     @app.get("/")
     def home():

@@ -12,6 +12,8 @@
   <script src="/static/ui-text.js" defer></script>
   <link rel="stylesheet" href="/static/community-share.css">
   <script src="/static/community-share.js" defer></script>
+  <link rel="stylesheet" href="/static/confirm-dialog.css">
+  <script src="/static/confirm-dialog.js" defer></script>
   <script src="/static/platform.js" defer></script>
 </head>
 <body>
@@ -117,6 +119,7 @@
         <p class="notice">NVIDIA ve Codex yalnız uygulamanın sağladığı kaynak metinlerini analiz eder; model kendi web aramasını yapmaz veya video izlemez. Claude sınırlı web araştırması kullanabilir.</p>
         <section id="provider-nvidia-help" class="provider-start" hidden>
           <h3>NVIDIA ile başla</h3>
+          <p id="provider-nvidia-publication-notice" class="notice">DevTrellis, NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz. Deneme çıktısını yerelde tut; kişisel araştırmanı yerelde sürdürebilirsin. NVIDIA sağlayıcı adı, erişimin deneme türünde olduğunu tek başına göstermez. Farklı bir NVIDIA erişimin varsa paylaşım koşullarını ayrıca kontrol et.</p>
           <ol><li>NVIDIA Build hesabını aç ve Get API Key adımını izle.</li><li>Anahtarını kurulum rehberindeki ortam değişkeni veya kimlik deposu adımıyla kendi bilgisayarına tanıt.</li><li>NVIDIA API seçimini kaydet; erişim ilk araştırma çağrısında sınanır.</li></ol>
           <p><a href="https://build.nvidia.com/explore" target="_blank" rel="noopener noreferrer">NVIDIA Build · Get API Key ↗</a> · <a href="https://docs.api.nvidia.com/nim/docs/api-quickstart" target="_blank" rel="noopener noreferrer">Resmî başlangıç rehberi ↗</a></p>
           <p class="field-help">Ücretsiz deneme/prototip erişimi; kota ve yayın/üretim kullanımı NVIDIA koşullarına bağlı.</p>

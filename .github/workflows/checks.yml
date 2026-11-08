@@ -66,4 +66,4 @@ jobs:
       - name: Check SDK and protocol
         run: |
           python -m pip check
-          python -m unittest tests.test_community_mcp tests.test_mcp_yerel
+          python -m unittest tests.test_community_mcp tests.test_mcp_yerel tests.test_kaynak_hafizasi_kopru

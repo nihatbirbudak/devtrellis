@@ -1,0 +1,2 @@
+# Ayrı SQLite depolarının şifreli yedeği için isteğe bağlı bağımlılık.
+cryptography>=42,<51

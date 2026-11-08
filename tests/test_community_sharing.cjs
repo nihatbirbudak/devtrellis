@@ -181,3 +181,28 @@ test("hesapsız paylaşım ve hazır arama metinlerinin EN karşılıkları eksi
   for(const match of backend.matchAll(/ToplulukBaglantiHatasi\("([^"\n]+)"\)/g))assert.ok(EN[match[1]],`Backend error: ${match[1]}`);
   for(const label of ["Paylaşılacak araştırma sorusu","Paylaşılacak iddia","Görünen ad (isteğe bağlı)","Paylaşmayı değerlendir","Önizle ve paylaş"]){assert.notEqual(createTranslator("en")(label),label);assert.equal(createTranslator("tr")(label),label);}
 });
+
+test("doğrudan katkı önizlemesi NVIDIA deneme uyarısını iki dilde gösterir; ek gönderim yapmaz",async()=>{
+  for(const language of ["en","tr"]){
+    const app=harness({language});const original=copy(app.fixture.packet);
+    await app.sharing.open({entry_id:"local-nvidia-trial-warning"});
+    const warning=app.byId("direct-share-nvidia-notice");assert.ok(warning);
+    assert.match(warning.textContent,language==="tr"?/NVIDIA API deneme erişimiyle üretilen çıktıları toplulukta yayımlamaz/:/does not publish output generated through NVIDIA API trial access/);
+    assert.match(warning.textContent,language==="tr"?/tek başına göstermez/:/alone does not establish the access type/);
+    assert.match(warning.textContent,language==="tr"?/Farklı bir NVIDIA erişimin/:/different form of NVIDIA access/);
+    assert.equal(warning.parent.children[0],warning);
+    assert.deepEqual(app.fixture.packet,original);
+    assert.equal(app.consent().checked,false);assert.equal(app.privacy().checked,false);
+    assert.equal(app.find(createTranslator(language)("Onayladığım kopyayı gönder")).disabled,true);
+    assert.deepEqual(app.fixture.requests.map(row=>row.url),["/api/platform/community/preview","/api/platform/community/session","/api/platform/community/review/preview-1"]);
+  }
+});
+
+test("doğrudan katkı önizlemesi model adından NVIDIA erişim türü çıkarmaz",async()=>{
+  for(const provider of [undefined,"codex","claude"]){
+    const app=harness();app.fixture.packet.provenance.provider=provider;app.fixture.packet.provenance.model="nvidia/model-name-is-not-access-evidence";
+    await app.sharing.open({entry_id:"provider-not-nvidia"});
+    assert.equal(app.byId("direct-share-nvidia-notice"),undefined);
+    assert.equal(app.fixture.requests.some(row=>row.url.endsWith("/send")),false);
+  }
+});

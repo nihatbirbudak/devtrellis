@@ -1,0 +1,120 @@
+{
+  "kind": "research_report",
+  "schema_version": 4,
+  "language": "en",
+  "title": "Conditional requests and rate-limit handling for a GitHub release-polling client",
+  "summary": "Extends a release-tracking flow with ETag-based conditional requests and with GitHub's documented waiting rules for primary and secondary REST API rate limits.",
+  "short_answer": "Save each polled response's etag and send it back in if-none-match; an authorized request answered with 304 does not count against the primary limit. Keep query parameters identical between polls and honor x-poll-interval. On 403 or 429, wait for retry-after if present, else until x-ratelimit-reset when remaining is 0, else at least one minute with exponential backoff. Secondary limits cannot be queried.",
+  "claims": [
+    {
+      "text": "Most REST endpoints return an etag header and many return last-modified, and both can be used for conditional GET requests.",
+      "quote": "Most endpoints return an etag header, and many endpoints return a last-modified header. You can use the values of these headers to make conditional GET requests.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "The saved etag value is sent in the if-none-match header on the next request to the same URL.",
+      "quote": "On your next request to the same URL, send the saved value in the if-none-match header.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "A 304 response to a correctly authorized conditional request does not count against the primary rate limit.",
+      "quote": "Making a conditional request does not count against your primary rate limit if a 304 response is returned and the request was made while correctly authorized with an Authorization header.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Changing the page size, page number, or filter between polls produces a different etag.",
+      "quote": "Use the same parameters every time you poll the same data. A different page size, page number, or filter produces a different response with a different etag.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "When a response includes x-poll-interval, the client should wait at least that many seconds before polling the same endpoint again.",
+      "quote": "If a response includes an x-poll-interval header, wait at least that many seconds before you poll the same endpoint again.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Unauthenticated requests have a primary rate limit of 60 requests per hour.",
+      "quote": "The primary rate limit for unauthenticated requests is 60 requests per hour.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Requests made with a user's credentials count toward a personal limit of 5,000 requests per hour.",
+      "quote": "All of these requests count towards your personal rate limit of 5,000 requests per hour.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Clients should use the x-ratelimit-* headers for pacing but should not depend on an exact remaining count.",
+      "quote": "Use the x-ratelimit-* response headers to pace and back off your requests, but avoid logic that depends on an exact remaining count.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Exceeding the primary limit returns 403 or 429 with x-ratelimit-remaining at 0, and retries should wait until x-ratelimit-reset.",
+      "quote": "If you exceed your primary rate limit, you will receive a 403 or 429 response, and the x-ratelimit-remaining header will be 0. You should not retry your request until after the time specified by the x-ratelimit-reset header.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "When a retry-after header is present, the client should not retry before that many seconds have passed.",
+      "quote": "If the retry-after response header is present, you should not retry your request until after that many seconds has elapsed.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "Without retry-after or a zero remaining count, the client should wait at least one minute and then back off exponentially for repeated secondary-limit failures.",
+      "quote": "Otherwise, wait for at least one minute before retrying. If your request continues to fail due to a secondary rate limit, wait for an exponentially increasing amount of time between retries, and throw an error after a specific number of retries.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    },
+    {
+      "text": "There is no way to check the status of the secondary rate limit.",
+      "quote": "There is not a way to check the status of your secondary rate limit.",
+      "source_url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api",
+      "checked_on": "2026-11-06"
+    }
+  ],
+  "recommendations": [
+    "Recommendation / inference: keep one stored etag per exact request URL, including per_page and page.",
+    "Recommendation / inference: if the releases list returns new releases first, poll only its first page conditionally and fetch further pages after it changes; the sources do not state the list's sort order, so confirm it first.",
+    "Recommendation / inference: authenticate polling requests; the 304 exemption needs correct authorization, and the unauthenticated limit is far lower.",
+    "Recommendation / inference: send requests one at a time from a single queue, since secondary limits cannot be observed in advance.",
+    "Recommendation / inference: apply the waiting rules in the documented order and cap retries."
+  ],
+  "not_covered": [
+    "Webhooks, pagination and release semantics (see the companion report).",
+    "Secondary-limit point costs and concurrency figures.",
+    "Limits for GitHub App installations, OAuth apps, GITHUB_TOKEN and Enterprise Cloud.",
+    "Whether the releases endpoint returns an etag, and the list's sort order; neither is stated in the releases reference.",
+    "Live measurement of 304 rates; Enterprise Server differences."
+  ],
+  "applies_to": "GitHub REST API on github.com (examples in the documents send X-GitHub-Api-Version: 2026-03-10), as documented on docs.github.com/en.",
+  "sources": [
+    {
+      "title": "Best practices for using the REST API",
+      "url": "https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api"
+    },
+    {
+      "title": "Rate limits for the REST API",
+      "url": "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+    }
+  ],
+  "provenance": {
+    "origin": "model_assisted",
+    "stages": [
+      {
+        "provider": "claude",
+        "model": "claude-opus-5-5",
+        "access_type": "unknown",
+        "basis": "contributor_declaration",
+        "terms_url": null
+      }
+    ]
+  },
+  "generated_at": "2026-11-06T12:45:37Z"
+}

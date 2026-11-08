@@ -18,7 +18,8 @@ function task(extras = {}) {
     result: {evidence_quality: {status: "verified", coverage_complete: true, claims: [], summary_tr: "İddialar kaynaklarla desteklendi."}, title_tr: "Türkçe araştırma raporu", summary_tr: "Kaynak metinlerinden hazırlanan açıklama.", benefit_tr: "Mevcut çalışma düzeniyle uyumlu bir deneme.", fit: "conditional", recommendation: "watch", limitations: ["Bağımsız doğrulama değildir."], requirements: ["İzole deneme ortamı."], integration_steps: ["Önce örnek veride dene."], verification_plan: ["Önceki çıktıyla karşılaştır."], evidence: [{item_id: "i1", quote: "Kaynakta bulunan açık bir cümle."}]},
     sources: [{item_id: "i1", title: "Asıl yayın", url: "https://example.org/source"}], ...extras};
 }
-function harness(rows = [task()], discovery = false, language = null, topics = {ai: "Yapay zekâ", jarvis: "Ev otomasyonu"}) {
+// options.asyncClose: gerçek tarayıcı gibi close olayını sonraki görevde gönderir; options.library: topluluk arama kutusu sahtesi.
+function harness(rows = [task()], discovery = false, language = null, topics = {ai: "Yapay zekâ", jarvis: "Ev otomasyonu"}, options = {}) {
   let document;
   class Node {
     constructor(tag, className = "", text = "") {
@@ -85,7 +86,15 @@ function harness(rows = [task()], discovery = false, language = null, topics = {
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
     focus() { if (!this.disabled && this.isConnected) document.activeElement = this; }
     showModal() { this.open = true; }
-    close() { this.open = false; for (const listener of this.listeners.get("close") || []) listener(); }
+    close() {
+      if (options.asyncClose) {
+        if (!this.open) return;
+        this.open = false;
+        setImmediate(() => { for (const listener of this.listeners.get("close") || []) listener(); });
+        return;
+      }
+      this.open = false; for (const listener of this.listeners.get("close") || []) listener();
+    }
     reportValidity() {
       return this.querySelectorAll("input,select,textarea").every(node => !node.required || Boolean(node.value));
     }
@@ -114,7 +123,7 @@ function harness(rows = [task()], discovery = false, language = null, topics = {
   const handlers = {post: async () => { throw new Error("Beklenmedik POST"); }, request: async () => copy(state.data.workflow), refresh: async () => true};
   const element = (tag, className, text) => new Node(tag, className, text);
   const ui = translator(language);
-  const sandbox = vm.createContext({t: ui.t, window: {UfukUI: language ? ui : undefined, addEventListener(name, listener) { windowListeners.set(name, listener); }}, document, element, icon: () => element("svg"), URL,
+  const sandbox = vm.createContext({t: ui.t, window: {UfukUI: language ? ui : undefined, DevTrellisLibraryFactory: options.library, addEventListener(name, listener) { windowListeners.set(name, listener); }}, document, element, icon: () => element("svg"), URL,
     setTimeout(callback, delay) { const value = ++nextTimer; timers.set(value, {callback, delay}); return value; }, clearTimeout(value) { timers.delete(value); }});
   vm.runInContext(links, sandbox);
   vm.runInContext(discovery ? discoverySource : source, sandbox);
@@ -661,4 +670,89 @@ test("aynı deponun ardışık sürümleri ana seçkiyi doldurmaz", () => {
     .map(row => ({revision: 1, summary_status: "editor_ozeti", ...row}));
   const select = selectionHarness([]);
   assert.deepEqual(Array.from(select.selectedItems(items), item => item.id), ["new", "different"]);
+});
+
+test("hazır araştırmadan yeni taslak, mevcut taslağı yalnız sayfa içi onayla bırakır; window.confirm kullanılmaz", async () => {
+  for (const language of [null, "en"]) {
+    const h = harness([], true, language); const asked = []; let answer = false;
+    h.window.confirm = () => { throw new Error("window.confirm must not be used"); };
+    h.window.DevTrellisConfirm = {ask: async options => { asked.push(options); return answer; }};
+    const questionLabel = language === "en" ? "What do you want to learn?" : "Ne öğrenmek istiyorsun?";
+    h.api.open();
+    const question = h.control(questionLabel); question.value = "Kendi taslağım"; await question.dispatch("input");
+    await h.findButton(language === "en" ? "Close" : "Kapat").dispatch("click"); assert.equal(h.dialog(), null);
+    const opener = h.element("button"); h.document.body.append(opener);
+    await h.api.open(opener, {question: "Hazır araştırmadan gelen soru", topic: "jarvis"});
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].message, language === "en"
+      ? "Discard your existing research draft and open a new draft using this research?"
+      : "Mevcut araştırma taslağını bırakıp bu araştırmanın bilgileriyle yeni bir taslak açmak istiyor musun?");
+    assert.equal(asked[0].confirmLabel, language === "en" ? "Open new draft" : "Yeni taslak aç");
+    assert.equal(asked[0].returnFocus, opener);
+    assert.equal(h.dialog(), null);
+    h.api.open(); assert.equal(h.control(questionLabel).value, "Kendi taslağım");
+    await h.findButton(language === "en" ? "Close" : "Kapat").dispatch("click");
+    answer = true;
+    await h.api.open(opener, {question: "Hazır araştırmadan gelen soru", topic: "jarvis"});
+    assert.equal(h.control(questionLabel).value, "Hazır araştırmadan gelen soru");
+    assert.equal(h.posts.length, 0);
+  }
+});
+
+test("bununla araştır: tarayıcı close olayını geciktirse de eski taslak gider, yeni taslak açılır", async () => {
+  for (const withDraft of [true, false]) {
+    let searchOptions = null;
+    const library = () => ({searchBox(value) { searchOptions = value; const box = h.element("div"); box.focusSearch = () => {}; return box; }, busy: () => false});
+    const h = harness([], true, null, undefined, {asyncClose: true, library});
+    const asked = [];
+    h.window.DevTrellisConfirm = {ask: async value => { asked.push(value); return true; }};
+    const opener = h.element("button"); h.document.body.append(opener);
+    await h.api.open(opener);
+    const first = h.dialog(); assert.ok(first); assert.ok(searchOptions?.onResearch);
+    if (withDraft) { const question = h.control("Ne öğrenmek istiyorsun?"); question.value = "Eski taslak"; await question.dispatch("input"); }
+    await searchOptions.onResearch({question: "Hazır araştırmadan gelen soru", topic: "jarvis", need: "Topluluk raporu"});
+    assert.equal(asked.length, withDraft ? 1 : 0);
+    // close olayı henüz gelmedi: eski pencere kapandı ama DOM'dan çıkmadı.
+    assert.equal(first.open, false);
+    await turn(); await turn();
+    const dialogs = h.document.body.querySelectorAll("dialog");
+    assert.equal(dialogs.length, 1, "Yalnız yeni taslak penceresi açık kalmalı");
+    assert.notEqual(dialogs[0], first); assert.equal(dialogs[0].open, true);
+    assert.equal(h.control("Ne öğrenmek istiyorsun?").value, "Hazır araştırmadan gelen soru");
+    assert.equal(h.control("İhtiyacımızı kısaca anlat (isteğe bağlı)").value, "Topluluk raporu");
+    assert.equal(h.posts.length, 0);
+    await h.findButton("Kapat").dispatch("click"); await turn();
+    assert.equal(h.dialog(), null);
+    assert.equal(h.document.activeElement, opener, "Odak ilk açan düğmeye döner");
+  }
+});
+
+test("bununla araştır: onay reddedilirse taslak ve pencere korunur (gecikmeli close ile)", async () => {
+  let searchOptions = null;
+  const library = () => ({searchBox(value) { searchOptions = value; const box = h.element("div"); box.focusSearch = () => {}; return box; }, busy: () => false});
+  const h = harness([], true, null, undefined, {asyncClose: true, library});
+  h.window.DevTrellisConfirm = {ask: async () => false};
+  await h.api.open();
+  const first = h.dialog(); const question = h.control("Ne öğrenmek istiyorsun?"); question.value = "Eski taslak"; await question.dispatch("input");
+  await searchOptions.onResearch({question: "Hazır soru", topic: "ai"});
+  await turn(); await turn();
+  assert.equal(h.dialog(), first); assert.equal(first.open, true);
+  assert.equal(h.control("Ne öğrenmek istiyorsun?").value, "Eski taslak");
+});
+
+test("taslak onayı beklenirken ikinci pencere açılmaz; onay bileşeni yoksa görünür hata çıkar", async () => {
+  const h = harness([], true); const pending = deferred();
+  h.window.DevTrellisConfirm = {ask: () => pending.promise};
+  h.api.open(); const question = h.control("Ne öğrenmek istiyorsun?"); question.value = "Kendi taslağım"; await question.dispatch("input");
+  await h.findButton("Kapat").dispatch("click");
+  const waiting = h.api.open(null, {question: "Hazır soru", topic: "ai"});
+  assert.equal(h.api.busy(), true); h.api.open(); assert.equal(h.dialog(), null);
+  pending.resolve(false); await waiting; assert.equal(h.api.busy(), false); assert.equal(h.dialog(), null);
+
+  const missing = harness([], true);
+  missing.api.open(); const draft = missing.control("Ne öğrenmek istiyorsun?"); draft.value = "Kendi taslağım"; await draft.dispatch("input");
+  await missing.findButton("Kapat").dispatch("click");
+  await missing.api.open(null, {question: "Hazır soru", topic: "ai"});
+  assert.equal(missing.dialog(), null);
+  assert.deepEqual(missing.messages.at(-1), {message: "Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.", error: true});
 });

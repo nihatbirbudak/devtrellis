@@ -101,3 +101,71 @@ test("kütüphane araması her istenen metin alanını ve boş kayıtları işle
   assert.equal(entryMatches({}, ""), true);
   assert.equal(entryMatches({}, "robotik"), false);
 });
+
+function confirmHarness({language = "en", confirmDialog = true} = {}) {
+  const source = fs.readFileSync(path.join(__dirname, "../radar/static/platform.js"), "utf8");
+  const start = source.indexOf("  // Gömülü tarayıcılar window.confirm");
+  const end = source.indexOf("  async function initialize() {", start);
+  assert.ok(start >= 0 && end > start);
+  const nodes = new Map(), asked = [], posts = [], messages = {};
+  const fixture = {answer: false, items: []};
+  const element = (tag, className = "", text = "") => ({tag, className, text, children: [], disabled: false, listeners: {},
+    append(...children) { this.children.push(...children); }, replaceChildren(...children) { this.children = children; },
+    get textContent() { return this.text + this.children.map(child => child.textContent).join(""); }});
+  const byId = id => {
+    if (!nodes.has(id)) nodes.set(id, {...element("div"), id, value: "", closed: false, close() { this.closed = true; }});
+    return nodes.get(id);
+  };
+  const button = (text, handler, className) => { const node = element("button", className, text); node.click = () => node.disabled ? undefined : handler(); return node; };
+  const state = {provider: null, providerSnapshot: "", providerBusy: false, editor: null, editorSnapshot: "", editorBusy: false, interestSnapshot: "", interestBusy: false, share: null, shareBusy: false};
+  const api = {ask: async options => { asked.push(options); return fixture.answer; }};
+  const context = vm.createContext({byId, state, element, button, t: createTranslator(language),
+    message: (id, text) => { messages[id] = text; }, errorMessage: error => error.message,
+    providerSnapshot: () => "changed-provider", editorSnapshot: () => "changed-editor",
+    request: async (url, body) => { if (body === undefined) return {items: fixture.items}; posts.push({url, body}); return {}; },
+    window: confirmDialog ? {DevTrellisConfirm: api} : {}});
+  vm.runInContext(source.slice(start, end), context);
+  return {context, byId, state, asked, posts, messages, fixture};
+}
+
+test("kişisel platform taslak bırakma ve kopya geri çekme onayını sayfa içi pencereyle sorar", async () => {
+  for (const language of ["en", "tr"]) {
+    const h = confirmHarness({language});
+    h.state.editor = {id: 1}; h.state.editorSnapshot = "saved-editor";
+    await h.context.closeDialog("entry-dialog");
+    assert.equal(h.asked.at(-1).message, language === "en" ? "You have unsaved changes. Discard this draft?" : "Kaydedilmemiş değişikliklerin var. Bu taslağı bırakmak istiyor musun?");
+    assert.equal(h.asked.at(-1).confirmLabel, language === "en" ? "Discard draft" : "Taslağı bırak");
+    assert.equal(h.byId("entry-dialog").closed, false); assert.deepEqual(h.state.editor, {id: 1});
+    h.fixture.answer = true; await h.context.closeDialog("entry-dialog");
+    assert.equal(h.byId("entry-dialog").closed, true); assert.equal(h.state.editor, null);
+
+    h.fixture.answer = false; h.state.provider = {id: "nvidia"}; h.state.providerSnapshot = "saved-provider";
+    await h.context.closeDialog("provider-dialog"); assert.equal(h.byId("provider-dialog").closed, false);
+    h.fixture.answer = true; await h.context.closeDialog("provider-dialog"); assert.equal(h.byId("provider-dialog").closed, true);
+
+    h.fixture.answer = false; h.byId("interest-input").value = "robotik"; h.state.interestSnapshot = "";
+    await h.context.closeDialog("interest-dialog");
+    assert.equal(h.asked.at(-1).confirmLabel, language === "en" ? "Discard changes" : "Değişiklikleri bırak");
+    assert.equal(h.byId("interest-dialog").closed, false);
+    h.fixture.answer = true; await h.context.closeDialog("interest-dialog"); assert.equal(h.byId("interest-dialog").closed, true);
+
+    h.fixture.answer = false; h.fixture.items = [{local_id: "local-one", title: "Rapor", submission: {status: "published", version: 2}}];
+    await h.context.loadSubmissions();
+    const actions = h.byId("community-submissions-list").children[0].children.at(-1);
+    const withdraw = actions.children[1];
+    await withdraw.click();
+    assert.equal(h.asked.at(-1).confirmLabel, language === "en" ? "Withdraw copy" : "Kopyayı geri çek");
+    assert.equal(h.asked.at(-1).returnFocus, withdraw); assert.equal(h.posts.length, 0);
+    h.fixture.answer = true; await withdraw.click();
+    assert.deepEqual(JSON.parse(JSON.stringify(h.posts)), [{url: "/api/platform/community/submissions/local-one/withdraw", body: {expected_version: 2}}]);
+  }
+});
+
+test("kişisel platformda onay bileşeni yoksa pencere kapanmaz ve görünür ileti çıkar", async () => {
+  const h = confirmHarness({language: "tr", confirmDialog: false});
+  h.state.editor = {id: 1}; h.state.editorSnapshot = "saved-editor";
+  await h.context.closeDialog("entry-dialog");
+  assert.equal(h.byId("entry-dialog").closed, false); assert.deepEqual(h.state.editor, {id: 1});
+  assert.equal(h.messages["entry-error"], "Onay penceresi açılamadı; işlem yapılmadı. Sayfayı yenileyip yeniden dene.");
+  h.state.editor = null; await h.context.closeDialog("entry-dialog"); assert.equal(h.byId("entry-dialog").closed, true);
+});
