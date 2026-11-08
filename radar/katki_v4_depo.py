@@ -37,7 +37,8 @@ YAYINDAKI_EN_COK = 500    # yinelenen yayın denetimine verilen en yeni kayıt s
 TABLOLAR = {"v4_submissions", "v4_records", "v4_events", "v4_state"}
 # Adres dizini ve arama dizini türetilmiş veridir (K1 ikinci dilim, 8 Kasım 2026): açılışta kayıtlardan yeniden kurulabilir.
 # Sürüm değişince (`v4_state.search_index_version` ≠ ARAMA_DIZINI_SURUMU) iki dizin de bütünüyle yeniden doldurulur.
-ARAMA_DIZINI_SURUMU = f"k1-2.{INDEX_VERSION}"   # k1-2: kayıtlı alan adı kuralıyla ürün etiketleri (alpha.11)
+# k1-2: kayıtlı alan adı kuralıyla ürün etiketleri (alpha.11); k1-3: noktalı ve iki harfli ürün adları (alpha.12).
+ARAMA_DIZINI_SURUMU = f"k1-3.{INDEX_VERSION}"
 # Adresle bulmada aynı adreste birden çok kayıt: kaynak kartı önce, sonra rapor, sonra konu özeti; her grupta en yeni yayın.
 TUR_SIRASI = "CASE r.kind WHEN 'source_card' THEN 0 WHEN 'research_report' THEN 1 ELSE 2 END"
 # Yayımlanmadan sonlanan gönderimler: özel aday metni saklama süresi dolunca silinir (yayındaki kaydın metni zaten kamuda).

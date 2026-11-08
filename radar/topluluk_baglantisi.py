@@ -40,7 +40,14 @@ NOTICE = ("Yalnız aşağıdaki anonim kamu kopyası, kamusal kaynakları ve mod
 
 
 class ToplulukBaglantiHatasi(ValueError):
-    """Uzak hizmet hatasını yanıt metni veya kimlik bilgisi sızdırmadan bildirir."""
+    """Uzak hizmet hatasını yanıt metni veya kimlik bilgisi sızdırmadan bildirir.
+
+    `durum` uzak HTTP durum kodudur (yalnız sayı; yanıt metni taşınmaz); ulaşılamama ve geçersiz yanıtta None.
+    """
+
+    def __init__(self, message="", durum=None):
+        super().__init__(message)
+        self.durum = durum
 
 
 class IsletimSistemiKasasi:
@@ -103,10 +110,11 @@ class ToplulukBaglantisi:
                 with client.stream(method, COMMUNITY_URL + path, json=payload, params=params, headers=headers) as response:
                     if response.status_code >= 300:
                         messages = {404: "Topluluk kaydı bulunamadı veya artık yayımlanmıyor.",
+                                    410: "Topluluk kaydı kaldırıldı veya geri çekildi; eski kopyası kullanılmamalı.",
                                     409: "Gönderi durumu değişti; durumu yenileyip tekrar deneyin.",
                                     429: "Topluluk gönderim sınırına ulaşıldı; daha sonra tekrar deneyin."}
                         raise ToplulukBaglantiHatasi(messages.get(response.status_code,
-                            "Topluluk hizmeti isteği tamamlayamadı; yerel araştırmanız korunuyor."))
+                            "Topluluk hizmeti isteği tamamlayamadı; yerel araştırmanız korunuyor."), response.status_code)
                     if response.headers.get("content-encoding", "identity").lower() != "identity":
                         raise ToplulukBaglantiHatasi("Topluluk yanıtı beklenmeyen sıkıştırma içeriyor.")
                     content = bytearray()
@@ -231,15 +239,54 @@ class ToplulukBaglantisi:
             surumu_dogrula(version)
             if version == 0:
                 raise ValueError("Araştırma sürümü pozitif olmalı.")
-        result = self.request("GET", "/api/community/cards/" + self.identifier(entry_id),
-                              params=None if version is None else {"version": version})
+        try:
+            result = self.request("GET", "/api/community/cards/" + self.identifier(entry_id),
+                                  params=None if version is None else {"version": version})
+        except ToplulukBaglantiHatasi as exc:
+            # alpha.12 K2: K1 v4 kayıtları (makine kapısından yayımlanan kart, rapor, konu özeti) v1 kart ucunda yoktur
+            # (404); kamu kaydı `/api/community/v4/records/...` ucundadır. Eskiden 404 yerel uçta 502 olarak dönüyordu.
+            if exc.durum != 404:
+                raise
+            return self.v4_oku(entry_id, version)
         card = self.kart_dogrula(result)
         if version is not None and card["version"] != version:
             raise ToplulukBaglantiHatasi("İstenen araştırma sürümü alınamadı.")
         return card
 
+    def v4_yolu(self, entry_id, version=None):
+        return ("/api/community/v4/records/" + self.identifier(entry_id)
+                + ("" if version is None else "/v/" + str(version)))
+
+    def v4_oku(self, entry_id, version=None):
+        """K1 v4 kamu kaydını okur; ajana sunucunun ajan görünümüyle (`server` / `declared` / `untrusted`) verilir.
+
+        Görünüm sunucudaki `ajan_gorunumu` ile aynı işlevden üretilir (adresle bulmadaki kartla aynı biçim). Kimlik ve
+        sürüm istenenle eşleşmeli; kayıt alanları `v4_alanlarini_dogrula` ile denetlenir.
+        """
+        from radar.katki_v4 import ajan_gorunumu
+
+        record = self.request("GET", self.v4_yolu(entry_id, version))
+        try:
+            publication = record["publication"]
+            if (record.get("id") != entry_id or type(record.get("version")) is not int or record["version"] < 1
+                    or (version is not None and record["version"] != version) or not isinstance(publication, dict)):
+                raise ValueError("v4 kayıt kimliği geçersiz.")
+            gate = publication.get("gate") if isinstance(publication.get("gate"), dict) else {}
+            fields = self.v4_alanlarini_dogrula({**record, "human_reviewed": publication.get("human_reviewed"),
+                                                 "publication": {**publication, "gate_version": gate.get("version")}})
+            view = ajan_gorunumu(record)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise ToplulukBaglantiHatasi("Topluluk kartı geçersiz.") from exc
+        return {"id": entry_id, "version": record["version"], **fields,
+                "report_url": f"{COMMUNITY_URL}/api/community/v4/records/{entry_id}/v/{record['version']}",
+                "agent_view": view}
+
     def mcp_oku(self, entry_id, version=None):
         card = self.oku(entry_id, version)
+        if card.get("record_type") == "v4":
+            # v4 kayıtlarında okuma/kullanım sayacı yok (sunucuda olay ucu v1 kartları içindir).
+            card["access_counted"] = False
+            return card
         try:
             self.olay_bildir(entry_id, card["version"], "mcp_read", secrets.token_hex(16))
         except (ValueError, ToplulukBaglantiHatasi):
@@ -267,7 +314,14 @@ class ToplulukBaglantisi:
                     raise ValueError("Bu oturumun kullanım bildirimi sınırına ulaşıldı.")
                 self.usage_events[identity] = secrets.token_hex(16)
             event_id = self.usage_events[identity]
-        return self.olay_bildir(entry_id, payload["version"], "used_in_research", event_id)
+        try:
+            return self.olay_bildir(entry_id, payload["version"], "used_in_research", event_id)
+        except ToplulukBaglantiHatasi as exc:
+            # alpha.12 K2: v4 kaydının olay ucu yok (404). Kayıt yayındaysa bu bir hata değil, sayılmayan kullanımdır.
+            if exc.durum != 404:
+                raise
+            self.request("GET", self.v4_yolu(entry_id, payload["version"]))
+            return {"recorded": False, "record_type": "v4", "reason": "usage_not_counted_for_v4_records"}
 
     @staticmethod
     def etkilesimi_dogrula(value):
@@ -380,7 +434,10 @@ class ToplulukBaglantisi:
             raise ToplulukBaglantiHatasi("Topluluk kartı geçersiz.") from exc
 
     def ice_aktar(self, entry_id):
-        return self.area.ice_aktar({"packet": self.oku(entry_id)["packet"]})
+        card = self.oku(entry_id)
+        if "packet" not in card:
+            raise ValueError("Bu topluluk kaydı (v4) araştırma paketi taşımaz; içe aktarılamaz.")
+        return self.area.ice_aktar({"packet": card["packet"]})
 
     def onizle(self, payload):
         allowed = {"task_id", "entry_id", "packet", "author", "title", "body", "summary", "question", "claim_text"}
@@ -531,6 +588,9 @@ class ToplulukBaglantisi:
                 or publication.get("human_reviewed") != result["human_reviewed"] or not isinstance(publication.get("label"), dict)):
             raise ValueError("v4 kayıt alanları geçersiz.")
         label = {lang: metin(publication["label"].get(lang) or "", "Kanıt etiketi", 1000) for lang in ("tr", "en")}
+        if publication["path"] == "machine_gate":
+            # Boş etiket kabul edilir ama "insan incelemedi" bilgisi kaybolmaz (alpha.11 yeniden sınama, kalan 1).
+            label = {"tr": label["tr"] or "İnsan incelemedi", "en": label["en"] or "Not human-reviewed"}
         return {"record_type": "v4", "kind": result["kind"], "human_reviewed": result["human_reviewed"],
                 "publication": {"path": publication["path"], "human_reviewed": result["human_reviewed"], "label": label,
                                 "policy_version": metin(publication.get("policy_version") or "", "Yayın politikası", 80),

@@ -49,6 +49,8 @@ LOOKUP_LIMIT = 5
 CARD_CLAIM_LIMIT = 6
 CARD_TARGET_BYTES = 1500
 OMITTED_CLAIMS_HINT = "{n} claims not shown; call lookup_source again with view=\"full\" for the whole card."
+# alpha.12 K6 (eşli ölçüm B1): kart sorudan dar olunca ajan kartla yetindi ("hangi kısıtlar" sorusunda kapsam 5/10).
+CARD_SCOPE_HINT = "A card holds selected claims, not the whole page; for all/which questions check not_covered or read the page."
 COVERAGE_IDENTITY = "k0-canonical-json-v1"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -167,24 +169,47 @@ class ContractError(ValueError):
         self.retry_after = retry_after if type(retry_after) is int and 1 <= retry_after <= 3600 else None
 
 
+class UnknownLocalRoute(ValueError):
+    """Eski yerel uygulama v4 okuma ucunu tanımıyor (alpha.12 öncesi); çağıran genel kart ucuna döner."""
+
+    def __init__(self):
+        super().__init__("The local app does not offer the v4 record route.")
+
+
 class CommunityClient:
     """Yerel API ile sınırlı, anahtarsız ve yönlendirmesiz istemci."""
 
-    def __init__(self, local_url=DEFAULT_LOCAL_URL, *, timeout=15):
+    def __init__(self, local_url=DEFAULT_LOCAL_URL, *, timeout=15, ready=None):
         self.origin = local_address(local_url)
         self.port = urlsplit(self.origin).port
         self.timeout = timeout
+        # Arka planda kurulan yerel hizmet için bekleme işlevi (alpha.12 K1); hazır değilse ilk istek bekler.
+        self.ready = ready
+        # Arama ya da bulmadan v4 olduğu bilinen kayıtlar: okuma önce v1 ucuna gitmez (alpha.12 kabulü düşük 4).
+        self.v4_records = set()
         self.previews = set()
         self.lock = Lock()
+
+    def wait_ready(self):
+        if self.ready is None:
+            return
+        try:
+            self.ready()
+        except RuntimeError as error:
+            if isinstance(error.__cause__, ModuleNotFoundError):
+                raise ValueError("The local DevTrellis service could not load its dependencies. "
+                                 "Install dependencies: python -m pip install -r requirements-lock.txt -r requirements-mcp.txt") from None
+            raise ValueError("The local DevTrellis service did not start. Restart this MCP connection.") from None
 
     def request(self, path, payload=None, *, protected=False, version=None, timeout=None):
         if not path.startswith("/api/platform/community/") or "?" in path or "#" in path:
             raise ValueError("Unsupported local API path.")
+        self.wait_ready()
         request_path = path
         if version is not None:
             if (type(version) is not int or not 1 <= version <= 9223372036854775807
                     or payload is not None
-                    or not re.fullmatch(r"/api/platform/community/cards/[A-Za-z0-9_-]{1,128}", path)):
+                    or not re.fullmatch(r"/api/platform/community/(?:cards|v4-records)/[A-Za-z0-9_-]{1,128}", path)):
                 raise ValueError("Use a positive published version with a report GET request.")
             request_path += "?version=" + str(version)
         headers = {"Accept": "application/json", "Host": urlsplit(self.origin).netloc}
@@ -218,6 +243,10 @@ class CommunityClient:
             response = connection.getresponse()
             if 300 <= response.status < 400:
                 raise ValueError("Local API redirects are not followed. Check --local-url.")
+            if response.status == 410:
+                raise ValueError("This DevTrellis record was removed or withdrawn; do not use earlier copies of it.")
+            if response.status == 404 and path.startswith("/api/platform/community/v4-records/"):
+                raise UnknownLocalRoute()
             if response.status >= 400:
                 raise ValueError(f"Local DevTrellis returned HTTP {response.status}. Check the local app and community settings.")
             if response.getheader("Content-Type", "").split(";", 1)[0].strip() != "application/json":
@@ -237,7 +266,7 @@ class CommunityClient:
         finally:
             connection.close()
 
-    def contract_get(self, path, params=None, *, etag=None, limit=MAX_RESPONSE_BYTES):
+    def contract_get(self, path, params=None, *, etag=None, limit=MAX_RESPONSE_BYTES, timeout=None):
         """K1-V4 sözleşme uçlarını okur: 200/304/404/410 sonuçtur, başka durum sabit sözleşme hatasıdır.
 
         Dönen değer (durum, gövde, etag). Sözleşme gövdesi taşımayan 404, yerel uygulamanın bu ucu
@@ -246,6 +275,7 @@ class CommunityClient:
         if not (path in {"/api/platform/community/coverage", "/api/platform/community/topics"}
                 or re.fullmatch(r"/api/platform/community/sources/[0-9a-f]{64}", path)):
             raise ValueError("Unsupported local API path.")
+        self.wait_ready()
         query = {}
         for name, value in (params or {}).items():
             if value is None:
@@ -261,7 +291,7 @@ class CommunityClient:
                 etag = None
             else:
                 headers["If-None-Match"] = etag
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=self.timeout)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout or self.timeout)
         try:
             connection.request("GET", request_path, headers=headers)
             response = connection.getresponse()
@@ -322,12 +352,30 @@ class CommunityClient:
             raise ValueError("Only section reads accept a section identifier.")
         if view == "section" and (not isinstance(section_id, str) or not re.fullmatch(r"section-[a-f0-9]{64}", section_id)):
             raise ValueError("Use a section identifier returned by the outline.")
-        result = self.request("/api/platform/community/cards/" + checked_id(research_id), version=version)
+        result = self.read_record(research_id, version)
+        if result.get("record_type") == "v4" and isinstance(result.get("agent_view"), dict):
+            return v4_read_view(result, research_id, version, view)
         if view == "full":
             return result
         if result.get("id") != research_id or result.get("version") != version:
             raise ValueError("The local app returned a different report snapshot.")
         return rapor_gorunumu(result, view, section_id)
+
+    def remember_v4(self, research_id):
+        if isinstance(research_id, str) and HEX32.fullmatch(research_id):
+            with self.lock:
+                if len(self.v4_records) < 1000:
+                    self.v4_records.add(research_id)
+
+    def read_record(self, research_id, version=None):
+        """Yerel uygulamadan ham kayıt; v4 olduğu bilinen kimlik doğrudan v4 ucundan (eski uygulamada genel uca döner)."""
+        research_id = checked_id(research_id)
+        if research_id in self.v4_records:
+            try:
+                return self.request("/api/platform/community/v4-records/" + research_id, version=version)
+            except UnknownLocalRoute:
+                pass
+        return self.request("/api/platform/community/cards/" + research_id, version=version)
 
     @staticmethod
     def source_id(value):
@@ -518,6 +566,11 @@ def validate_topics(body):
     return {**data, "products": products, "terms": frozenset(terms), "cards": cards}
 
 
+# Kapsam/konu listesi yenilemesinin en uzun süresi (K7): araç çağrısı sunucu yavaşken de bu kadar bekler.
+SNAPSHOT_REFRESH_SECONDS = 8
+COVERAGE_NOTE = "This is the local address list only; it says nothing about card freshness."
+
+
 class SnapshotCache:
     """Herkese aynı kamu listesini yerelde tutar; indirme hiçbir sorgu ya da adres taşımaz.
 
@@ -555,7 +608,8 @@ class SnapshotCache:
             self.last_attempt = now
             etag = self.etag if self.data is not None else None
         try:
-            status, body, new_etag = self.client.contract_get(self.api_path, etag=etag, limit=MAX_SNAPSHOT_BYTES)
+            status, body, new_etag = self.client.contract_get(self.api_path, etag=etag, limit=MAX_SNAPSHOT_BYTES,
+                                                              timeout=SNAPSHOT_REFRESH_SECONDS)
             if status != 200:
                 return False
             data = self.validator(body)
@@ -585,18 +639,59 @@ class SnapshotCache:
             self.thread.start()
 
     def ensure(self):
-        """Taze değilse yeniler: hiç denenmemişse bir kez hemen, sonra arka planda; süren indirmeyi beklemez."""
+        """Taze değilse yeniler ve sınırlı süre bekler (alpha.12 K7).
+
+        Sunucu listesi 5 dakika geçerlidir. Eskiden süre dolunca yenileme arka planda başlatılıp beklenmiyordu: aynı
+        saatte bir çağrı `stale`, hemen sonraki `fresh` görüyordu ve ajan bunu kartın eskidiği diye okudu. Şimdi süren
+        indirme beklenir, yoksa (yeniden deneme aralığı dolduysa) aynı çağrıda indirilir. Sunucuya ulaşılamazsa liste
+        gerçekten eskidir ve `stale` kalır; bekleme `SNAPSHOT_REFRESH_SECONDS` ile sınırlıdır.
+        """
         if self.fresh() is not None:
             return
         with self.lock:
-            running = self.thread is not None and self.thread.is_alive()
-            first = self.thread is None and self.last_attempt is None
-        if running:
+            running = self.thread if self.thread is not None and self.thread.is_alive() else None
+        if running is not None:
+            running.join(SNAPSHOT_REFRESH_SECONDS + 1)
             return
-        if first:
-            self.refresh()
-        else:
-            self.prefetch()
+        self.refresh()
+
+
+# expected_product yazımları (alpha.12 K3, eşli ölçüm: 7/7 sıcak koşuda ilk lookup "Python"/"PostgreSQL"/"Go" yüzünden
+# doğrulama hatasına düştü). Ad küçük harfe iner, alt çizgi tire olur; bilinen takma adlar kütüphane slug'ına
+# çevrilir; kalan noktalar düşer ("next.js" → "nextjs"). Kütüphanedeki slug'lar: cpython, postgresql, go, github …
+PRODUCT_SLUG_ALIASES = {
+    "python": "cpython", "python3": "cpython", "py": "cpython", "cpython3": "cpython",
+    "postgres": "postgresql", "pg": "postgresql", "pgsql": "postgresql", "postgre": "postgresql",
+    "golang": "go", "go-lang": "go",
+    "node": "nodejs", "node.js": "nodejs", "node-js": "nodejs",
+    "k8s": "kubernetes", "vue.js": "vue", "vuejs": "vue", "react.js": "react", "reactjs": "react",
+    "express.js": "express", "expressjs": "express", "nuxt.js": "nuxt", "nuxtjs": "nuxt",
+    "home-assistant": "homeassistant", "gh": "github", "github-rest-api": "github",
+}
+
+
+def product_slug(value, known=()):
+    """Ajanın yazdığı ürün adını kütüphane slug'ına çevirir; çevrilemeyen ad doğrulama hatasıdır.
+
+    Kütüphane konu listesinde (`known`) aynen geçen ad takma ada çevrilmez (ileride `python` slug'lı kart da olabilir).
+    Nokta yalnız `.js` sonekinde düşer ("Next.js" → `nextjs`); "python3.14", ".NET", "nodejs.org" gibi yazımlar sahte slug
+    üretmesin diye doğrulama hatası kalır (alpha.12 kabulü düşük 3).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 64:
+        raise ValueError("expected_product must be a product name or slug such as cpython.")
+    # İç boşluk kabul edilmez: "CPython 3" gibi ad+sürüm yazımı expected_version'a aittir.
+    name = value.strip().lower().replace("_", "-")
+    if name in known:
+        return name
+    name = PRODUCT_SLUG_ALIASES.get(name, name)
+    if not PRODUCT_SLUG.fullmatch(name) and name.endswith(".js") and PRODUCT_SLUG.fullmatch(name[:-3] + "js"):
+        name = PRODUCT_SLUG_ALIASES.get(name[:-3] + "js", name[:-3] + "js")
+    if not PRODUCT_SLUG.fullmatch(name):
+        raise ValueError("expected_product must be a product name or slug such as cpython; "
+                         "put a version in expected_version.")
+    return name
 
 
 def lookup_address(url):
@@ -673,6 +768,14 @@ def _freshness(state):
         shown["freshness_note"] = (f"Source freshness is {state}; quotes matched when checked, "
                                    "not necessarily in today's page.")
     return shown
+
+
+MACHINE_GATE_LABEL = "Not human-reviewed"
+
+
+def machine_label(path):
+    """Boş kanıt etiketinin yerine sabit metin (alpha.12): makine kapısı yolunda "insan incelemedi" hiç kaybolmaz."""
+    return MACHINE_GATE_LABEL if path == "machine_gate" else ""
 
 
 def _fit_card(build, rows, budget):
@@ -780,7 +883,7 @@ def _agent_view(card, version_match, answer_eligible, key, budget, freshness=Non
                         "checks_passed": len(server.get("checks_passed") or []),
                         "warnings": len(server.get("warnings") or []),
                         "quotes_exact": sum(1 for c in claims if matches[c["claim_id"]].get("state") == "exact"),
-                        "label": _short(label.get("en") or "", 60 if tight else 120) or None,
+                        "label": _short(label.get("en") or machine_label(server.get("path")), 60 if tight else 120) or None,
                         **_freshness(stated_freshness),
                         "corrections": {"open": (server.get("corrections") or {}).get("open", 0)}}
         # Başlık ve özet ikincil metindir; sıkı kipte kısalır. `not_covered` kapsam sınırıdır, aynen kalır.
@@ -828,6 +931,22 @@ def compact_card(card, version_match, answer_eligible, *, key=None, budget=CARD_
 def full_view(card):
     """Tam kart: bütün içerik güvenilmeyen bloğun içinde."""
     return {"untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted(card)}
+
+
+def v4_read_view(result, research_id, version, view):
+    """K1 v4 kaydının okuması (alpha.12 K2): sunucu ajan görünümü bütünüyle güvenilmeyen bloğun içinde.
+
+    v4 kayıtları kısadır ve bölüm kimliği taşımaz; yalnız `full` görünümü vardır. Kimlik ve istenen sürüm eşleşmeli.
+    """
+    if view != "full":
+        raise ValueError('This record has no sections; read it with view="full".')
+    if (result.get("id") != research_id or type(result.get("version")) is not int
+            or (version is not None and result["version"] != version)):
+        raise ValueError("The local app returned a different report snapshot.")
+    publication = result.get("publication") if isinstance(result.get("publication"), dict) else {}
+    return {"card": research_id + "@" + str(result["version"]), "record_type": "v4", "kind": result.get("kind"),
+            "path": publication.get("path"), "human_reviewed": result.get("human_reviewed"),
+            "report_url": result.get("report_url"), **full_view(result["agent_view"])}
 
 
 def card_address_matches(card, key):
@@ -883,8 +1002,8 @@ def validate_lookup(status, body, key):
 class SourceLookup:
     """Adres anahtarlı kart bakışı: yerel kapsam listesi kesin ıskayı ağsız çözer, isabette tek GET."""
 
-    def __init__(self, client, coverage=None, hits=None):
-        self.client, self.coverage, self.hits = client, coverage, hits
+    def __init__(self, client, coverage=None, hits=None, topics=None):
+        self.client, self.coverage, self.hits, self.topics = client, coverage, hits, topics
         # H8: bakış yanıtları anahtar ve sürüm parametresiyle, yalnız bellekte; If-None-Match ile yeniden doğrulanır.
         self.etags = OrderedDict()
         self.lock = Lock()
@@ -897,9 +1016,10 @@ class SourceLookup:
             raise ValueError(f"Pass 1–{LOOKUP_LIMIT} public documentation URLs.")
         if not isinstance(language, str) or not re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?", language):
             raise ValueError("Use a language code such as en.")
-        if expected_product is not None and (not isinstance(expected_product, str)
-                                             or not PRODUCT_SLUG.fullmatch(expected_product)):
-            raise ValueError("expected_product must be a lowercase product slug such as cpython.")
+        # Konu listesindeki ürün adları (ağ isteği yok; eldeki kopya) takma ad çevirisinden önce denenir.
+        topic_data = self.topics.data if self.topics is not None and isinstance(self.topics.data, dict) else {}
+        asked_product = expected_product
+        expected_product = product_slug(expected_product, frozenset(topic_data.get("products") or ()))
         if expected_version is not None and (not isinstance(expected_version, str)
                                              or not VERSION_TEXT.fullmatch(expected_version)):
             raise ValueError("expected_version must be a short version such as 3.14.")
@@ -920,7 +1040,12 @@ class SourceLookup:
         coverage = {"state": state}
         if snapshot:
             coverage["library_revision"] = snapshot["revision"]
-        return {"results": results, "coverage": coverage}
+        else:
+            coverage["note"] = COVERAGE_NOTE
+        answer = {"results": results, "coverage": coverage}
+        if expected_product != asked_product:
+            answer["expected_product"] = expected_product  # yazım düzeltildiyse kullanılan slug görünür (K3)
+        return answer
 
     def one(self, index, url, language, params, snapshot, check_server, view):
         try:
@@ -952,6 +1077,8 @@ class SourceLookup:
             status, body = self.fetch(key, params)
             if body["result"] == "found":
                 card = body["cards"][0]
+                if card.get("schema") == "devtrellis-agent-view" and hasattr(self.client, "remember_v4"):
+                    self.client.remember_v4((card.get("server") or {}).get("id"))
                 if view == "full":
                     shown = full_view(card)
                 else:
@@ -960,7 +1087,7 @@ class SourceLookup:
                 eligible = body["answer_eligible"] and (view == "full" or shown["answer_eligible"])
                 hint = omitted_hint(shown) if view == "card" else None
                 return finish("found", eligible=eligible, match=body["version_match"], network=True, card=shown,
-                              **({"hint": hint} if hint else {}))
+                              **({"hint": hint} if hint else {}), scope_hint=CARD_SCOPE_HINT)
             candidates = [{"card": _card_ref(item["card"]), "applies_to": (item.get("applies_to") or [])[:3],
                            "version_match": item.get("version_match")} for item in body["candidates"]]
             extra = {"candidates": candidates} if candidates else {}
@@ -1103,7 +1230,8 @@ def _report_card(item, version_match, applies):
         server.update(record_type="v4", kind={"research_report": "report", "topic_summary": "topic_summary",
                                                "source_card": "source_card"}.get(item.get("kind"), "report"),
                       path=publication.get("path"), human_reviewed=publication.get("human_reviewed"),
-                      label=_short((publication.get("label") or {}).get("en") or "", 120) or None)
+                      label=_short((publication.get("label") or {}).get("en") or machine_label(publication.get("path")),
+                                   120) or None)
     corrections = item.get("public_corrections")
     if isinstance(corrections, list):
         server["corrections"] = {"open": len(corrections)}
@@ -1122,10 +1250,37 @@ def _report_card(item, version_match, applies):
         # Sorgunun raporda geçmeyen sözcükleri: yüksek eşleşme de cevap yeterliliği değildir.
         card["missing_terms"] = match["missing_terms"][:6]
     card["untrusted_notice"] = UNTRUSTED_NOTICE
-    card["untrusted"] = wrap_untrusted({"title": packet.get("title"),
-                                        "short_answer": " ".join(words[:80]) + ("…" if len(words) > 80 else ""),
+    # alpha.12 K4: özet kesilmez. Paket doğrulaması özeti zaten 600 karakterle sınırlar; eskiden 80 sözcükte kesilip "…"
+    # ekleniyordu ve ajan cevabı tamamlamak için ikinci çağrı yapıyordu.
+    card["untrusted"] = wrap_untrusted({"title": packet.get("title"), "short_answer": " ".join(words),
                                         "sources": [source.get("url") for source in sources[:6]]})
     return card
+
+
+def v4_search_card(card, connection, budget=CARD_TARGET_BYTES):
+    """alpha.12 K4: yüksek isabetteki v4 kaydı (kaynak kartı, rapor, konu özeti) için arama kartı iddiaları gösterir.
+
+    v4 arama özeti iddia metinlerinin birleşimidir ve sunucuda 600 karakterde kesilir; ajan bu yüzden ikinci çağrıya
+    gidiyordu. Kayıt aynı araç çağrısında bir kez okunur ve adresle bulmadaki kart biçimiyle (bütün iddialar, alıntılar
+    aynen, `not_covered`) gösterilir. Okuma olmazsa özet kartı aynen kalır.
+    """
+    research_id, _, version = card["card"].partition("@")
+    try:
+        connection.remember_v4(research_id)
+        result = connection.read_record(research_id, int(version))
+        view = result.get("agent_view") if result.get("record_type") == "v4" else None
+        if not isinstance(view, dict):
+            return card
+        shown = compact_card(view, card["version_match"], card["answer_eligible"], budget=budget)
+    except (ValueError, KeyError, TypeError):
+        return card
+    shown["server"] = {"record_type": "v4", **shown["server"]}
+    if card.get("missing_terms"):
+        shown["missing_terms"] = card["missing_terms"]
+    hint = omitted_hint(shown)
+    if hint:
+        shown["hint"] = hint
+    return shown
 
 
 def search_cards(summary, gate_snapshot, decision):
@@ -1284,7 +1439,7 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
                                folder / "topics-v1.json" if folder else None)
     if hits is None:
         hits = HitLog(folder / "hit-log-v1.json" if folder else None)
-    lookups = SourceLookup(connection, coverage, hits)
+    lookups = SourceLookup(connection, coverage, hits, topics)
     gate = TopicGate(topics)
     if prefetch:
         # Liste indirmesi açılışı ve ilk araç listesini beklemez.
@@ -1307,7 +1462,7 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
     def lookup_source(urls: list[str] | str, language: str = "en", expected_product: str | None = None,
                       expected_version: str | None = None, check_server: bool = False,
                       view: Literal["card", "full"] = "card") -> dict[str, Any]:
-        """Before fetching a public documentation page, check whether DevTrellis already has a source card for it.
+        """Before fetching a public documentation page, check whether DevTrellis already has a card or report for it.
 
         Pass 1–5 public https URLs in one call. The address is canonicalized locally; when the local
         snapshot does not list it, nothing is sent (network=false). Otherwise only its SHA-256 key is sent.
@@ -1346,7 +1501,16 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
                 hits.count("search_blocked")
                 return {"hit": False, "in_scope": False, "network": False,
                         "hint": "No DevTrellis topic lists these products; continue without DevTrellis."}
-            answer = search_cards(connection.search(text, limit, view="summary"), snapshot, decision)
+            summary = connection.search(text, limit, view="summary")
+            for item in summary.get("items", []):
+                if isinstance(item, dict) and item.get("record_type") == "v4":
+                    connection.remember_v4(item.get("id"))
+            answer = search_cards(summary, snapshot, decision)
+            if answer.get("card") and answer["card"]["server"].get("record_type") == "v4":
+                summary_card = answer["card"]
+                answer["card"] = v4_search_card(summary_card, connection)
+                if answer["card"] is not summary_card:
+                    answer["scope_hint"] = CARD_SCOPE_HINT
             hits.count("search_" + answer["match"] if answer["hit"] else "search_empty")
             return answer
 
@@ -1486,15 +1650,18 @@ def main():
         return
     try:
         if options.standalone:
+            # alpha.12 K1: yerel hizmet (fastapi, uvicorn, platform API zinciri) arka planda kurulur; MCP `initialize`
+            # onu beklemez. İlk araç isteği hizmet hazır olana kadar bekler (CommunityClient.ready).
             from radar.mcp_yerel import yerel_kopru
-            context = yerel_kopru(options.data_dir or Path.home() / ".devtrellis" / "mcp-data")
+            context = yerel_kopru(options.data_dir or Path.home() / ".devtrellis" / "mcp-data", background=True)
         else:
             context = nullcontext(options.local_url or DEFAULT_LOCAL_URL)
-        with context as origin:
+        with context as bridge:
+            origin, ready = (bridge, None) if isinstance(bridge, str) else (bridge.origin, bridge.wait)
             # Kapsam/konu listesi ve isabet günlüğü iki kipte de aynı veri klasöründe kalır.
             data_dir = options.data_dir or Path.home() / ".devtrellis" / "mcp-data"
-            create_server(origin, source_memory=options.source_memory_tools, data_dir=data_dir,
-                          prefetch=True).run(transport="stdio")
+            create_server(origin, client=CommunityClient(origin, ready=ready), source_memory=options.source_memory_tools,
+                          data_dir=data_dir, prefetch=True).run(transport="stdio")
     except ModuleNotFoundError:
         parser.exit(2, "Install dependencies: python -m pip install -r requirements-lock.txt -r requirements-mcp.txt\n")
 

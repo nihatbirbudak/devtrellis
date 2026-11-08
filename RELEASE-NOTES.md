@@ -1,8 +1,68 @@
-# DevTrellis 0.1.0-alpha.11 — independently accepted 8 November 2026 (Claude-side); not yet deployed
+# DevTrellis 0.1.0-alpha.12 — independently accepted 8 November 2026 (Claude-side); not yet deployed
+
+## Fixes from the alpha.11 paired measurement
+
+The paired measurement on the deployed alpha.11 bridge (7 question pairs, same agent with and without DevTrellis) found that
+page fetches fell by 46%, but tokens rose 6%, time 30% and quality was slightly lower. Most of the extra steps came from bridge
+defects. This release fixes them. It passed an independent acceptance on 8 November 2026 (Claude-side review; its condition, records without a structured scope hidden when a product is given, is fixed in this entry). It has not been deployed or published yet.
+
+- **`read_research` and `record_research_use` on v4 records (was HTTP 502).** The local application read every report through
+  the v1 card endpoint; machine-gate records (source cards, reports, topic summaries) are not there, the community answered 404
+  and the local API turned it into 502. On a v1 404 the record is now read from `/api/community/v4/records/{id}/v/{n}` and the
+  bridge returns the server's agent view inside the untrusted block (card ref, kind, path, `human_reviewed`, `report_url`; v4
+  records have no sections, so only `view="full"`). Usage on a published v4 record answers `recorded: false,
+  reason: usage_not_counted_for_v4_records` instead of an error (the server keeps no usage counter for v4 records yet).
+- **`expected_product` accepts names as agents write them.** "Python", "PostgreSQL", "Go", "Node.js" are lowercased and mapped
+  to the library slug (`cpython`, `postgresql`, `go`, `nodejs`; also `postgres`, `golang`, `k8s` and a few others); remaining
+  dots are dropped. Inner spaces are still rejected (a version goes in `expected_version`). When the name was changed, the
+  response shows the slug used.
+- **Faster MCP start in `--standalone`.** The local review service (FastAPI, Uvicorn, the platform API chain) is built in a
+  background thread; `initialize` no longer waits for it, the first tool request does. Warm measurement on the developer PC:
+  `initialize` median 2.73 s → 2.04 s; the rest is the MCP SDK import. Under memory pressure the deferred imports were roughly half of the
+  14.5 s seen in the measurement.
+- **Search card short answer is not cut.** The card view cut the summary at 80 words; it is shown whole (package validation
+  already limits it to 600 characters). On a high hit for a v4 record the bridge reads the record once in the same call and shows
+  all its claims (at most 6, quotes exact, `not_covered`), because the v4 search summary is the claim texts cut at 600 characters.
+- **`coverage.state` is consistent.** The coverage and topics lists are valid for 5 minutes; after expiry the refresh used to run
+  in the background, so the first lookup said `stale` and the next `fresh`. The refresh is now waited for (at most 8 s). A list that
+  really is stale or missing carries a note that it says nothing about card freshness.
+- **Narrow cards no longer look complete.** A found lookup result (and an expanded v4 search card) carries `scope_hint`: a card
+  holds selected claims, not the whole page; for all/which questions check `not_covered` or read the page. The contribution
+  reference of the skill adds two rules: a claim says no more than its quote (a named function, option or parameter must be in
+  the quote; no negation or limit the quote does not state), and list-type topics either include every item or name the missing
+  ones in `not_covered`.
+- **Gate claim-support rule: measured, not applied.** A network-free rule (code names in the claim missing from the quote; a
+  negation in the claim but none in the quote) flagged 7 and 5 of the 42 published claims. Fetching the sources showed every
+  flagged code name within 300 characters before its quote (a table row or heading), so most flags were wrong; as a rejection
+  rule it would have refused 3 of the 5 published records. The gate stays `denetim-kapisi-v0.2.3`; the rule is documented for
+  contributors instead (above).
+- Small fixes: on the `machine_gate` path an empty evidence label reads "Not human-reviewed"; `topics` and search tags find
+  dotted and two-letter product names ("Node.js" + nodejs.org → `nodejs`, "Go" + pkg.go.dev → `go`; search index version
+  `k1-3.5`); the `lookup_source` description says "card or report".
+- **Acceptance fixes (conditional acceptance, 8 November 2026).** Address lookup no longer hides a record without a structured
+  scope (the two live GitHub reports) when `product` or `version` is given: the match is `unspecified` (card shown, version
+  unchecked; contract r2 defines version matching only on structured items). A failed background start writes its reason to
+  stderr and a missing module brings back the "Install dependencies" hint. A removed or withdrawn record answers "removed or
+  withdrawn" (local 410) instead of HTTP 502. `expected_product` drops dots only for a `.js` suffix ("python3.14" and ".NET" stay
+  errors) and keeps a name listed as-is in the topics copy. Records known to be v4 are read from the new local route
+  `/api/platform/community/v4-records/{id}` without a v1 request first.
+
+### Upgrade notes
+
+- **Deploy the server and the installed local bridges together.** The 502 fix lives in the bridges (`mcp_topluluk.py`,
+  `radar/topluluk_baglantisi.py`) and works against the alpha.11 server. Server files changed only for lookup version matching, `topics` and
+  search tags (`radar/katki_v4.py`, `radar/katki_v4_depo.py`); the bridge also needs the new local route in
+  `radar/platform_api.py` (an older local app falls back to the card route); the first start rebuilds the derived K1 search index (`k1-3.5`), no data
+  migration. Rolling back to alpha.11 code is safe (it rebuilds its own index version).
+- The installed MCP command runs Python with `-B`, so project modules are compiled on every start. With this candidate fewer
+  modules load before `initialize`; precompiling the release folder (`python -m compileall`) would save a little more.
+- Not included: deployment, GitHub push, release tag.
+
+# DevTrellis 0.1.0-alpha.11 — independently accepted and deployed 8 November 2026
 
 ## K1 second slice and K2 card budget, merged on alpha.10
 
-Merge of `claude/k1-ikinci-dilim-20261108` and `claude/k2-kart-butcesi-20261108` on the alpha.10 code (`a1832b02`), plus the fixes their independent acceptances asked for. Each branch passed its own acceptance, and the merged candidate passed an independent acceptance on 8 November 2026 (Claude-side review; its high finding, null record fields in the K2 bridge, is fixed in this entry). It has not been deployed or published yet.
+Merge of `claude/k1-ikinci-dilim-20261108` and `claude/k2-kart-butcesi-20261108` on the alpha.10 code (`a1832b02`), plus the fixes their independent acceptances asked for. Each branch passed its own acceptance, and the merged candidate passed an independent acceptance on 8 November 2026 (Claude-side review; its high finding, null record fields in the K2 bridge, is fixed in this entry). It was published as the GitHub release `v0.1.0-alpha.11` and deployed to devtrellis.org on 8 November 2026.
 
 - K1 search: published v4 records (research reports, topic summaries, source cards) appear in the public `GET /api/community/cards` list and search with the v1 ranking keys. Items carry `record_type: "v4"`, `kind`, `human_reviewed`, `publication` and a `link` to the public record (`/r/{id}/v/{n}` answers `303` there). `library.published_research_total` includes v4 records; `library.published_v4_total` is listed separately. Withdrawn or removed records leave the index in the same transaction.
 - K1 address index for every kind: lookup, coverage and topics list a record under every canonical address it cites (source card → report → topic summary at a shared address). Free-text `applies_to` fills `topics` by inference.

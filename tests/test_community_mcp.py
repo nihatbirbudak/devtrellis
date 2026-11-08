@@ -299,6 +299,22 @@ class CommunityMcpTests(unittest.TestCase):
             self.assertNotIn("private-value", str(failure.exception))
             self.assertEqual(len(self.server.calls), before + 1)
 
+    def test_removed_record_and_known_v4_route_with_an_older_local_app(self):
+        """alpha.12 kabulü düşük 4/5: 410 açık ileti verir; v4 olduğu bilinen kayıtta v4 yolu yoksa genel kart ucuna dönülür."""
+        self.server.failure = (410, {"detail": "removed"}, "application/json")
+        with self.assertRaisesRegex(ValueError, "removed or withdrawn"):
+            self.client.read("research-1")
+        self.server.failure = None
+        record = "b" * 32
+        self.client.remember_v4(record)
+        self.client.remember_v4("not-a-record-id")
+        self.assertEqual(self.client.v4_records, {record})
+        before = len(self.server.calls)
+        with self.assertRaisesRegex(ValueError, "HTTP 404"):
+            self.client.read(record, 1)
+        self.assertEqual([urlsplit(path).path for path, _, _ in self.server.calls[before:]],
+                         ["/api/platform/community/v4-records/" + record, "/api/platform/community/cards/" + record])
+
     def test_response_and_request_limits(self):
         self.server.failure = (200, b"x" * 101, "application/json")
         with patch("mcp_topluluk.MAX_RESPONSE_BYTES", 100), self.assertRaisesRegex(ValueError, "limit"):

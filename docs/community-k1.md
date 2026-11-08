@@ -54,7 +54,8 @@ python -B -X utf8 topluluk.py serve --public-url https://community.example.org `
   records (an alpha.10 store, where only source cards had an `address_key` column, migrates on first start; purged tombstones keep
   their column address). `topluluk.py k1-reindex --k1-db … --k1-config …` rebuilds both indexes completely and prints counts. The
   database `user_version` stays 1; encrypted backups made before the slice restore and migrate the same way. The search index
-  version is `k1-2.<ranking index version>` since alpha.11 (new product rule), so the first start rebuilds it.
+  version is `k1-3.<ranking index version>` since alpha.12 (dotted and two-letter product names such as Node.js and Go;
+  alpha.11 used `k1-2`), so the first start rebuilds it.
 - **Journal mode (alpha.11):** the K1 store uses WAL like the v1 store, so a search read snapshot never makes a withdrawal or
   removal wait. The mode is set on every start after the role check and persists in the file; an alpha.10 store switches on first
   open, and alpha.10 code opens a WAL store unchanged. The `-wal` and `-shm` files sit next to `k1.sqlite3` in the same private

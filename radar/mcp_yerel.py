@@ -1,6 +1,11 @@
-"""MCP oturumuna ait, araştırma çalıştırmayan dar kapsamlı yerel HTTP köprüsü."""
+"""MCP oturumuna ait, araştırma çalıştırmayan dar kapsamlı yerel HTTP köprüsü.
+
+alpha.12 K1: ağır modüller (uvicorn, fastapi, `radar.platform_api` zinciri) burada içe aktarılmaz; yerel hizmet kurulurken
+yüklenir. `yerel_kopru(..., background=True)` bu kurulumu arka planda yapar; MCP `initialize` onu beklemez, ilk istek bekler.
+"""
 
 import asyncio
+import importlib
 import json
 import os
 import secrets
@@ -11,16 +16,11 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from starlette.responses import JSONResponse
-
-from radar.depo import Depo
-from radar.platform_api import router_olustur
-
 
 START_TIMEOUT = 15.0
+# Arka plan kurulumunda ilk isteğin bekleyebileceği en uzun süre (açılıştan itibaren). Bellek baskısında içe aktarma
+# 13 sn'yi bulabildi (eşli ölçüm, 8 Kasım 2026); sınır bu yüzden senkron kurulumdan geniş.
+BACKGROUND_START_TIMEOUT = 60.0
 STOP_TIMEOUT = 5.0
 OWNER_FILE = ".devtrellis-mcp-data.json"
 OWNER = {"application": "devtrellis-mcp", "schema": 1}
@@ -35,6 +35,26 @@ LOG_CONFIG = {
                 "uvicorn.error": {"handlers": [], "level": "WARNING", "propagate": True},
                 "uvicorn.access": {"handlers": [], "level": "WARNING", "propagate": False}},
 }
+
+
+def _lazy(name):
+    """Modülü ilk kullanımda yükler ve bu modülün adıyla saklar (testler `mcp_yerel.uvicorn`'u yamalayabilir)."""
+    module = globals().get(name)
+    if module is None:
+        module = importlib.import_module(name)
+        globals()[name] = module
+    return module
+
+
+def __getattr__(name):
+    if name == "uvicorn":
+        return _lazy(name)
+    raise AttributeError(name)
+
+
+def _json_response(*args, **kwargs):
+    from starlette.responses import JSONResponse
+    return JSONResponse(*args, **kwargs)
 
 
 def _linked(path):
@@ -79,6 +99,12 @@ def _data_directory(value):
 
 def _application(directory, port):
     """Build only the community API; no research services, account probes or schedulers."""
+    from fastapi import FastAPI, Request
+    from fastapi.staticfiles import StaticFiles
+
+    from radar.depo import Depo
+    from radar.platform_api import router_olustur
+
     nonce = secrets.token_urlsafe(32)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.depo = Depo(directory / "research.sqlite3", sources=[])
@@ -115,7 +141,7 @@ def _application(directory, port):
                     error = (413, "The request is too large.")
                 elif len(await request.body()) != size:
                     error = (400, "The request length is inconsistent.")
-        response = JSONResponse({"detail": error[1]}, status_code=error[0]) if error else await call_next(request)
+        response = _json_response({"detail": error[1]}, status_code=error[0]) if error else await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
@@ -136,7 +162,7 @@ class _CommunityOnly:
                                          or path in REVIEW_FILES or path == "/api/health"):
             return await self.app(scope, receive, send)
         if scope["type"] == "http":
-            response = JSONResponse({"detail": "This endpoint is unavailable in the MCP bridge."},
+            response = _json_response({"detail": "This endpoint is unavailable in the MCP bridge."},
                                     status_code=404, headers={"Cache-Control": "no-store"})
             return await response(scope, receive, send)
         if scope["type"] == "websocket":
@@ -145,24 +171,60 @@ class _CommunityOnly:
         raise RuntimeError("Unsupported MCP bridge protocol.")
 
 
+INSTALL_HINT = "Install dependencies: python -m pip install -r requirements-lock.txt -r requirements-mcp.txt"
+
+
+def _report_start_failure(exc):
+    """Arka plan kurulumu düşerse sebebi stderr'e yazar (stdout MCP çerçevelerine ayrılmış); eksik modülde kurulum ipucu."""
+    import sys
+    if isinstance(exc, ModuleNotFoundError):
+        line = INSTALL_HINT
+    else:
+        line = f"DevTrellis local service failed to start: {type(exc).__name__}: {' '.join(str(exc).split())[:300]}"
+    try:
+        print(line, file=sys.stderr, flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+class LocalBridge:
+    """Arka planda kurulan yerel hizmet: adres hemen bellidir; `wait()` hizmet istek kabul edene kadar bekler."""
+
+    def __init__(self, origin, wait):
+        self.origin, self.wait = origin, wait
+
+
 @contextmanager
-def yerel_kopru(data_dir):
-    """Yield an owned loopback origin, then stop only that server and release its locks."""
+def yerel_kopru(data_dir, *, background=False):
+    """Yield an owned loopback origin, then stop only that server and release its locks.
+
+    background=True: the listening socket is bound first and a `LocalBridge` is yielded at once; the application is
+    built (heavy imports) and served in the worker thread. Callers must `wait()` before the first request.
+    """
     directory = _data_directory(data_dir)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server = None
     worker = None
     finished = threading.Event()
+    stopping = threading.Event()
     failures = []
     async_owner = {}
+    built = {}
     try:
         listener.bind(("127.0.0.1", 0))
         listener.listen(128)
         port = listener.getsockname()[1]
-        app = _application(directory, port)
+        if not background:
+            built["app"] = _application(directory, port)
+
+        async def close_unstarted(app):
+            async with app.router.lifespan_context(app):
+                pass
+
         # Own the lifespan even if Uvicorn fails before its normal startup handshake.
-        async def serve():
+        async def serve(app):
             nonlocal server
+            uvicorn = _lazy("uvicorn")
             async with app.router.lifespan_context(app):
                 # Keep stdio stdout exclusively available for MCP protocol frames.
                 config = uvicorn.Config(_CommunityOnly(app, port), host="127.0.0.1", port=port,
@@ -170,14 +232,23 @@ def yerel_kopru(data_dir):
                                         loop="asyncio", interface="asgi3", timeout_graceful_shutdown=2,
                                         proxy_headers=False, server_header=False)
                 server = uvicorn.Server(config)
+                if stopping.is_set():
+                    server.should_exit = True
                 async_owner.update(loop=asyncio.get_running_loop(), task=asyncio.current_task())
                 await server.serve(sockets=[listener])
 
         def run():
             try:
-                asyncio.run(serve())
+                if "app" not in built:
+                    built["app"] = _application(directory, port)
+                if stopping.is_set():
+                    asyncio.run(close_unstarted(built["app"]))
+                    return
+                asyncio.run(serve(built["app"]))
             except BaseException as exc:
                 failures.append(exc)
+                if background:
+                    _report_start_failure(exc)
             finally:
                 finished.set()
 
@@ -186,19 +257,26 @@ def yerel_kopru(data_dir):
             worker.start()
         except BaseException:
             # No worker means nothing entered the lifespan that owns constructor locks.
-            async def close_unstarted():
-                async with app.router.lifespan_context(app):
-                    pass
-            asyncio.run(close_unstarted())
+            if "app" in built:
+                asyncio.run(close_unstarted(built["app"]))
             raise
-        deadline = time.monotonic() + START_TIMEOUT
-        while server is None or not server.started:
-            if finished.wait(0.01):
-                raise RuntimeError("Could not start the local DevTrellis MCP bridge.") from (failures[0] if failures else None)
-            if time.monotonic() >= deadline:
-                raise RuntimeError("Timed out starting the local DevTrellis MCP bridge.")
-        yield f"http://127.0.0.1:{port}"
+        deadline = time.monotonic() + (BACKGROUND_START_TIMEOUT if background else START_TIMEOUT)
+
+        def wait():
+            while server is None or not server.started:
+                if finished.wait(0.01):
+                    raise RuntimeError("Could not start the local DevTrellis MCP bridge.") from (failures[0] if failures else None)
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Timed out starting the local DevTrellis MCP bridge.")
+
+        origin = f"http://127.0.0.1:{port}"
+        if background:
+            yield LocalBridge(origin, wait)
+        else:
+            wait()
+            yield origin
     finally:
+        stopping.set()
         if server is not None:
             server.should_exit = True
         if worker is not None and worker.ident is not None:
@@ -211,5 +289,7 @@ def yerel_kopru(data_dir):
                     async_owner["loop"].call_soon_threadsafe(async_owner["task"].cancel)
                 worker.join(1.0)
         listener.close()
-        if worker is not None and worker.is_alive():
+        # Arka plan kurulumu hâlâ içe aktarma yapıyorsa (sunucu hiç başlamadı) iş parçacığı kapanışı görüp kendini kapatır;
+        # süreç çıkarken beklenmez. Çalışan bir sunucu durmadıysa hata yine bildirilir.
+        if worker is not None and worker.is_alive() and (server is not None or not background):
             raise RuntimeError("The owned MCP bridge did not stop within its shutdown limit.")
