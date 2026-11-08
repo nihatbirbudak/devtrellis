@@ -18,8 +18,14 @@ import uuid
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-from radar.katki_v4 import (K1Ayarlari, KatkiHatasi, aday_on_denetimi, bakis_govdesi, kapi_ozeti, kaldirma_izi, kapsam_govdesi,
-                            kayit_olustur, konu_govdesi, riza_denetimi, zaman_metni)
+from radar.arastirma_arama import arama_gruplari
+from radar.arastirma_siralama import (FIELD_WEIGHTS, INDEX_FIELDS, INDEX_VERSION, aday_kapsami, alan_agirligi,
+                                      belge_terimleri, eslesme_bilgisi)
+from radar.gelistirici_alani import arama_metni
+from radar.katki_v4 import (K1Ayarlari, KatkiHatasi, aday_on_denetimi, arama_belgesi, arama_metni_v1,
+                            bakis_govdesi, kapi_ozeti, kaldirma_izi, kapsam_govdesi, kayit_adresleri, kayit_olustur,
+                            konu_govdesi, riza_denetimi, zaman_metni)
+from radar.katki_v4 import arama_karti as v4_arama_karti
 
 UYGULAMA_KIMLIGI = 0x44543441   # "DT4A"
 SURUM = 1
@@ -29,6 +35,11 @@ SIRADA = ("queued", "retry_wait")
 KIRA_SANIYE = 1800        # kapı bir raporda dakikalar sürebilir (30 kaynak × 30 sn üst sınır)
 YAYINDAKI_EN_COK = 500    # yinelenen yayın denetimine verilen en yeni kayıt sayısı
 TABLOLAR = {"v4_submissions", "v4_records", "v4_events", "v4_state"}
+# Adres dizini ve arama dizini türetilmiş veridir (K1 ikinci dilim, 8 Kasım 2026): açılışta kayıtlardan yeniden kurulabilir.
+# Sürüm değişince (`v4_state.search_index_version` ≠ ARAMA_DIZINI_SURUMU) iki dizin de bütünüyle yeniden doldurulur.
+ARAMA_DIZINI_SURUMU = f"k1-2.{INDEX_VERSION}"   # k1-2: kayıtlı alan adı kuralıyla ürün etiketleri (alpha.11)
+# Adresle bulmada aynı adreste birden çok kayıt: kaynak kartı önce, sonra rapor, sonra konu özeti; her grupta en yeni yayın.
+TUR_SIRASI = "CASE r.kind WHEN 'source_card' THEN 0 WHEN 'research_report' THEN 1 ELSE 2 END"
 # Yayımlanmadan sonlanan gönderimler: özel aday metni saklama süresi dolunca silinir (yayındaki kaydın metni zaten kamuda).
 OZEL_SONLANAN = ("rejected", "unverifiable", "review_rejected", "withdrawn", "removed")
 GUNLUK = logging.getLogger("devtrellis.k1")
@@ -150,9 +161,36 @@ class KatkiDeposu:
                     note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS v4_state (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS v4_record_addresses (
+                    id TEXT NOT NULL, version INTEGER NOT NULL, address_key TEXT NOT NULL, position INTEGER NOT NULL,
+                    PRIMARY KEY(id, version, address_key),
+                    FOREIGN KEY(id, version) REFERENCES v4_records(id, version) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS v4_addresses_key ON v4_record_addresses(address_key);
+                CREATE TABLE IF NOT EXISTS v4_search (
+                    id TEXT PRIMARY KEY, version INTEGER NOT NULL, kind TEXT NOT NULL, search_text TEXT NOT NULL,
+                    published_at INTEGER NOT NULL,
+                    FOREIGN KEY(id, version) REFERENCES v4_records(id, version) ON DELETE CASCADE
+                );
                 PRAGMA application_id={UYGULAMA_KIMLIGI};
                 PRAGMA user_version={SURUM};
             """)
+            self.search_index_available = False
+            self.arama_indeksini_hazirla(connection)
+        # WAL, v1 deposu gibi: arama okuma anlık görüntüsü açıkken geri çekme/kaldırma yazıcısı beklemez (K1 ikinci dilim
+        # kabulü, düşük bulgu 2). Rol doğrulamasından sonra; kip dosyada kalıcıdır (alpha.10 kodu WAL dosyasını olduğu gibi
+        # açar). Yedek aracı kopyayı bağımsız (DELETE) biçime çevirir; geri yüklenen dosya ilk açılışta yine WAL'a geçer.
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+
+    def _wal_bosalt(self):
+        """Özel metin silindikten sonra WAL dosyasını ana dosyaya aktarıp sıfırlar: silinen sayfaların eski kopyası WAL'da
+        kalmaz (DELETE kipindeki davranışla eş). Açık okuyucu varsa SQLite kısmen aktarır; kalan çerçeveler sonraki
+        yazımlarla üzerine yazılır."""
+        with closing(sqlite3.connect(self.path, timeout=10)) as connection:
+            mesgul, _, _ = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if mesgul:
+            GUNLUK.info("K1 WAL sıfırlaması açık okuyucu yüzünden ertelendi.")
 
     @contextmanager
     def baglanti(self, write=False):
@@ -173,6 +211,158 @@ class KatkiDeposu:
     def _olay(self, connection, kimlik, aktor, olay, not_="", simdi=None):
         connection.execute("INSERT INTO v4_events(submission_id,actor,event,note,created_at) VALUES(?,?,?,?,?)",
                            (kimlik, aktor, olay, not_, int(simdi if simdi is not None else self.clock())))
+
+    # ------------------------------------------------------------------ adres ve arama dizinleri (türetilmiş veri)
+    def fts5_kur(self, connection):
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(v4_search_fts)").fetchall()]
+        if columns and tuple(columns) != ("id", "version", *INDEX_FIELDS):
+            connection.execute("DROP TABLE v4_search_fts")
+        connection.execute("CREATE VIRTUAL TABLE IF NOT EXISTS v4_search_fts USING fts5("
+                           "id UNINDEXED,version UNINDEXED," + ",".join(INDEX_FIELDS) + ",tokenize='ascii')")
+
+    def arama_indeksini_hazirla(self, connection, *, zorla=False):
+        """Açılışta (ya da `k1-reindex` ile) adres ve arama dizinlerini yayındaki kayıtlarla eşitler.
+
+        Eski depoda (alpha.10) adres yalnız `v4_records.address_key` sütununda ve yalnız kaynak kartı içindi; burada her kaydın
+        bütün adresleri `v4_record_addresses` tablosuna, yayındakilerin arama satırı `v4_search` (+ FTS5) tablosuna yazılır.
+        Gövdesi silinmiş (saklama süresi dolmuş) eski iz için adres yalnız sütundan alınır. İşlem bağlantının işlemi içindedir.
+        """
+        try:
+            self.fts5_kur(connection)
+            self.search_index_available = True
+        except sqlite3.OperationalError as exc:
+            if "no such module: fts5" not in str(exc).lower():
+                raise
+        kayitli = connection.execute("SELECT value FROM v4_state WHERE name='search_index_version'").fetchone()
+        yenile = zorla or kayitli is None or kayitli["value"] != ARAMA_DIZINI_SURUMU
+        if yenile:
+            connection.execute("DELETE FROM v4_record_addresses")
+            connection.execute("DELETE FROM v4_search")
+            if self.search_index_available:
+                connection.execute("DELETE FROM v4_search_fts")
+        rows = connection.execute("SELECT r.id,r.version,r.kind,r.record,r.visible,r.published_at,r.address_key FROM v4_records r "
+                                  "WHERE NOT EXISTS (SELECT 1 FROM v4_record_addresses a WHERE a.id=r.id AND a.version=r.version) "
+                                  "ORDER BY r.published_at,r.id").fetchall()
+        for row in rows:
+            kayit = json.loads(row["record"]) if row["record"] != "{}" else None
+            adresler = kayit_adresleri(kayit) if kayit else ([row["address_key"]] if row["address_key"] else [])
+            self._adresleri_yaz(connection, row["id"], row["version"], adresler)
+        # Yayında olmayan kaydın arama satırı düşer; yayındaki eksikse yazılır.
+        connection.execute("DELETE FROM v4_search WHERE NOT EXISTS (SELECT 1 FROM v4_records r WHERE r.id=v4_search.id "
+                           "AND r.version=v4_search.version AND r.visible=1)")
+        if self.search_index_available:
+            connection.execute("DELETE FROM v4_search_fts WHERE rowid NOT IN (SELECT rowid FROM v4_search)")
+        eksik = connection.execute("SELECT r.id,r.version,r.record,r.published_at FROM v4_records r WHERE r.visible=1 AND NOT EXISTS "
+                                   "(SELECT 1 FROM v4_search s WHERE s.id=r.id AND s.version=r.version)").fetchall()
+        for row in eksik:
+            self._arama_satirini_yaz(connection, json.loads(row["record"]), row["published_at"])
+        connection.execute("INSERT INTO v4_state VALUES('search_index_version',?) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                           (ARAMA_DIZINI_SURUMU,))
+        return len(rows), len(eksik)
+
+    @staticmethod
+    def _adresleri_yaz(connection, kimlik, surum, adresler):
+        connection.executemany("INSERT OR IGNORE INTO v4_record_addresses(id,version,address_key,position) VALUES(?,?,?,?)",
+                               [(kimlik, surum, anahtar, sira) for sira, anahtar in enumerate(adresler)])
+
+    def _arama_satirini_yaz(self, connection, kayit, yayin_saniye):
+        kart = v4_arama_karti(kayit)
+        connection.execute("DELETE FROM v4_search WHERE id=?", (kayit["id"],))
+        cursor = connection.execute("INSERT INTO v4_search(id,version,kind,search_text,published_at) VALUES(?,?,?,?,?)",
+                                    (kayit["id"], kayit["version"], kayit["kind"], arama_metni(arama_metni_v1(kart)),
+                                     yayin_saniye))
+        if self.search_index_available:
+            alanlar = belge_terimleri(arama_belgesi(kart))
+            connection.execute("DELETE FROM v4_search_fts WHERE id=?", (kayit["id"],))
+            connection.execute("INSERT INTO v4_search_fts(rowid,id,version," + ",".join(INDEX_FIELDS) + ") VALUES(" +
+                               ",".join("?" for _ in range(3 + len(INDEX_FIELDS))) + ")",
+                               (cursor.lastrowid, kayit["id"], kayit["version"], *(alanlar[ad] for ad in INDEX_FIELDS)))
+
+    def _arama_satirini_sil(self, connection, kimlik):
+        if self.search_index_available:
+            connection.execute("DELETE FROM v4_search_fts WHERE id=?", (kimlik,))
+        connection.execute("DELETE FROM v4_search WHERE id=?", (kimlik,))
+
+    def yeniden_indeksle(self):
+        """`topluluk.py k1-reindex`: adres ve arama dizinlerini kayıtlardan bütünüyle yeniden kurar."""
+        with self.baglanti(write=True) as connection:
+            adres, arama = self.arama_indeksini_hazirla(connection, zorla=True)
+            yayinda = connection.execute("SELECT COUNT(*) FROM v4_search").fetchone()[0]
+            adresli = connection.execute("SELECT COUNT(DISTINCT address_key) FROM v4_record_addresses").fetchone()[0]
+        return {"records_addressed": adres, "search_rows_written": arama, "published_indexed": yayinda,
+                "distinct_addresses": adresli, "fts5": self.search_index_available, "index_version": ARAMA_DIZINI_SURUMU}
+
+    def yayinda_sayisi(self):
+        with self.baglanti() as connection:
+            return connection.execute("SELECT COUNT(*) FROM v4_records WHERE visible=1").fetchone()[0]
+
+    def arama_adaylari(self, connection, *, plan=None, query="", en_cok, puanlayici=None):
+        """Yayındaki v4 kayıtlarının arama adayları, v1 `topluluk_depo.sirali_adaylar` ile aynı sıralama anahtarlarıyla.
+
+        Sıralı kipte (plan verildi): kapsam, alan ağırlığı, bm25, yayın zamanı, kimlik. Katı kipte (query): v1 gibi
+        `instr(search_text, …)` grupları, yayın zamanı. Dönüş: (toplam, [{"id","version","key","fields"}]) — `key` birleşik
+        sıralamanın karşılaştırma anahtarıdır (küçük önce).
+
+        `puanlayici` (v1 deposunun `bm25_olcegi`) verilirse anahtardaki bm25 bu dizinin kendi değeri yerine v1 dizininin
+        istatistiğiyle hesaplanır; iki kaynağın puanı aynı ölçekte olur. Yeni puan kapsam/ağırlık grubu içindeki sırayı
+        değiştirebildiği için bu kipte eşleşen bütün adaylar puanlanıp sıralanır, sonra ilk `en_cok` alınır.
+        """
+        if plan is not None:
+            if not plan["match"] or not self.search_index_available:
+                return 0, []
+
+            def coverage(*values):
+                return aday_kapsami(plan, dict(zip(INDEX_FIELDS, values)))
+
+            def weight(*values):
+                return alan_agirligi(plan, dict(zip(INDEX_FIELDS, values)))
+
+            connection.create_function("devtrellis_coverage", len(INDEX_FIELDS), coverage, deterministic=True)
+            connection.create_function("devtrellis_weight", len(INDEX_FIELDS), weight, deterministic=True)
+            field_list = ",".join("f." + name for name in INDEX_FIELDS)
+            coverage_sql = "devtrellis_coverage(" + field_list + ")"
+            weights = ",".join(["0.0", "0.0"] + [repr(FIELD_WEIGHTS[name]) for name in INDEX_FIELDS])
+            selection = (" FROM v4_search_fts f JOIN v4_search s ON s.rowid=f.rowid AND s.id=f.id "
+                         "WHERE v4_search_fts MATCH ? AND " + coverage_sql + ">=0")
+            total = connection.execute("SELECT COUNT(*)" + selection, (plan["match"],)).fetchone()[0]
+            rows = connection.execute("SELECT s.id,s.version,s.published_at," + field_list + "," + coverage_sql +
+                                      " AS coverage,devtrellis_weight(" + field_list + ") AS weight,bm25(v4_search_fts," + weights +
+                                      ") AS relevance" + selection + " ORDER BY coverage DESC,weight DESC,relevance ASC,"
+                                      "s.published_at DESC,s.id" + ("" if puanlayici else " LIMIT ?"),
+                                      (plan["match"],) if puanlayici else (plan["match"], en_cok)).fetchall()
+            adaylar = []
+            for row in rows:
+                fields = {name: row[name] for name in INDEX_FIELDS}
+                relevance = puanlayici(fields) if puanlayici else row["relevance"]
+                adaylar.append({"id": row["id"], "version": row["version"], "fields": fields,
+                                "key": (-row["coverage"], -row["weight"], relevance, -row["published_at"], row["id"])})
+            if puanlayici:
+                adaylar.sort(key=lambda aday: aday["key"])
+            return total, adaylar[:en_cok]
+        conditions, values = [], []
+        if query:
+            for group in arama_gruplari(query):
+                conditions.append("(" + " OR ".join("instr(search_text,?)>0" for _ in group) + ")")
+                values.extend(group)
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        total = connection.execute("SELECT COUNT(*) FROM v4_search" + where, values).fetchone()[0]
+        rows = connection.execute("SELECT id,version,published_at FROM v4_search" + where +
+                                  " ORDER BY published_at DESC,id LIMIT ?", [*values, en_cok]).fetchall()
+        return total, [{"id": row["id"], "version": row["version"], "key": (-row["published_at"], row["id"]), "fields": None}
+                       for row in rows]
+
+    def arama_karti(self, connection, kimlik, surum, *, plan=None, fields=None):
+        row = connection.execute("SELECT record FROM v4_records WHERE id=? AND version=? AND visible=1", (kimlik, surum)).fetchone()
+        if row is None:
+            return None
+        kart = v4_arama_karti(json.loads(row["record"]))
+        if plan is not None:
+            kart["search_match"] = eslesme_bilgisi(plan, fields if fields is not None else belge_terimleri(arama_belgesi(kart)))
+        return kart
+
+    def arama_kaynagi(self):
+        """v1 `ToplulukDeposu.listele(ek_arama=…)` için uyarlayıcı: tek okuma işlemi içinde adaylar ve kartlar."""
+        return _AramaKaynagi(self)
 
     # ------------------------------------------------------------------ görünümler
     @staticmethod
@@ -273,6 +463,7 @@ class KatkiDeposu:
             if row["status"] not in ("withdrawn", "removed"):
                 if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='withdrawn' WHERE id=? AND visible=1",
                                       (simdi, kimlik)).rowcount:
+                    self._arama_satirini_sil(connection, kimlik)
                     self._revizyon_artir(connection)
                 connection.execute("UPDATE v4_submissions SET status='withdrawn',revision=revision+1,lease_id=NULL,"
                                    "lease_until=NULL,next_attempt_at=NULL,updated_at=? WHERE id=?", (simdi, kimlik))
@@ -382,7 +573,10 @@ class KatkiDeposu:
         sinir = int(self.clock()) - ayarlar.ozel_metin_saklama_gun * 86400
         with self.baglanti(write=True) as connection:
             connection.execute("PRAGMA secure_delete=ON")
-            return ozel_metni_temizle(connection, sinir_saniye=sinir)
+            silinen = ozel_metni_temizle(connection, sinir_saniye=sinir)
+        if silinen:
+            self._wal_bosalt()
+        return silinen
 
     def _bekleme(self, deneme, ayarlar):
         return min(ayarlar.deneme_en_uzun_saniye, ayarlar.deneme_ilk_saniye * 2 ** max(0, deneme - 1))
@@ -438,12 +632,16 @@ class KatkiDeposu:
     def _yayinla(self, connection, kimlik, aday, sonuc, yol, simdi):
         surum = (connection.execute("SELECT MAX(version) FROM v4_records WHERE id=?", (kimlik,)).fetchone()[0] or 0) + 1
         kayit = kayit_olustur(aday, sonuc, kayit_id=kimlik, surum=surum, yol=yol, yayin_saniye=simdi, origin=self.origin)
-        # Adresle bulma yalnız kaynak kartı içindir (tek kaynak adresi); rapor ve konu özeti adres dizinine girmez.
-        adres = kayit["claims"][0]["evidence"]["address_key"] if aday["kind"] == "source_card" else None
+        # Her tür adres dizinine girer (K1 ikinci dilim): iddiaların ve `sources[]` listesinin bütün kanonik adresleri
+        # `v4_record_addresses` tablosunda; eski `address_key` sütunu ilk adresle dolar (eski sürüm ve yedek araçları için).
+        adresler = kayit_adresleri(kayit)
         connection.execute("INSERT INTO v4_records(id,version,kind,record,path,visible,published_at,address_key) "
                            "VALUES(?,?,?,?,?,1,?,?)",
                            (kimlik, surum, aday["kind"], json.dumps(kayit, ensure_ascii=False, sort_keys=True), yol, simdi,
-                            adres))
+                            adresler[0] if adresler else None))
+        self._adresleri_yaz(connection, kimlik, surum, adresler)
+        # Yayınla aynı işlemde arama dizinine girer; geri çekme ve kaldırma aynı işlemde düşürür.
+        self._arama_satirini_yaz(connection, kayit, simdi)
         self._revizyon_artir(connection)
 
     @staticmethod
@@ -520,6 +718,7 @@ class KatkiDeposu:
                 raise KatkiHatasi("Bu gönderimin yayında sürümü yok.", 409, code="not_published")
             if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='removed' WHERE id=? AND visible=1",
                                   (simdi, kimlik)).rowcount:
+                self._arama_satirini_sil(connection, kimlik)
                 self._revizyon_artir(connection)
             connection.execute("UPDATE v4_submissions SET status='removed',note=?,revision=revision+1,updated_at=? WHERE id=?",
                                (not_, simdi, kimlik))
@@ -550,32 +749,68 @@ class KatkiDeposu:
                                       "LIMIT ? OFFSET ?", (limit, offset)).fetchall()
         return {"items": [json.loads(row["record"]) for row in rows], "total": toplam, "offset": offset, "limit": limit}
 
-    def _gorunur_kayitlar(self, connection, kosul="", degerler=()):
-        rows = connection.execute("SELECT record FROM v4_records WHERE visible=1" + kosul +
-                                  " ORDER BY published_at DESC,id", degerler).fetchall()
+    def _gorunur_kayitlar(self, connection, kosul="", degerler=(), sira="r.published_at DESC,r.id"):
+        rows = connection.execute("SELECT r.record FROM v4_records r WHERE r.visible=1" + kosul + " ORDER BY " + sira,
+                                  degerler).fetchall()
         return [json.loads(row["record"]) for row in rows]
 
     def _izler(self, connection, kosul="", degerler=()):
-        """Önceden yayımlanmış, sonra inen kaynak kartlarının asgari izleri (en yeni önce)."""
+        """Önceden yayımlanmış, sonra inen kayıtların adres başına asgari izleri (en yeni önce; her tür)."""
         return [dict(row) for row in connection.execute(
-            "SELECT r.id,r.version,r.address_key,r.removed_at FROM v4_records r WHERE r.visible=0 AND r.address_key IS NOT NULL"
-            + kosul + " ORDER BY r.removed_at DESC,r.id", degerler).fetchall()]
+            "SELECT r.id,r.version,a.address_key,r.removed_at FROM v4_records r JOIN v4_record_addresses a ON a.id=r.id "
+            "AND a.version=r.version WHERE r.visible=0" + kosul + " ORDER BY r.removed_at DESC,r.id,a.position", degerler).fetchall()]
 
     def bakis(self, address_key, urun, surum):
         with self.baglanti() as connection:
             connection.execute("BEGIN")
-            kayitlar = self._gorunur_kayitlar(connection, " AND address_key=?", (address_key,))
+            kayitlar = self._gorunur_kayitlar(
+                connection, " AND EXISTS (SELECT 1 FROM v4_record_addresses a WHERE a.id=r.id AND a.version=r.version "
+                "AND a.address_key=?)", (address_key,), sira=TUR_SIRASI + ",r.published_at DESC,r.id")
             izler = [dict(iz, removed_at=zaman_metni(iz["removed_at"]))
-                     for iz in self._izler(connection, " AND r.address_key=?", (address_key,))]
+                     for iz in self._izler(connection, " AND a.address_key=?", (address_key,))]
             return bakis_govdesi(address_key, self._revizyon(connection), kayitlar, izler, urun, surum)
 
     def kapsam(self):
         with self.baglanti() as connection:
             connection.execute("BEGIN")
-            kayitlar = self._gorunur_kayitlar(connection, " AND address_key IS NOT NULL")
+            kayitlar = self._gorunur_kayitlar(
+                connection, " AND EXISTS (SELECT 1 FROM v4_record_addresses a WHERE a.id=r.id AND a.version=r.version)")
             return kapsam_govdesi(self._revizyon(connection), kayitlar, self._izler(connection), int(self.clock()))
 
     def konular(self):
         with self.baglanti() as connection:
             connection.execute("BEGIN")
             return konu_govdesi(self._revizyon(connection), self._gorunur_kayitlar(connection), int(self.clock()))
+
+
+class _AramaKaynagi:
+    """v1 listesine katılan ikinci arama kaynağı. Bağlantı `__enter__` ile açılır; adaylar ve kartlar aynı okuma anlık
+    görüntüsünden gelir (sayı ile sayfa tutarlıdır)."""
+
+    def __init__(self, depo):
+        self.depo = depo
+        self.connection = None
+
+    def __enter__(self):
+        self.connection = sqlite3.connect(self.depo.path, timeout=10)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("BEGIN")
+        return self
+
+    def __exit__(self, *exc):
+        self.connection.rollback()
+        self.connection.close()
+        self.connection = None
+
+    @property
+    def ranked_available(self):
+        return self.depo.search_index_available
+
+    def adaylar(self, *, plan=None, query="", en_cok, puanlayici=None):
+        return self.depo.arama_adaylari(self.connection, plan=plan, query=query, en_cok=en_cok, puanlayici=puanlayici)
+
+    def kart(self, aday, *, plan=None):
+        return self.depo.arama_karti(self.connection, aday["id"], aday["version"], plan=plan, fields=aday["fields"])
+
+    def yayinda(self):
+        return self.connection.execute("SELECT COUNT(*) FROM v4_records WHERE visible=1").fetchone()[0]

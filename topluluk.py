@@ -49,8 +49,10 @@ def main(argv=None):
     k1_process = sub.add_parser("k1-process", help="Denetim sırasını bir tur kapıdan geçir (sunucu işçisi yerine elle)")
     k1_process.add_argument("--public-url", required=True)
     k1_process.add_argument("--local-pilot", action="store_true")
+    k1_reindex = sub.add_parser("k1-reindex", help="Adres ve arama dizinlerini yayındaki v4 kayıtlarından yeniden kur "
+                                                   "(açılışta kendiliğinden yapılır; elle yalnız onarım için)")
     # K1 deposunun yedeği şifreli operatör yedeğindedir: araclar/community-backup.py --k1 (düz kopya komutu yok).
-    for k1_command in (k1_status, k1_stop, k1_resume, k1_process):
+    for k1_command in (k1_status, k1_stop, k1_resume, k1_process, k1_reindex):
         k1_command.add_argument("--k1-db", type=Path, required=True)
         k1_command.add_argument("--k1-config", type=Path, required=True)
     account = sub.add_parser("account-add", help="Davet edilen kişinin hesabını gizli parola istemiyle oluştur")
@@ -161,7 +163,7 @@ def main(argv=None):
             import json
             from radar.katki_v4 import ayar_ornegi
             print(json.dumps(ayar_ornegi(), indent=2))
-        elif args.command in ("k1-status", "k1-stop", "k1-resume", "k1-process"):
+        elif args.command in ("k1-status", "k1-stop", "k1-resume", "k1-process", "k1-reindex"):
             import json
             from radar.katki_v4 import ayarlari_oku
             from radar.katki_v4_depo import KatkiDeposu
@@ -177,7 +179,8 @@ def main(argv=None):
                 # Durum ve durdurma bağlantı üretmez; kamu adresi gerekmez.
                 k1 = KatkiDeposu(args.k1_db, origin="")
                 result = (k1.durum(settings) if args.command == "k1-status" else
-                          k1.durdur("cli", args.reason, settings) if args.command == "k1-stop" else k1.devam_et("cli", settings))
+                          k1.durdur("cli", args.reason, settings) if args.command == "k1-stop" else
+                          k1.yeniden_indeksle() if args.command == "k1-reindex" else k1.devam_et("cli", settings))
             print(json.dumps(result, ensure_ascii=True))
         elif args.command == "backup":
             if not args.db.is_file():

@@ -292,7 +292,7 @@ def kaldirma_izi(kayit_id, surum, neden, saniye):
 
 
 def yetenekler(otomatik_yayin_ayari):
-    """İstemcinin ön görüşmesi. Adresle bulma yalnız kaynak kartları için; kaynak kontrol ucu bu dilimde yok."""
+    """İstemcinin ön görüşmesi. Adresle bulma her tür için (K1 ikinci dilim); kaynak kontrol ucu bu dilimde yok."""
     return {"schema": YETENEK_SEMASI, "schema_version": 1, "contract": SOZLESME, "record_schema_version": 4,
             "kinds": list(TURLER), "submissions": True, "auto_publish": otomatik_yayin_ayari,
             "quote_rule": ALINTI_KURALI, "quote_basis": ALINTI_DAYANAGI, "own_text_licenses": list(LISANSLAR),
@@ -395,6 +395,35 @@ def kaynak_anahtari(url):
         return None
 
 
+def kayit_adresleri(kayit):
+    """Kaydın andığı kanonik adreslerin anahtarları, ilk geçiş sırasıyla ve yinelenmeden (K1 ikinci dilim).
+
+    Her tür için: iddiaların `evidence.address_key` değerleri, sonra raporun `content.sources[]` adresleri (iddiasız kaynak
+    da adres dizinine girer). Bir kayıt birden çok adres anabilir; adresle bulma her birinde kaydı verir.
+    """
+    anahtarlar = []
+    for iddia in kayit.get("claims", []):
+        anahtar = (iddia.get("evidence") or {}).get("address_key")
+        if anahtar and anahtar not in anahtarlar:
+            anahtarlar.append(anahtar)
+    for kaynak in kayit.get("content", {}).get("sources") or []:
+        anahtar = _adres_anahtari(kaynak.get("url")) if isinstance(kaynak, dict) else None
+        if anahtar and anahtar not in anahtarlar:
+            anahtarlar.append(anahtar)
+    return anahtarlar
+
+
+def adres_kaynak_adresi(kayit, address_key):
+    """Verilen adres anahtarını anan ilk iddianın (yoksa `sources[]` girdisinin) kaynak adresi."""
+    for iddia in kayit.get("claims", []):
+        if (iddia.get("evidence") or {}).get("address_key") == address_key:
+            return iddia["evidence"]["source_url"]
+    for kaynak in kayit.get("content", {}).get("sources") or []:
+        if isinstance(kaynak, dict) and _adres_anahtari(kaynak.get("url")) == address_key:
+            return kaynak["url"]
+    return None
+
+
 def kapsam_listesi(kayit):
     """Kaydın ürün/sürüm kapsamı: iddiaların (ve raporun liste biçimli) `applies_to` öğeleri, yinelenmeden."""
     ogeler = []
@@ -448,8 +477,10 @@ def bakis_govdesi(address_key, revizyon, kayitlar, izler, urun, surum):
     secilen = uygun[0] if uygun else None
 
     def aday(kayit, eslesme):
+        # Kaynak anahtarı bu adresi anan iddianın adresinden; rapor birden çok adres anar, ilk iddia başka sayfa olabilir.
+        kaynak = adres_kaynak_adresi(kayit, address_key)
         return {"card": kart_referansi(kayit), "applies_to": kapsam_listesi(kayit)[:3], "version_match": eslesme,
-                "source_key": kaynak_anahtari(kayit["claims"][0]["evidence"]["source_url"])}
+                "source_key": kaynak_anahtari(kaynak) if kaynak else None}
     adaylar = [aday(k, e) for k, e in eslesmeler if secilen is None or k is not secilen[0]]
     govde["candidates"] = [a for a in adaylar if a["applies_to"] and a["source_key"]][:3]
     if secilen:
@@ -463,12 +494,14 @@ def kapsam_govdesi(revizyon, kayitlar, izler, simdi_saniye):
     """`devtrellis-coverage`: herkese aynı tam anahtar listesi; sorgu, kişisel ilgi ya da istek bilgisi yok."""
     adresler = {}
     for kayit in kayitlar:
-        anahtar = kayit["claims"][0]["evidence"]["address_key"]
-        kaynak = kaynak_anahtari(kayit["claims"][0]["evidence"]["source_url"])
-        if anahtar and kaynak:
-            # Tazelik izlenmediği için kullanılabilirlik bilinmiyor; pozitif kayıt kartı taze göstermez (r1 §7).
-            adresler.setdefault(anahtar, []).append({"card": kart_referansi(kayit), "source_key": kaynak,
-                                                     "availability": "unknown"})
+        # Her tür, andığı her adreste listelenir (K1 ikinci dilim); kaynak anahtarı o adresi anan iddiadan.
+        for anahtar in kayit_adresleri(kayit):
+            kaynak_adresi = adres_kaynak_adresi(kayit, anahtar)
+            kaynak = kaynak_anahtari(kaynak_adresi) if kaynak_adresi else None
+            if kaynak:
+                # Tazelik izlenmediği için kullanılabilirlik bilinmiyor; pozitif kayıt kartı taze göstermez (r1 §7).
+                adresler.setdefault(anahtar, []).append({"card": kart_referansi(kayit), "source_key": kaynak,
+                                                         "availability": "unknown"})
     tam = all(len(liste) <= 100 for liste in adresler.values())
     adresler = {anahtar: liste[:100] for anahtar, liste in adresler.items()}
     iz_listesi = {}
@@ -482,9 +515,72 @@ def kapsam_govdesi(revizyon, kayitlar, izler, simdi_saniye):
             "library_revision": revizyon, "complete": tam, "addresses": adresler, "tombstones": iz_listesi}
 
 
+# Serbest metin `applies_to` çıkarımında ürün sayılmayan alan adı parçaları ve genel sözcükler.
+_GENEL_ALAN_PARCALARI = frozenset("www docs doc developer developers dev api help support learn en tr com org net io co "
+                                  "edu gov info github-io readthedocs html htm".split())
+_KAPSAM_BAGLACLARI = frozenset("a an and or the of for to in on at by with as from is are was were be been its it this that "
+                               "these those documented documentation document documents send sends per such "
+                               "all any only also ve veya ile icin bir bu su olan olarak gibi".split())
+_SOZCUK = re.compile(r"[A-Za-z][A-Za-z0-9.+_-]*")
+# Kayıtlı alan adını (eTLD+1) bulmak için sık görülen iki parçalı genel ekler. Tam Public Suffix List değildir; listede
+# olmayan iki parçalı ekte etiket genel parça olur ve `_GENEL_ALAN_PARCALARI` ya da metinle kesişim onu eler.
+_IKI_PARCALI_EKLER = frozenset(
+    "co.uk org.uk ac.uk gov.uk me.uk com.au net.au org.au edu.au gov.au com.tr org.tr net.tr gov.tr edu.tr bel.tr k12.tr "
+    "co.jp ne.jp or.jp ac.jp co.kr or.kr com.br org.br com.cn org.cn com.mx co.in org.in co.nz org.nz co.za com.sg "
+    "com.hk com.tw github.io gitlab.io readthedocs.io netlify.app vercel.app pages.dev web.app firebaseapp.com "
+    "herokuapp.com blogspot.com appspot.com".split())
+
+
+def kayitli_alan_etiketi(ad):
+    """Kayıtlı alan adının (eTLD+1) ilk etiketi; alt alan parçaları sayılmaz (K1 ikinci dilim kabulü, düşük bulgu 3).
+
+    `docs.github.com` → `github`, `blog.rust-lang.org` → `rust-lang`, `cloud.google.com` → `google`,
+    `docs.python.org` → `python`, `tokio-rs.github.io` → `tokio-rs`. IP adresi, tek parçalı ad ve genel parça → None."""
+    parcalar = [p for p in str(ad or "").lower().rstrip(".").split(".") if p]
+    if len(parcalar) < 2 or all(p.isdigit() for p in parcalar):
+        return None
+    ek = 2 if ".".join(parcalar[-2:]) in _IKI_PARCALI_EKLER else 1
+    if len(parcalar) <= ek:
+        return None
+    etiket = parcalar[-ek - 1]
+    return None if etiket in _GENEL_ALAN_PARCALARI else etiket
+
+
+def kapsam_cikarimi(kayit):
+    """Serbest metin `applies_to` için makul çıkarım (K1 ikinci dilim): `products` = metinde geçen ve kaynak adreslerinin
+    kayıtlı alan adının (eTLD+1) ilk etiketiyle aynı olan ya da tireli etiketin bir parçası olan sözcükler
+    (`docs.github.com` + "GitHub" → `github`; `blog.rust-lang.org` + "Rust" → `rust`); `blog`, `cloud`, `developer` gibi alt
+    alan parçaları ürün sayılmaz. `terms` = metnin anlamlı sözcükleri. Liste biçimli `applies_to` olan kayıtta çıkarım
+    yapılmaz. Sorgulardan ya da okuma davranışından hiçbir şey türetilmez."""
+    metin_ = kayit.get("content", {}).get("applies_to")
+    if not isinstance(metin_, str) or not metin_.strip():
+        return [], []
+    sozcukler = []
+    for ham in _SOZCUK.findall(metin_):
+        sozcuk = ham.strip(".-_+").lower()
+        if len(sozcuk) >= 3 and sozcuk not in _KAPSAM_BAGLACLARI and sozcuk not in sozcukler:
+            sozcukler.append(sozcuk[:40])
+    from urllib.parse import urlsplit
+    etiketler, etiket_parcalari = set(), set()
+    adresler = [k.get("url") for k in kayit.get("content", {}).get("sources") or [] if isinstance(k, dict)]
+    adresler += [(i.get("evidence") or {}).get("source_url") for i in kayit.get("claims", [])]
+    for adres in adresler:
+        try:
+            ad = urlsplit(adres).hostname or "" if isinstance(adres, str) else ""
+        except ValueError:
+            ad = ""
+        etiket = kayitli_alan_etiketi(ad)
+        if etiket:
+            etiketler.add(etiket)
+            etiket_parcalari.update(p for p in etiket.split("-") if len(p) >= 3 and p not in _GENEL_ALAN_PARCALARI)
+    urunler = [s for s in sozcukler if (s in etiketler or s in etiket_parcalari) and _URUN.fullmatch(s)]
+    return urunler[:5], sozcukler[:60]
+
+
 def konu_govdesi(revizyon, kayitlar, simdi_saniye):
-    """`devtrellis-topics` v1 (K2 önerisi): kayıt başına tür, ürün/sürüm ve kısa terimler. Terimler yalnız katkı anındaki
-    `applies_to` ürün adlarından türetilir; arama sorgularından ya da okuma davranışından türetilmez."""
+    """`devtrellis-topics` v1 (K2 önerisi): kayıt başına tür, ürün/sürüm ve kısa terimler. Terimler katkı anındaki
+    `applies_to` alanından türetilir (liste biçiminde ürün adları; serbest metinde `kapsam_cikarimi`); arama sorgularından
+    ya da okuma davranışından türetilmez."""
     tur = {"research_report": "research", "topic_summary": "topic_summary", "source_card": "source_card"}
     girdiler = []
     for kayit in kayitlar:
@@ -498,9 +594,106 @@ def konu_govdesi(revizyon, kayitlar, simdi_saniye):
             for terim in (urun, *urun.split("-")):
                 if terim and terim not in terimler and len(terimler) < 60:
                     terimler.append(terim[:40])
+        if not urunler:
+            cikarilan_urunler, cikarilan_terimler = kapsam_cikarimi(kayit)
+            urunler = {u: [] for u in cikarilan_urunler}
+            for terim in cikarilan_terimler:
+                if terim not in terimler and len(terimler) < 60:
+                    terimler.append(terim)
         girdiler.append({"card": kart_referansi(kayit), "kind": tur[kayit["kind"]],
                          "products": [{"product": u, "versions": v} for u, v in list(urunler.items())[:5]],
                          "terms": terimler})
     return {"schema": "devtrellis-topics", "schema_version": 1, "generated_at": zaman_metni(simdi_saniye),
             "valid_until": zaman_metni(simdi_saniye + KAPSAM_SURESI), "library_revision": revizyon, "complete": True,
             "entries": girdiler}
+
+
+# ---------------------------------------------------------------------- arama görünümü (v1 `cards` ucuyla birleşim, K1 ikinci dilim)
+ARAMA_YAZARI = "Hesapsız katkı (makine denetimi)"
+_GOVDE_SINIRI = 12000      # v1 paket gövdesi sınırı (gelistirici_alani.kayit_dogrula); K2 köprüsü paketi aynı kuralla doğrular
+_OZET_SINIRI = 600
+_BASLIK_SINIRI = 160
+
+
+def _kirp(metin_, sinir):
+    metin_ = " ".join(str(metin_ or "").split())
+    return metin_ if len(metin_) <= sinir else metin_[:sinir - 1].rstrip() + "…"
+
+
+def _tarih_v1(zaman):
+    """`2026-11-08T06:31:49Z` → v1 paketlerinin beklediği saat dilimli ISO metni."""
+    return datetime.fromisoformat(zaman.replace("Z", "+00:00")).isoformat(timespec="seconds")
+
+
+def arama_etiketleri(kayit):
+    """Arama dizininin etiket alanı: liste biçimli kapsamın ürün adları, yoksa serbest metin kapsamından çıkarılanlar."""
+    etiketler = [oge["product"] for oge in kapsam_listesi(kayit)]
+    if not etiketler:
+        etiketler = kapsam_cikarimi(kayit)[0]
+    sonuc = []
+    for etiket_ in etiketler:
+        if etiket_ not in sonuc and len(sonuc) < 12:
+            sonuc.append(etiket_[:40])
+    return sonuc
+
+
+def arama_karti(kayit):
+    """Yayımlanmış v4 kaydının v1 `cards` listesiyle uyumlu kartı.
+
+    Paket v1 `ufuk-share` biçimindedir (mevcut arayüz, K2 köprüsü ve özet görünümü değişmeden okur); kaydın türü, yayın yolu
+    ve etiketi kartın kökünde ayrı alanlardadır: `record_type: "v4"`, `kind`, `human_reviewed`, `publication`, `link`.
+    Gövde aynı kaynaktan türetilir: kısa cevap, iddialar (alıntılarıyla), öneriler ve `## Limits` altında kapsam dışı notlar
+    (dizinde `limits` alanına düşer). Kayıt değişmez; bu yalnız bir görünümdür.
+    """
+    icerik, yayin = kayit["content"], kayit["publication"]
+    iddialar = kayit["claims"]
+    baslik = icerik.get("title") or (iddialar[0]["text"] if iddialar else "Kaynak kartı")
+    ozet = icerik.get("summary") or " ".join(i["text"] for i in iddialar)
+    bolumler = []
+    if icerik.get("short_answer"):
+        bolumler.append(str(icerik["short_answer"]).strip())
+    if iddialar:
+        bolumler.append("## Claims\n" + "\n".join(f'- {i["text"]} — "{i["evidence"]["quote"]}" ({i["evidence"]["source_url"]})'
+                                                 for i in iddialar))
+    if icerik.get("recommendations"):
+        bolumler.append("## Recommendations\n" + "\n".join(f"- {satir}" for satir in icerik["recommendations"]))
+    if icerik.get("not_covered"):
+        bolumler.append("## Limits\n" + "\n".join(f"- {satir}" for satir in icerik["not_covered"]))
+    govde = "\n\n".join(bolumler)
+    if len(govde) > _GOVDE_SINIRI:
+        govde = govde[:_GOVDE_SINIRI].rsplit("\n", 1)[0]
+    kaynaklar = []
+    for kaynak in (icerik.get("sources") or [{"title": i["evidence"]["source_url"], "url": i["evidence"]["source_url"]}
+                                            for i in iddialar]):
+        if isinstance(kaynak, dict) and kaynak.get("url") and all(kaynak["url"] != k["url"] for k in kaynaklar):
+            kaynaklar.append({"title": _kirp(kaynak.get("title") or kaynak["url"], _BASLIK_SINIRI), "url": kaynak["url"]})
+        if len(kaynaklar) == 10:
+            break
+    zaman = _tarih_v1(yayin["published_at"])
+    paket = {"schema": "ufuk-share", "schema_version": 1, "kind": "research", "title": _kirp(baslik, _BASLIK_SINIRI),
+             "summary": _kirp(ozet, _OZET_SINIRI), "body": govde, "url": "", "tags": arama_etiketleri(kayit),
+             "sources": kaynaklar, "author": ARAMA_YAZARI, "license": kayit["rights"]["own_text_license"],
+             "created_at": zaman, "updated_at": zaman}
+    return {"id": kayit["id"], "owner": {"username": None, "display_name": ARAMA_YAZARI, "verified": False},
+            "version": kayit["version"], "status": "published", "packet": paket, "created_at": zaman, "updated_at": zaman,
+            "published_version": kayit["version"],
+            "relationships": {"parents": [], "children": [], "children_total": 0},
+            "engagement": {"web_views": 0, "mcp_reads": 0, "helpful": 0, "used_in_research": 0, "needs_update": 0,
+                           "disputed": 0},
+            "submission_type": "anonymous",
+            "record_type": "v4", "kind": kayit["kind"], "human_reviewed": yayin["human_reviewed"],
+            "publication": {"path": yayin["path"], "human_reviewed": yayin["human_reviewed"], "label": yayin["label"],
+                            "policy_version": yayin["policy_version"], "gate_version": yayin["gate"]["version"]},
+            "answers": list(icerik.get("answers") or []), "link": kayit["link"]}
+
+
+def arama_belgesi(kart):
+    """Dizin alanlarına giren belge: v1 paket + `answers` (K1 teslim notunda sonraki dilime bırakılan bağ)."""
+    return {**kart["packet"], "answers": kart.get("answers") or []}
+
+
+def arama_metni_v1(kart):
+    """v1 katı aramanın (`search_mode=all`, `instr`) taradığı düz metin; v1 ile aynı birleşim sırası."""
+    paket = kart["packet"]
+    return " ".join([paket["title"], paket["summary"], paket["body"], *paket["tags"], *(kart.get("answers") or []),
+                     paket["author"]])

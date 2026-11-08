@@ -114,7 +114,7 @@ def card_applies(card):
     applies = []
     claims = card["declared"]["claims"] if card.get("schema") == "devtrellis-agent-view" else card["claims"]
     for claim in claims:
-        for item in claim["applies_to"]:
+        for item in claim["applies_to"] or []:   # canlı v4 kaydında null olabilir (gerçek sunucu da `or []` okur)
             if item not in applies:
                 applies.append(item)
     return applies

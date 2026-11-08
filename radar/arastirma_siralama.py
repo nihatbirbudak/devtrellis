@@ -6,6 +6,7 @@ ve sürüm numaraları tek belirteç, vs/versus/karşı bağlaç. Birleşik biç
 değildir: belgede ayrık yazım varsa parçalar birlikte eşleşir.
 """
 
+import math
 import re
 import unicodedata
 
@@ -350,3 +351,43 @@ def aday_kapsami(plan, doc_fields):
                    for group, parts, hint in zip(plan["groups"], _plan_parcalari(plan), hints)):
             return -1
     return count
+
+
+# FTS5 bm25() sabitleri (SQLite fts5_aux.c): k1 = 1,2, b = 0,75; eksi işaretli puan, küçük = iyi.
+BM25_K1 = 1.2
+BM25_B = 0.75
+_MATCH_TERM = re.compile(r'"([^"]*)"')
+
+
+def sorgu_terimleri(plan):
+    """FTS sorgu ifadesindeki tırnaklı terimler, ifadedeki sırayla (bm25'in öbekleri)."""
+    return tuple(_MATCH_TERM.findall(plan.get("match") or ""))
+
+
+def bm25_puani(terimler, doc_fields, *, satir_sayisi, ortalama_uzunluk, belge_sayilari):
+    """FTS5 `bm25(tablo, 0, 0, FIELD_WEIGHTS…)` ile aynı formül, derlem istatistiği dışarıdan verilir.
+
+    İki ayrı FTS dizini (v1 ve K1 v4) bm25'i kendi belge sayısıyla hesaplar; küçük dizinde idf çöker ve puanlar
+    karşılaştırılamaz (K1 ikinci dilim kabulü, orta bulgu 1). Bu işlev bir belgeyi başka bir dizinin istatistiğiyle
+    (satır sayısı, ortalama belge uzunluğu, terim başına belge sayısı) puanlar; aynı dizindeki belge için SQLite'ın
+    bm25() değerini verir. Alanlar belirteç kümesidir (her terim bir alanda en çok bir kez), uzunluk belirteç sayısıdır.
+    """
+    if satir_sayisi <= 0 or ortalama_uzunluk <= 0:
+        return 0.0
+    tokens = [set((doc_fields.get(name) or "").split()) for name in INDEX_FIELDS]
+    length = sum(len((doc_fields.get(name) or "").split()) for name in INDEX_FIELDS)
+    norm = BM25_K1 * (1 - BM25_B + BM25_B * length / ortalama_uzunluk)
+    score = 0.0
+    for term in terimler:
+        freq = 0.0
+        for name, field_tokens in zip(INDEX_FIELDS, tokens):
+            if term in field_tokens:
+                freq += FIELD_WEIGHTS[name]
+        if not freq:
+            continue
+        hits = belge_sayilari.get(term, 0)
+        idf = math.log((satir_sayisi - hits + 0.5) / (hits + 0.5))
+        if idf <= 0.0:
+            idf = 1e-6
+        score += idf * (freq * (BM25_K1 + 1.0)) / (freq + norm)
+    return -1.0 * score

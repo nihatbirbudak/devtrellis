@@ -43,7 +43,12 @@ INSTRUCTIONS = (
 )
 ALWAYS_LOAD = {"anthropic/alwaysLoad": True}
 LOOKUP_LIMIT = 5
+# Kart tanımı (K2 tasarımı (b)): en çok 6 iddia, iddia ≤240 karakter, alıntı ≤300 karakter aynen. Eşli ölçüm
+# (8 Kasım 2026) gösterdi ki bayt bütçesi iddia kesince ajan sayfayı yine açıyor; bütçe bu yüzden iddia sayısını
+# değil yalnız ikincil metinleri (özet, başlık, etiket, düzeltme notu) kısar. Sınırı aşan iddialar sayılır.
+CARD_CLAIM_LIMIT = 6
 CARD_TARGET_BYTES = 1500
+OMITTED_CLAIMS_HINT = "{n} claims not shown; call lookup_source again with view=\"full\" for the whole card."
 COVERAGE_IDENTITY = "k0-canonical-json-v1"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -670,14 +675,21 @@ def _freshness(state):
     return shown
 
 
-def _fit_claims(build, rows, budget):
-    """İddiaları bütün olarak, bütçe aşılana dek ekler; en az bir iddia her zaman kalır."""
-    kept = []
-    for row in rows:
-        if kept and _size(build(kept + [row], len(rows) - len(kept) - 1)) > budget:
-            break
-        kept.append(row)
-    return build(kept, len(rows) - len(kept))
+def _fit_card(build, rows, budget):
+    """Kart tanımındaki bütün iddiaları (en çok CARD_CLAIM_LIMIT) gösterir; bütçe yalnız ikincil metinleri kısar.
+
+    `build(kept, omitted, tight)`: `tight` ikincil alanların (özet, başlık, etiket, düzeltme notu) kısa sınırını açar.
+    İddia metni, alıntı ve `not_covered` hiçbir zaman kısaltılmaz; sınırı aşan iddialar `omitted_claims` ile sayılır.
+    """
+    kept, omitted = rows[:CARD_CLAIM_LIMIT], max(len(rows) - CARD_CLAIM_LIMIT, 0)
+    shown = build(kept, omitted, False)
+    return shown if _size(shown) <= budget else build(kept, omitted, True)
+
+
+def omitted_hint(card):
+    """Kart görünümünde sayılan iddialar için tek satır ipucu; yoksa None."""
+    omitted = (card.get("server") or {}).get("omitted_claims") if isinstance(card, dict) else None
+    return OMITTED_CLAIMS_HINT.format(n=omitted) if omitted else None
 
 
 def _source_card_view(card, version_match, answer_eligible, budget):
@@ -695,7 +707,7 @@ def _source_card_view(card, version_match, answer_eligible, budget):
              for c in usable]
     scope = []
     for claim in usable:
-        for item in claim.get("applies_to", []):
+        for item in claim.get("applies_to") or []:
             entry = {"product": item["product"], "versions": item["versions"]}
             if entry not in scope:
                 scope.append(entry)
@@ -713,17 +725,18 @@ def _source_card_view(card, version_match, answer_eligible, budget):
     declared = {"applies_to": scope[:3], "claim_types": sorted({c["claim_type"] for c in usable})}
     rows = [{"n": n, "text": _short(c["text"], 240), "quote": c["evidence"]["quote"][:300]}
             for n, c in enumerate(usable, 1)]
-    extra = {"not_covered": [_short(item, 80) for item in card.get("not_covered", [])]}
-    if corrections.get("public_note"):
-        extra["correction_note"] = _short(corrections["public_note"], 160)
+    not_covered = [_short(item, 80) for item in card.get("not_covered") or []]
 
-    def build(kept, omitted):
+    def build(kept, omitted, tight):
+        extra = {"not_covered": not_covered}
+        if corrections.get("public_note"):
+            extra["correction_note"] = _short(corrections["public_note"], 80 if tight else 160)
         shown = dict(server, **({"omitted_claims": omitted} if omitted else {}), link=card.get("link"))
         return {"card": _card_ref({"id": card["id"], "version": card["version"]}), "version_match": version_match,
                 "answer_eligible": bool(answer_eligible and usable), "server": shown, "declared": declared,
                 "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted({"claims": kept, **extra})}
 
-    return _fit_claims(build, rows, budget)
+    return _fit_card(build, rows, budget)
 
 
 def _agent_view(card, version_match, answer_eligible, key, budget, freshness=None):
@@ -731,53 +744,76 @@ def _agent_view(card, version_match, answer_eligible, key, budget, freshness=Non
 
     Tazelik bulma yanıtının kökünden gelir (`freshness.state`); yoksa kayıttaki alan, o da yoksa `unknown`.
     """
+    # Kayıt alanları `null` olabilir (canlı v4 raporunda iddia `applies_to: null`, kapsam rapor düzeyinde serbest metin):
+    # her okuma `or` ile boş değere iner; `.get(ad, varsayılan)` yalnız alan yoksa varsayılanı verir (alpha.11 kabulü, bulgu 1).
     server, declared, untrusted = card["server"], card["declared"], card["untrusted"]
-    matches = {m["claim_id"]: m for m in server.get("quote_matches", []) if key is None or m.get("address_key") == key}
-    claims = [c for c in untrusted.get("claims", []) if c.get("claim_id") in matches]
-    stated = {c["claim_id"]: c for c in declared.get("claims", [])}
+    matches = {m["claim_id"]: m for m in server.get("quote_matches") or []
+               if isinstance(m, dict) and (key is None or m.get("address_key") == key)}
+    claims = [c for c in untrusted.get("claims") or [] if isinstance(c, dict) and c.get("claim_id") in matches]
+    stated = {c["claim_id"]: c for c in declared.get("claims") or [] if isinstance(c, dict) and "claim_id" in c}
     scope = []
     for claim in claims:
-        for item in stated.get(claim["claim_id"], {}).get("applies_to", []):
+        for item in (stated.get(claim["claim_id"]) or {}).get("applies_to") or []:
+            if not isinstance(item, dict):
+                continue
             entry = {"product": item.get("product"), "versions": item.get("versions")}
             if entry not in scope:
                 scope.append(entry)
     label = server.get("label") if isinstance(server.get("label"), dict) else {}
     published = server.get("published_at")
     checked = [stated[c["claim_id"]]["checked_on"] for c in claims
-               if isinstance(stated.get(c["claim_id"], {}).get("checked_on"), str)]
+               if isinstance((stated.get(c["claim_id"]) or {}).get("checked_on"), str)]
     generated = declared.get("generated_at")
     stated_freshness = freshness if freshness is not None else server.get("freshness", card.get("freshness"))
     if isinstance(stated_freshness, dict):
         stated_freshness = stated_freshness.get("state")
-    short_server = {"kind": server.get("kind"), "published_at": published[:10] if isinstance(published, str) else None,
-                    "path": server.get("path"), "human_reviewed": server.get("human_reviewed"),
-                    "checks_passed": len(server.get("checks_passed") or []), "warnings": len(server.get("warnings") or []),
-                    "quotes_exact": sum(1 for c in claims if matches[c["claim_id"]].get("state") == "exact"),
-                    "label": _short(label.get("en", ""), 120) or None, **_freshness(stated_freshness),
-                    "corrections": {"open": (server.get("corrections") or {}).get("open", 0)}}
     short_declared = {"checked_on": min(checked) if checked else None, "applies_to": scope[:3],
                       "generated_at": generated[:10] if isinstance(generated, str) else None,
                       "origin": (declared.get("provenance") or {}).get("origin")}
     content = untrusted.get("content") if isinstance(untrusted.get("content"), dict) else {}
-    extra = {name: (_short(content[name], 300) if isinstance(content[name], str) else content[name])
-             for name in ("title", "summary", "not_covered") if name in content}
-    rows = [{"n": n, "text": _short(c.get("text", ""), 240), "quote": str(c.get("quote", ""))[:300],
+    rows = [{"n": n, "text": _short(c.get("text") or "", 240), "quote": str(c.get("quote") or "")[:300],
              "source_url": c.get("source_url")} for n, c in enumerate(claims, 1)]
 
-    def build(kept, omitted):
+    def build(kept, omitted, tight):
+        short_server = {"kind": server.get("kind"), "published_at": published[:10] if isinstance(published, str) else None,
+                        "path": server.get("path"), "human_reviewed": server.get("human_reviewed"),
+                        "checks_passed": len(server.get("checks_passed") or []),
+                        "warnings": len(server.get("warnings") or []),
+                        "quotes_exact": sum(1 for c in claims if matches[c["claim_id"]].get("state") == "exact"),
+                        "label": _short(label.get("en") or "", 60 if tight else 120) or None,
+                        **_freshness(stated_freshness),
+                        "corrections": {"open": (server.get("corrections") or {}).get("open", 0)}}
+        # Başlık ve özet ikincil metindir; sıkı kipte kısalır. `not_covered` kapsam sınırıdır, aynen kalır.
+        text_limit = 80 if tight else 300
+        extra = {}
+        for name in ("title", "summary", "not_covered"):
+            if name in content:
+                value = content[name]
+                extra[name] = (_short(value, 300 if name == "not_covered" else text_limit)
+                               if isinstance(value, str) else value)
         shown = dict(short_server, **({"omitted_claims": omitted} if omitted else {}), link=server.get("link"))
+        # Gösterilen iddiaların hepsi aynı kaynak adresindeyse (adresle bulmada olağan durum) adres bir kez yazılır;
+        # farklıysa her iddiada kalır (K2 kart bütçesi kabulü notu: `source_url` tekrarı).
+        urls = {row.get("source_url") for row in kept}
+        shared_url = next(iter(urls)) if len(urls) == 1 else None
+        if shared_url:
+            payload = {"source_url": shared_url,
+                       "claims": [{k: v for k, v in row.items() if k != "source_url"} for row in kept], **extra}
+        else:
+            payload = {"claims": kept, **extra}
         return {"card": _card_ref({"id": server["id"], "version": server["version"]}), "version_match": version_match,
                 "answer_eligible": bool(answer_eligible and claims), "server": shown, "declared": short_declared,
-                "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted({"claims": kept, **extra})}
+                "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted(payload)}
 
-    return _fit_claims(build, rows, budget)
+    return _fit_card(build, rows, budget)
 
 
 def compact_card(card, version_match, answer_eligible, *, key=None, budget=CARD_TARGET_BYTES, freshness=None):
     """Ajan görünümü: sunucunun ürettiği (`server`), katkıcının beyan ettiği (`declared`) ve güvenilmeyen metin ayrı.
 
-    Kaynak kartı v4 (r1) ve K1-V4 r2 ajan görünümü desteklenir. Alıntılar aynen; `not_covered`, sürüm sınırı,
-    düzeltme ve eski iddia sayısı küçük yanıt uğruna atılmaz; bütçeyi aşan iddialar sayıyla bildirilir.
+    Kaynak kartı v4 (r1) ve K1-V4 r2 ajan görünümü desteklenir. Kart tanımındaki bütün iddialar (en çok
+    CARD_CLAIM_LIMIT) ve alıntılar aynen gösterilir; `not_covered`, sürüm sınırı, düzeltme ve eski iddia sayısı küçük
+    yanıt uğruna atılmaz. Bütçe yalnız ikincil metinleri kısar; sınırı aşan iddialar `omitted_claims` ile sayılır.
     """
     if not isinstance(card, dict):
         raise ValueError("invalid card")
@@ -797,7 +833,7 @@ def full_view(card):
 def card_address_matches(card, key):
     if card.get("schema") == "devtrellis-agent-view":
         server = card.get("server") if isinstance(card.get("server"), dict) else {}
-        return any(isinstance(m, dict) and m.get("address_key") == key for m in server.get("quote_matches", []))
+        return any(isinstance(m, dict) and m.get("address_key") == key for m in server.get("quote_matches") or [])
     return isinstance(card.get("source"), dict) and card["source"].get("address_key") == key
 
 
@@ -922,8 +958,10 @@ class SourceLookup:
                     shown = compact_card(card, body["version_match"], body["answer_eligible"], key=key,
                                          freshness=lookup_freshness(body))
                 eligible = body["answer_eligible"] and (view == "full" or shown["answer_eligible"])
-                return finish("found", eligible=eligible, match=body["version_match"], network=True, card=shown)
-            candidates = [{"card": _card_ref(item["card"]), "applies_to": item.get("applies_to", [])[:3],
+                hint = omitted_hint(shown) if view == "card" else None
+                return finish("found", eligible=eligible, match=body["version_match"], network=True, card=shown,
+                              **({"hint": hint} if hint else {}))
+            candidates = [{"card": _card_ref(item["card"]), "applies_to": (item.get("applies_to") or [])[:3],
                            "version_match": item.get("version_match")} for item in body["candidates"]]
             extra = {"candidates": candidates} if candidates else {}
             if body["result"] == "withdrawn" and isinstance(body.get("tombstone"), dict):
@@ -1059,6 +1097,13 @@ def _report_card(item, version_match, applies):
     words = str(packet.get("summary", "")).split()
     sources = packet.get("sources") or []
     server = {"kind": "report", "status": item.get("status")}
+    if item.get("record_type") == "v4" and isinstance(item.get("publication"), dict):
+        # K1 v4 kaydı: yayın yolu ve insan incelemesi sunucunun alanıdır; etiket kapının metnidir (kısaltılmış).
+        publication = item["publication"]
+        server.update(record_type="v4", kind={"research_report": "report", "topic_summary": "topic_summary",
+                                               "source_card": "source_card"}.get(item.get("kind"), "report"),
+                      path=publication.get("path"), human_reviewed=publication.get("human_reviewed"),
+                      label=_short((publication.get("label") or {}).get("en") or "", 120) or None)
     corrections = item.get("public_corrections")
     if isinstance(corrections, list):
         server["corrections"] = {"open": len(corrections)}
@@ -1269,7 +1314,9 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
         A found card holds exact source quotes; use it instead of the page only when answer_eligible
         is true and its claims cover your need, and cite its link. version_match, not_covered,
         checked_on and freshness limit it; not_listed is not proof that no card exists.
-        Never pass private, signed or session URLs. check_server=true bypasses the snapshot.
+        The card view shows all claims up to 6; when omitted_claims is set, the hint says how many
+        were left out and view="full" returns the whole record. Never pass private, signed or
+        session URLs. check_server=true bypasses the snapshot.
         """
         return execute(lookups.lookup, urls, language, expected_product, expected_version, check_server, view)
 

@@ -556,6 +556,27 @@ test("sıralamalı sonuçlar sayfalanır; boş sonuç sessizce genişletilmez ve
   assert.equal(params.get("query"), ""); assert.equal(params.has("search_mode"), false);
 });
 
+test("K1 v4 kaydı listede yolunu söyler ve kamu kaydına bağlanır; v1 kartı değişmez", async () => {
+  for (const language of ["tr", "en"]) {
+    const app = harness({language, cardId: "d".repeat(32)}); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    const id = "c".repeat(32);
+    const v4 = {...copy(app.fixture.card), id, version: 1, record_type: "v4", kind: "research_report", human_reviewed: false,
+      publication: {path: "machine_gate", human_reviewed: false, label: {tr: "İnsan incelemedi; …", en: "Not human-reviewed; …"}},
+      link: "https://community.example/api/community/v4/records/" + id + "/v/1"};
+    app.fixture.cardsResponse = {items: [v4, app.fixture.card], total: 2, search: {mode: "ranked", fallback: false}};
+    app.byId("search-query").value = "Widget"; await app.byId("community-search").dispatch("submit");
+    const list = app.byId("community-list");
+    const links = app.flatten(list).filter(item => item.tagName === "A" && item.className === "card-title-link");
+    assert.equal(links[0].href, `/api/community/v4/records/${id}/v/1`);
+    assert.equal(links[1].href, `/r/${app.fixture.card.id}/v/${app.fixture.card.version}?lang=${language}`);
+    const reads = app.flatten(list).filter(item => item.tagName === "A" && /read-primary/.test(item.className));
+    assert.equal(reads[0].href, `/api/community/v4/records/${id}/v/1`);
+    const badges = app.flatten(list).filter(item => item.className === "badge badge-v4").map(item => item.textContent);
+    assert.deepEqual(badges, [language === "en" ? "Machine gate · not human-reviewed" : "Makine denetimi · insan incelemedi"]);
+    assert.ok(app.flatten(list).every(item => !["IMG", "SCRIPT"].includes(item.tagName)));
+  }
+});
+
 test("arama sunucu hatası başka kipe tekrar gönderilmez; bozuk eşleşme meta verisi güvene dönüştürülmez", async () => {
   const app = harness(); await app.ready(); await app.byId("community-tab-research").dispatch("click");
   app.fixture.cardsStatus = 503; app.fixture.cardsResponse = {detail: "Temporary service error"};

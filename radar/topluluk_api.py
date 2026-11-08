@@ -475,6 +475,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     def report_version(entry_id: str, version: int, request: Request):
         if version < 1:
             raise HTTPException(404, "Sürüm bulunamadı.")
+        if k1_store is not None and re.fullmatch(r"[0-9a-f]{32}", entry_id) and store.yayindaki_surum_var_mi(entry_id) is False:
+            # Arama listesindeki v4 kaydının bağlantısı: v4 kayıtlarının HTML rapor sayfası yok, kamu kaydına yönlendirilir.
+            if k1_store.kayit_oku(entry_id, version)[0] == 200:
+                return RedirectResponse(f"/api/community/v4/records/{entry_id}/v/{version}", status_code=303)
         return HTMLResponse(sayfa(report(entry_id, version), origin, report_language(request), objections_enabled=objections_db_path is not None).replace(
             "/static/community-report.css", asset_url("community-report.css")).replace("/static/report-language.js", asset_url("report-language.js")))
 
@@ -668,7 +672,8 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
         return requests_store.durum_degistir(request_id, payload["status"])
 
     def public_corrections(card):
-        if objections_db_path is None or card["packet"]["kind"] != "research":
+        # v4 kayıtlarının düzeltme defteri kendi `corrections` alanındadır; v1 itiraz deposu onları tanımaz.
+        if objections_db_path is None or card["packet"]["kind"] != "research" or card.get("record_type") == "v4":
             return card
         corrections = app.state.objections.kamusal_ozetler(card["id"], card["version"], offset=0, limit=3)
         return {**card, "public_corrections": {key: corrections[key] for key in ("total", "offset", "limit", "items")}}
@@ -678,7 +683,9 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     def cards(request: Request, query: str = Query("", max_length=200), kind: str = "",
               offset: int = Query(0, ge=0, le=9223372036854775807), limit: int = Query(30, ge=1, le=100),
               view: Literal["full", "summary"] = "full", search_mode: Literal["all", "ranked"] = "all"):
-        result = store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request), search_mode=search_mode)
+        # K1 açıkken yayındaki v4 kayıtları kamu araştırma listesine ve aramasına aynı sıralamayla katılır (K1 ikinci dilim).
+        result = store.listele(query=query, kind=kind, offset=offset, limit=limit, observer=observer(request), search_mode=search_mode,
+                               ek_arama=k1_store.arama_kaynagi() if k1_store is not None else None)
         if objections_db_path is not None:
             result = {**result, "items": [public_corrections(item) for item in result["items"]]}
         return arama_ozeti(result) if view == "summary" else result

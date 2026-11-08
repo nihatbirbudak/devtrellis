@@ -8,13 +8,13 @@ import secrets
 import sqlite3
 import time
 import uuid
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
 from radar.arastirma_arama import arama_gruplari
 from radar.arastirma_siralama import (FIELD_WEIGHTS, INDEX_FIELDS, INDEX_VERSION, aday_kapsami, alan_agirligi,
-                                      belge_terimleri, eslesme_bilgisi, sorgu_hazirla)
+                                      belge_terimleri, bm25_puani, eslesme_bilgisi, sorgu_hazirla, sorgu_terimleri)
 from radar.gelistirici_alani import (alanlari_dogrula, arama_metni, metin, paket_dogrula,
                                     paket_metni, surumu_dogrula)
 
@@ -26,6 +26,30 @@ EVENT_RECEIPT_LIMIT = 100000
 EVENT_RECEIPT_SECONDS = 7 * 86400
 EVENT_COUNTERS = {"web_view": "web_views", "mcp_read": "mcp_reads", "helpful": "helpful",
                   "used_in_research": "used_in_research", "needs_update": "needs_update", "disputed": "disputed"}
+
+
+def _fts5_ortalamalari(blob):
+    """FTS5 `%_data` tablosundaki ortalama kaydı (rowid 1): satır sayısı ve bütün sütunların toplam belirteç sayısı.
+
+    Kayıt SQLite varint dizisidir: satır sayısı, sonra sütun başına toplam (SQLite dosya biçimi; fts5_storage.c)."""
+    values, position = [], 0
+    while position < len(blob):
+        value = 0
+        for index in range(9):
+            if position >= len(blob):
+                raise ValueError("FTS5 ortalama kaydı eksik.")
+            byte = blob[position]
+            position += 1
+            if index == 8:
+                value = (value << 8) | byte
+                break
+            value = (value << 7) | (byte & 0x7F)
+            if not byte & 0x80:
+                break
+        values.append(value)
+    if not values:
+        raise ValueError("FTS5 ortalama kaydı boş.")
+    return values[0], sum(values[1:])
 
 
 class ToplulukHatasi(ValueError):
@@ -194,10 +218,11 @@ class ToplulukDeposu:
                 "VALUES(" + ",".join("?" for _ in range(3 + len(INDEX_FIELDS))) + ")",
                 (row["rowid"], entry_id, row["published_revision"], *(fields[name] for name in INDEX_FIELDS)))
 
-    def sirali_arama(self, connection, plan, *, offset, limit, moderator):
-        """Kapsamı ve ağırlığı sayfalamadan önce hesaplar; gizli sürümler aday olamaz."""
+    def sirali_adaylar(self, connection, plan, *, limit, offset=0):
+        """Sıralı aramanın adayları: (toplam, satırlar). Her satır `id`, `key` (karşılaştırma anahtarı: kapsam, alan ağırlığı,
+        bm25, tarih, kimlik; küçük önce) ve dizin alanlarını taşır. Gizli sürümler aday olamaz."""
         if not plan["match"]:
-            return [], 0
+            return 0, []
         def coverage(*values):
             return aday_kapsami(plan, dict(zip(INDEX_FIELDS, values)))
 
@@ -216,16 +241,93 @@ class ToplulukDeposu:
                      "JOIN community_public_revisions p ON p.entry_id=e.id AND p.version=r.version AND p.visible=1 "
                      "WHERE community_research_fts MATCH ? AND r.kind='research' AND " + coverage_sql + ">=0")
         total = connection.execute("SELECT COUNT(*)" + selection, (plan["match"],)).fetchone()[0]
-        rows = connection.execute("SELECT e.id," + field_list + "," + coverage_sql + " AS coverage,devtrellis_weight(" +
+        rows = connection.execute("SELECT e.id,r.created_at," + field_list + "," + coverage_sql + " AS coverage,devtrellis_weight(" +
             field_list + ") AS weight,bm25(community_research_fts," + weights + ") AS relevance" + selection +
             " ORDER BY coverage DESC,weight DESC,relevance ASC,r.created_at DESC,e.id LIMIT ? OFFSET ?",
             (plan["match"], limit, offset)).fetchall()
+        return total, [{"id": row["id"], "key": (-row["coverage"], -row["weight"], row["relevance"], -row["created_at"], row["id"]),
+                        "fields": {name: row[name] for name in INDEX_FIELDS}} for row in rows]
+
+    def sirali_arama(self, connection, plan, *, offset, limit, moderator):
+        """Kapsamı ve ağırlığı sayfalamadan önce hesaplar; gizli sürümler aday olamaz."""
+        total, rows = self.sirali_adaylar(connection, plan, limit=limit, offset=offset)
         cards = []
         for row in rows:
             card = self.kart(connection, row["id"], public=True, moderator=moderator)
-            card["search_match"] = eslesme_bilgisi(plan, {name: row[name] for name in INDEX_FIELDS})
+            card["search_match"] = eslesme_bilgisi(plan, row["fields"])
             cards.append(card)
         return cards, total
+
+    def bm25_olcegi(self, connection, plan):
+        """Birleşik aramada ek kaynağın (K1 v4) adaylarını v1 dizininin ölçeğinde puanlayan işlev; yoksa None.
+
+        v1 adaylarının anahtarındaki bm25 SQLite'ın kendi değeridir. v4 belgesi aynı formülle (`bm25_puani`) ve v1
+        dizininin istatistiğiyle (satır sayısı, ortalama uzunluk, terim başına belge sayısı) puanlanır: v1 kütüphanesine
+        eklenmiş gibi. İki kaynağın puanı aynı ölçekte olur, v1 sırası değişmez (K1 ikinci dilim kabulü, orta bulgu 1).
+        v1 dizini boşsa ya da istatistik okunamazsa None döner; ek kaynak kendi bm25'ini kullanır.
+        """
+        try:
+            row = connection.execute("SELECT block FROM community_research_fts_data WHERE id=1").fetchone()
+            satir, toplam = _fts5_ortalamalari(bytes(row[0])) if row is not None and row[0] is not None else (0, 0)
+        except (sqlite3.Error, ValueError, TypeError):
+            return None
+        if satir <= 0 or toplam <= 0:
+            return None
+        terimler, belge = sorgu_terimleri(plan), {}
+
+        def puan(fields):
+            tokens = set(" ".join(fields.get(name) or "" for name in INDEX_FIELDS).split())
+            for term in terimler:
+                if term in tokens and term not in belge:
+                    belge[term] = connection.execute(
+                        "SELECT COUNT(*) FROM community_research_fts WHERE community_research_fts MATCH ?",
+                        ('"' + term + '"',)).fetchone()[0]
+            return bm25_puani(terimler, fields, satir_sayisi=satir, ortalama_uzunluk=toplam / satir, belge_sayilari=belge)
+
+        return puan
+
+    def birlesik_liste(self, connection, ek, *, plan, ranked, query, kind, offset, limit, moderator):
+        """v1 yayınlarını ve ek kaynağın (K1 v4) yayındaki kayıtlarını aynı sıralama anahtarıyla birleştirir, sonra sayfalar.
+
+        Her kaynaktan en çok `offset+limit` aday alınır; birleşik sıranın ilk `offset+limit` ögesi bu iki listenin içindedir,
+        bu yüzden sayfalama tamdır. Toplam iki toplamın toplamıdır. Sıralı kipte anahtar kapsam → alan ağırlığı → bm25 →
+        tarih → kimlik; katı kipte tarih → kimlik. İki FTS dizininin kendi bm25 değerleri karşılaştırılabilir değildir
+        (idf her dizinin belge sayısıyla hesaplanır); sıralı kipte v4 adaylarının bm25'i v1 dizininin istatistiğiyle
+        yeniden hesaplanır (`bm25_olcegi`), v1 adaylarınınki SQLite'ın değeridir.
+        """
+        en_cok = offset + limit
+        if ranked:
+            total, rows = self.sirali_adaylar(connection, plan, limit=en_cok)
+        else:
+            join = " FROM community_entries e JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.published_revision"
+            conditions, values = [], []
+            if query:
+                for group in arama_gruplari(query):
+                    conditions.append("(" + " OR ".join("instr(r.search_text,?)>0" for _ in group) + ")")
+                    values.extend(group)
+            if kind:
+                conditions.append("r.kind=?")
+                values.append(kind)
+            where = " WHERE " + " AND ".join(conditions) if conditions else ""
+            total = connection.execute("SELECT COUNT(*)" + join + where, values).fetchone()[0]
+            rows = [{"id": row["id"], "key": (-row["created_at"], row["id"]), "fields": None} for row in connection.execute(
+                "SELECT e.id,r.created_at" + join + where + " ORDER BY r.created_at DESC,e.id LIMIT ?", [*values, en_cok])]
+        olcek = self.bm25_olcegi(connection, plan) if ranked else None
+        ek_total, ek_rows = ek.adaylar(plan=plan if ranked else None, query="" if ranked else query, en_cok=en_cok,
+                                       puanlayici=olcek)
+        merged = sorted([("v1", row) for row in rows] + [("v4", row) for row in ek_rows], key=lambda item: item[1]["key"])
+        cards = []
+        for source, row in merged[offset:en_cok]:
+            if source == "v1":
+                card = self.kart(connection, row["id"], public=True, moderator=moderator)
+                if plan is not None:
+                    card["search_match"] = eslesme_bilgisi(plan, row["fields"] if row["fields"] is not None
+                                                           else belge_terimleri(card["packet"]))
+            else:
+                card = ek.kart(row, plan=plan)
+            if card is not None:
+                cards.append(card)
+        return cards, total + ek_total
 
     @contextmanager
     def baglanti(self, write=False):
@@ -662,7 +764,10 @@ class ToplulukDeposu:
             self.arama_indeksini_esitle(connection, entry_id)
             return {"card": self.kart(connection, entry_id)}
 
-    def listele(self, *, user=None, review=False, query="", kind="", offset=0, limit=30, observer=None, search_mode="all"):
+    def listele(self, *, user=None, review=False, query="", kind="", offset=0, limit=30, observer=None, search_mode="all",
+                ek_arama=None):
+        """Kamu listesi ve arama. `ek_arama` (K1 v4 deposunun `arama_kaynagi()`) verilirse kamu araştırma listesine yayındaki
+        v4 kayıtları da aynı sıralamayla katılır (K1 ikinci dilim); özel, inceleme ve proje listeleri değişmez."""
         query = metin(query, "Arama", 200)
         if not isinstance(search_mode, str) or search_mode not in {"all", "ranked"}:
             raise ValueError("Arama modu all veya ranked olmalı.")
@@ -692,10 +797,14 @@ class ToplulukDeposu:
             conditions.append("r.kind=?")
             values.append(kind)
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
-        with self.baglanti() as connection:
+        birlesik = ek_arama is not None and public and kind in ("", "research")
+        with self.baglanti() as connection, (ek_arama if birlesik else nullcontext()) as ek:
             connection.execute("BEGIN")
             moderator = observer is not None and observer["role"] == "moderator"
-            if ranked:
+            if birlesik:
+                cards, total = self.birlesik_liste(connection, ek, plan=plan, ranked=ranked, query=query, kind=kind,
+                                                   offset=offset, limit=limit, moderator=moderator)
+            elif ranked:
                 cards, total = self.sirali_arama(connection, plan, offset=offset, limit=limit, moderator=moderator)
             else:
                 total = connection.execute("SELECT COUNT(*)" + join + where, values).fetchone()[0]
@@ -714,7 +823,16 @@ class ToplulukDeposu:
                     "JOIN community_revisions r ON r.entry_id=e.id AND r.version=e.published_revision "
                     "WHERE r.kind='research'").fetchone()[0]
                 result["library"] = {"published_research_total": published_research}
+                if birlesik:
+                    result["library"]["published_v4_total"] = ek.yayinda()
+                    result["library"]["published_research_total"] += result["library"]["published_v4_total"]
             return result
+
+    def yayindaki_surum_var_mi(self, entry_id):
+        """Kimliğin v1 deposunda yayımlanmış bir kaydı var mı (v4 bağlantı yönlendirmesi için ucuz denetim)."""
+        with self.baglanti() as connection:
+            return connection.execute("SELECT 1 FROM community_entries WHERE id=? AND published_revision IS NOT NULL",
+                                      (entry_id,)).fetchone() is not None
 
     def yayini_oku(self, entry_id, observer=None, version=None):
         with self.baglanti() as connection:
