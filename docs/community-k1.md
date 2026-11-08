@@ -31,6 +31,36 @@ python -B -X utf8 topluluk.py serve --public-url https://community.example.org `
 - **Contract schemas:** the r2 JSON schemas (`public-record-v4-r2`, `contribution-candidate-v4-r2`, `lookup-coverage`) live in
   `radar/sema/` and are byte copies of the research folder's files; tests read them from there. The contract text stays in
   `arastirma/…/k0-kaynak-takibi/`.
+- **Search (second slice, 8 Nov 2026):** published v4 records take part in the public `GET /api/community/cards` list and search
+  (`kind=research` or empty; `search_mode=all` and `ranked`) with the same ranking keys as v1 reports (coverage, field weight,
+  bm25, date, id). The two FTS indexes compute bm25 with their own document counts, so in the merged ranked list a v4 record's
+  bm25 is recomputed with the same FTS5 formula and the v1 index statistics (row count, average length, per-term document
+  count), as if it were in the v1 library; v1 keys keep SQLite's own bm25 and their order is unchanged (alpha.11). Indexed fields: title, `answers[]`, scope product names as tags, summary + short answer, claims with quotes and
+  recommendations as body, `not_covered` as the `Limits` field. Items carry `record_type: "v4"`, `kind`, `human_reviewed`,
+  `publication` (path, label, policy and gate version), `answers` and `link`; the `packet` keeps the v1 shape so the web UI, the
+  summary view and the K2 bridge read it unchanged. `library.published_research_total` includes v4 records
+  (`library.published_v4_total` is listed separately). Withdrawn or removed records leave the index in the same transaction.
+  v4 records have no HTML report page: `/r/{id}/v/{n}` answers `303` to `/api/community/v4/records/{id}/v/{n}` for them.
+- **Address index for every kind (second slice):** source cards, research reports and topic summaries are found under every
+  canonical address they cite (`claims[].evidence.address_key` and `content.sources[]`). When several records share an address,
+  lookup orders them source card → report → topic summary, newest first; the rest appear as `candidates` when they carry a
+  list-shaped `applies_to`. Coverage lists every record under every address; tombstones are per address. `topics` fills
+  `products`/`terms` from a free-text `applies_to` by inference (product = a word of the text that equals the first label of a
+  cited source's registered domain, or a part of a hyphenated label: `docs.github.com` + "GitHub" → `github`,
+  `blog.rust-lang.org` + "Rust" → `rust`; sub-domain parts such as `blog`, `cloud`, `developer` never count; terms = the content
+  words of the text). A report with a free-text `applies_to` cannot be a lookup `candidate` (the schema needs at least one
+  `{product, versions, version_scheme}` item and no version is invented); it stays listed in coverage at that address.
+- **Index migration and repair:** the address and search indexes are derived data. Every start reconciles them with the stored
+  records (an alpha.10 store, where only source cards had an `address_key` column, migrates on first start; purged tombstones keep
+  their column address). `topluluk.py k1-reindex --k1-db … --k1-config …` rebuilds both indexes completely and prints counts. The
+  database `user_version` stays 1; encrypted backups made before the slice restore and migrate the same way. The search index
+  version is `k1-2.<ranking index version>` since alpha.11 (new product rule), so the first start rebuilds it.
+- **Journal mode (alpha.11):** the K1 store uses WAL like the v1 store, so a search read snapshot never makes a withdrawal or
+  removal wait. The mode is set on every start after the role check and persists in the file; an alpha.10 store switches on first
+  open, and alpha.10 code opens a WAL store unchanged. The `-wal` and `-shm` files sit next to `k1.sqlite3` in the same private
+  directory (SQLite gives them the database file's permissions). After expired private text is purged the WAL is checkpointed
+  with `TRUNCATE`. The backup tool still converts its private copy to a standalone DELETE file; a restored store returns to WAL
+  on first open.
 - **Personal application and standalone bridge:** `GET /api/platform/community/{sources/{address_key},coverage,topics}` pass the
   community's 200/404/410 bodies, ETag and 304 through unchanged; an older community answers as `unsupported_contract`,
   an unreachable one as `temporarily_unavailable` (contract error bodies, never the remote error text). The community address

@@ -433,13 +433,17 @@
     const body = node("div", "card-body");
     const meta = node("div", "card-meta");
     meta.append(node("span", "badge", t(packet.kind === "project" ? "Proje" : "Araştırma")));
+    // K1 v4 kaydı (makine kapısından geçmiş katkı): yayın yolu kartın kökünde; bağlantısı kamu kaydına gider (HTML rapor sayfası yok).
+    const v4 = card.record_type === "v4";
+    if (v4) meta.append(node("span", "badge badge-v4", t(card.human_reviewed === false ? "Makine denetimi · insan incelemedi" : "Makine denetimi · moderatör yayımladı")));
+    const reportHref = v4 ? `/api/community/v4/records/${encodeURIComponent(card.id)}/v/${card.version}` : `/r/${card.id}/v/${card.version}?lang=${UI?.language || "en"}`;
     const privateView = state.tab === "mine" || state.tab === "review";
     if (privateView) meta.append(node("span", `badge status-${card.status}`, statusLabel(card.status)));
     const heading = node("h3");
     if (privateView) heading.textContent = packet.title;
     else if (validCardId(card.id)) {
       const titleLink = node("a", "card-title-link", packet.title);
-      titleLink.href = packet.kind === "research" && !privateView ? `/r/${card.id}/v/${card.version}?lang=${UI?.language || "en"}` : `/?card=${card.id}`;
+      titleLink.href = packet.kind === "research" && !privateView ? reportHref : `/?card=${card.id}`;
       if (packet.kind !== "research") titleLink.addEventListener("click", event => {
         if (event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault(); return openCard(card, "read", event.currentTarget);
@@ -478,7 +482,7 @@
     const actions = node("div", "card-actions community-card-actions");
     if (!privateView && packet.kind === "research") {
       const read = node("a", "button read-primary", t("Araştırmayı oku"));
-      read.href = `/r/${card.id}/v/${card.version}?lang=${UI?.language || "en"}`;
+      read.href = reportHref;
       actions.append(read, button(t("Önizleme"), event => openCard(card, "read", event.currentTarget)));
     }
     else actions.append(button(t(privateView ? "Oku" : "Ayrıntıları oku"), event => openCard(card, "read", event.currentTarget), privateView ? "text-button" : "button read-primary"));

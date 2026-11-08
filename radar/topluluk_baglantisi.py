@@ -371,6 +371,10 @@ class ToplulukBaglantisi:
                 card["public_corrections"] = self.kamu_duzeltmelerini_dogrula(result["public_corrections"], card["id"], card["version"])
             # Uzak adres iddiasını kullanma; bağlantı doğrulanmış kaydın tam sürümünü açar.
             card["report_url"] = COMMUNITY_URL + "/?" + urlencode({"card": card["id"], "version": card["version"]})
+            if result.get("record_type") == "v4":
+                # K1 v4 kaydı (makine kapısı): tür, yayın yolu ve etiket doğrulanıp taşınır; bağlantı yerelde kurulur.
+                card.update(self.v4_alanlarini_dogrula(result))
+                card["report_url"] = f"{COMMUNITY_URL}/api/community/v4/records/{card['id']}/v/{card['version']}"
             return card
         except (ValueError, KeyError, TypeError) as exc:
             raise ToplulukBaglantiHatasi("Topluluk kartı geçersiz.") from exc
@@ -518,6 +522,19 @@ class ToplulukBaglantisi:
             connection.execute("UPDATE community_deliveries SET remote_id=?,response=? WHERE local_id=?",
                                (safe["id"], paket_metni(safe), local_id))
         return {"local_id": local_id, "submission": safe, "duplicate": result.get("duplicate") is True}
+
+    @staticmethod
+    def v4_alanlarini_dogrula(result):
+        publication = result.get("publication")
+        if (result.get("kind") not in {"source_card", "research_report", "topic_summary"} or type(result.get("human_reviewed")) is not bool
+                or not isinstance(publication, dict) or publication.get("path") not in {"machine_gate", "moderator"}
+                or publication.get("human_reviewed") != result["human_reviewed"] or not isinstance(publication.get("label"), dict)):
+            raise ValueError("v4 kayıt alanları geçersiz.")
+        label = {lang: metin(publication["label"].get(lang) or "", "Kanıt etiketi", 1000) for lang in ("tr", "en")}
+        return {"record_type": "v4", "kind": result["kind"], "human_reviewed": result["human_reviewed"],
+                "publication": {"path": publication["path"], "human_reviewed": result["human_reviewed"], "label": label,
+                                "policy_version": metin(publication.get("policy_version") or "", "Yayın politikası", 80),
+                                "gate_version": metin(publication.get("gate_version") or "", "Kapı sürümü", 80)}}
 
     def durum_dogrula(self, submission):
         try:

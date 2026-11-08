@@ -16,11 +16,12 @@ from fastapi.testclient import TestClient
 
 from radar import denetim
 from radar.kaynak_kimligi import address_key
-from radar.katki_v4 import (ALINTI_KURALI, K1Ayarlari, ayar_ornegi, ayarlari_coz, ayarlari_oku, kanonik_ozet)
-from radar.katki_v4_depo import KatkiDeposu
+from radar.katki_v4 import (ALINTI_KURALI, K1Ayarlari, ayar_ornegi, ayarlari_coz, ayarlari_oku, kanonik_ozet,
+                            kapsam_cikarimi, kaynak_anahtari)
+from radar.katki_v4_depo import ARAMA_DIZINI_SURUMU, KatkiDeposu
 from radar.topluluk_api import uygulama
 
-from denetim_kapisi.yardimci import KAYNAK_1, TEMEL_KART, TEMEL_RAPOR, UZUN_ALINTI, html, temel_ag
+from denetim_kapisi.yardimci import KAYNAK_1, KAYNAK_2, TEMEL_KART, TEMEL_RAPOR, UZUN_ALINTI, html, temel_ag
 
 PASSWORD = "example-test-passphrase"
 ORIGIN = "https://community.example.org"
@@ -810,10 +811,113 @@ class AdresleBulma(K1Taban):
             with self.subTest(url=str(yanit.url)):
                 self.assertEqual((yanit.status_code, yanit.json()), (400, hata))
 
-    def test_rapor_adres_dizinine_girmez(self):
-        self.yayinla(aday(TEMEL_RAPOR))
-        self.assertEqual(self.bak().status_code, 404)
-        self.assertEqual(self.client().get("/api/community/coverage").json()["addresses"], {})
+    def test_rapor_her_adresinde_bulunur_kart_once_gelir(self):
+        """K1 ikinci dilim: rapor ve konu özeti de adres dizinindedir; andığı her adreste bulunur, kart raporun önündedir."""
+        anahtar_2 = address_key(KAYNAK_2, "en")
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to=[{"product": "widget", "versions": "2.0", "version_scheme": "exact"}]))
+        for anahtar in (self.anahtar, anahtar_2):
+            yanit = self.bak(anahtar)
+            self.assertEqual(yanit.status_code, 200, anahtar)
+            govde = yanit.json()
+            self.assertEqual((govde["result"], govde["answer_eligible"], govde["freshness"]),
+                             ("found", True, {"state": "unknown", "checked_at": None}))
+            kart = govde["cards"][0]
+            self.assertEqual((kart["schema"], kart["server"]["id"], kart["server"]["kind"]),
+                             ("devtrellis-agent-view", rapor, "research_report"))
+            self.assertEqual({e["address_key"] for e in kart["server"]["quote_matches"]}, {self.anahtar, anahtar_2})
+        kapsam = self.client().get("/api/community/coverage").json()["addresses"]
+        self.assertEqual(set(kapsam), {self.anahtar, anahtar_2})
+        # Aynı adreste kaynak kartı da yayımlanınca kart önce gelir; rapor aday listesinde o adresin kaynak anahtarıyla durur.
+        kart_id = self.yayinla(token="B" * 43, anahtar="v4-request-0002")
+        govde = self.bak().json()
+        self.assertEqual(govde["cards"][0]["server"]["id"], kart_id)
+        self.assertEqual([a["card"]["id"] for a in govde["candidates"]], [rapor])
+        self.assertEqual(govde["candidates"][0]["source_key"], kaynak_anahtari(KAYNAK_1))
+        self.assertEqual({g["card"]["id"] for g in self.client().get("/api/community/coverage").json()["addresses"][self.anahtar]},
+                         {rapor, kart_id})
+        # Kart geri çekilince rapor adresin tek kaydı olur; rapor da çekilince iz kalır ve kapsam listesi iki adreste iz verir.
+        self.client().post(f"/api/community/v4/submissions/{kart_id}/withdraw",
+                           json={"expected_revision": self.durum(kart_id, "B" * 43)["revision"]}, headers=self.headers("B" * 43))
+        self.assertEqual(self.bak().json()["cards"][0]["server"]["id"], rapor)
+        self.client().post(f"/api/community/v4/submissions/{rapor}/withdraw",
+                           json={"expected_revision": self.durum(rapor)["revision"]}, headers=self.headers())
+        self.assertEqual(self.bak().status_code, 410)
+        self.assertEqual(self.bak(anahtar_2).json()["tombstone"]["card"], {"id": rapor, "version": 1})
+        kapsam = self.client().get("/api/community/coverage").json()
+        self.assertEqual(kapsam["addresses"], {})
+        self.assertEqual({iz["address_key"] for iz in kapsam["tombstones"]}, {self.anahtar, anahtar_2})
+
+    def test_k2_koprusu_canli_bicimli_raporun_bulma_kartini_gosterir(self):
+        """alpha.11 kabulü yüksek bulgu 1: canlı v4 raporlarında kapsam rapor düzeyinde serbest metin, iddialarda
+        `applies_to: null`. Sunucunun gerçek bulma yanıtı K2 köprüsünden geçince `found` kalmalı (`unavailable` değil)."""
+        import mcp_topluluk as kopru
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to="Widget 2.0 as documented on docs.example.org."))
+        for anahtar, url in ((self.anahtar, KAYNAK_1), (address_key(KAYNAK_2, "en"), KAYNAK_2)):
+            yanit = self.bak(anahtar)
+            govde = yanit.json()
+            self.assertEqual((yanit.status_code, govde["result"]), (200, "found"))
+            gorunum = govde["cards"][0]
+            self.assertEqual(gorunum["server"]["id"], rapor)
+            # Canlı biçim: iddiaların beyan edilen kapsamı null.
+            self.assertTrue(all(c["applies_to"] is None for c in gorunum["declared"]["claims"]))
+            bakis = kopru.SourceLookup(client=None)
+            bakis.fetch = lambda key, params, y=yanit: (y.status_code, kopru.validate_lookup(y.status_code, y.json(), key))
+            sonuc = bakis.one(1, url, "en", {"product": None, "version": None}, None, True, "card")
+            self.assertEqual(sonuc["result"], "found", sonuc)
+            blok = json.loads(sonuc["card"]["untrusted"].split("\n")[1])
+            self.assertGreaterEqual(len(blok["claims"]), 1)
+            self.assertEqual(sonuc["card"]["declared"]["applies_to"], [])
+
+    def test_serbest_metinli_rapor_kart_varken_adaylarda_yok_kapsamda_var(self):
+        """K1 ikinci dilim kabulü düşük bulgu 4 (bilinen sınır): r1 şeması `candidates[].applies_to` için en az bir
+        {product, versions, version_scheme} ister; serbest metinli raporun sürüm bilgisi yoktur, uydurulmaz. Rapor bulma
+        yanıtının adaylarına girmez ama kapsam listesinde o adreste durur ve adres anahtarıyla kendi kaydı okunur."""
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to="Widget 2.0 as documented on docs.example.org."))
+        kart_id = self.yayinla(token="B" * 43, anahtar="v4-request-0002")
+        govde = self.bak().json()
+        self.assertEqual((govde["result"], govde["cards"][0]["server"]["id"], govde["candidates"]), ("found", kart_id, []))
+        self.assertEqual({g["card"]["id"] for g in self.client().get("/api/community/coverage").json()["addresses"][self.anahtar]},
+                         {rapor, kart_id})
+
+    def test_serbest_metin_kapsamdan_urun_ve_terim_cikarimi(self):
+        """`topics`: liste biçimli `applies_to` yoksa serbest metinden makul çıkarım; ürün = metinde geçen kayıtlı alan adı etiketi."""
+        rapor = self.yayinla(aday(TEMEL_RAPOR, applies_to="Widget 2.0 as documented on docs.example.org by Example Corp; "
+                                                          "not the Widget cloud edition."))
+        girdi = {g["card"]["id"]: g for g in self.client().get("/api/community/topics").json()["entries"]}[rapor]
+        self.assertEqual(girdi["kind"], "research")
+        self.assertEqual(girdi["products"], [{"product": "example", "versions": []}])
+        self.assertEqual(girdi["terms"][:4], ["widget", "docs.example.org", "example", "corp"])
+        self.assertIn("example", girdi["terms"])
+        self.assertNotIn("the", girdi["terms"])
+        self.assertEqual(kapsam_cikarimi({"content": {"applies_to": ["liste"]}, "claims": []}), ([], []))
+        self.assertEqual(kapsam_cikarimi({"content": {}, "claims": []}), ([], []))
+
+    def test_urun_cikarimi_kayitli_alan_adinin_ilk_etiketi(self):
+        """K1 ikinci dilim kabulü düşük bulgu 3: alt alan parçaları (`blog`, `cloud`, `developer`) ürün sayılmaz."""
+        from radar.katki_v4 import kayitli_alan_etiketi
+
+        def urunler(metin, *adresler):
+            return kapsam_cikarimi({"content": {"applies_to": metin, "sources": [{"url": a} for a in adresler]},
+                                    "claims": []})[0]
+
+        self.assertEqual([kayitli_alan_etiketi(a) for a in ("docs.github.com", "blog.rust-lang.org", "cloud.google.com",
+                                                            "developer.mozilla.org", "docs.python.org", "www.bbc.co.uk",
+                                                            "tokio-rs.github.io", "docs.rs", "localhost", "192.168.1.10")],
+                         ["github", "rust-lang", "google", "mozilla", "python", "bbc", "tokio-rs", None, None, None])
+        self.assertEqual(urunler("Google Cloud Run services", "https://cloud.google.com/run/docs"), ["google"])
+        self.assertEqual(urunler("Rust 1.80 release notes in the Rust blog post", "https://blog.rust-lang.org/2024/07/25/x.html"),
+                         ["rust"])
+        self.assertEqual(urunler("Mozilla Firefox developer notes", "https://developer.mozilla.org/en-US/docs/Web"), ["mozilla"])
+        self.assertEqual(urunler("CPython 3.14", "https://docs.python.org/3.14/whatsnew/3.14.html"), [])
+        # Canlıdaki iki raporun biçimi: ürün yalnız `github` kalır (`docs`, `en`, `com` sayılmaz).
+        self.assertEqual(urunler("GitHub REST API (releases and pagination; examples in the documents send "
+                                 "X-GitHub-Api-Version: 2026-03-10) and GitHub webhooks, as documented for github.com on "
+                                 "docs.github.com/en.", "https://docs.github.com/en/rest/releases/releases",
+                                 "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks"),
+                         ["github"])
+        self.assertEqual(urunler("GitHub REST API on github.com (examples in the documents send X-GitHub-Api-Version: "
+                                 "2026-03-10), as documented on docs.github.com/en.",
+                                 "https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"), ["github"])
 
     def test_kapsam_listesi(self):
         kimlik = self.yayinla()
@@ -857,6 +961,238 @@ class AdresleBulma(K1Taban):
         yetenek = self.client().get("/api/community/capabilities").json()
         self.assertEqual((yetenek["lookup"], yetenek["coverage"], yetenek["topics"], yetenek["source_checks"]),
                          (True, True, True, False))
+
+
+CEVAPLAR = ["Is nightly snapshotting enabled by default?", "Where are Widget projects kept?",
+            "Does export write one archive per project?"]
+
+
+class AramaBirlesimi(K1Taban):
+    """K1 ikinci dilim: yayındaki v4 kayıtları v1 `cards` aramasına ve listesine aynı sıralamayla katılır."""
+
+    def setUp(self):
+        super().setUp()
+        self.kur(replace(self.AYARLAR, otomatik_yayin=True))
+        self.hesaplar()
+        with self.store.baglanti() as connection:
+            rows = {row["username"]: dict(row) for row in connection.execute("SELECT * FROM community_accounts")}
+        self.author = {k: rows["author"][k] for k in ("id", "username", "display_name", "role")}
+        self.reviewer = {k: rows["reviewer"][k] for k in ("id", "username", "display_name", "role")}
+
+    def v1_yayinla(self, title, body="Kaynakta açıklanan ölçümler.", key="v1-request-0001"):
+        paket = {"schema": "ufuk-share", "schema_version": 1, "kind": "research", "title": title, "summary": "Özet",
+                 "body": body, "url": "", "tags": ["Python"], "sources": [{"title": "Kaynak", "url": "https://example.org/docs"}],
+                 "author": "Yazar", "license": "CC-BY-4.0", "created_at": "2026-11-01T12:00:00+00:00",
+                 "updated_at": "2026-11-01T12:00:00+00:00"}
+        card = self.store.gonder(self.author, {"packet": paket, "expected_version": 0, "idempotency_key": key})["card"]
+        return self.store.karar(self.reviewer, card["id"], {"expected_version": card["version"], "decision": "publish"})["card"]["id"]
+
+    def v4_yayinla(self, paket=None, token="A" * 43, anahtar="v4-request-0001"):
+        kimlik = self.gonder(paket or aday(TEMEL_RAPOR, answers=CEVAPLAR),
+                             token=token, anahtar=anahtar).json()["submission"]["id"]
+        self.assertEqual(self.isle()[0]["status"], "published")
+        return kimlik
+
+    def ara(self, **params):
+        yanit = self.client().get("/api/community/cards", params={"kind": "research", **params})
+        self.assertEqual(yanit.status_code, 200, yanit.text)
+        return yanit.json()
+
+    def test_v4_kaydi_sirali_aramada_bulunur_ve_turu_gorunur(self):
+        self.now[0] += 60
+        v1 = self.v1_yayinla("Widget project storage notes", body="Backups are rare.")
+        self.now[0] += 60
+        v4 = self.v4_yayinla()
+        sonuc = self.ara(query="widget backups", search_mode="ranked")
+        self.assertEqual(sonuc["search"], {"mode": "ranked", "fallback": False})
+        # Aynı kapsam (iki sözcük); alan ağırlığı v4'te başlık + özet (9), v1'de başlık + gövde (7): v4 önce.
+        self.assertEqual([item["id"] for item in sonuc["items"]], [v4, v1])
+        self.assertEqual(sonuc["total"], 2)
+        self.assertEqual(sonuc["library"], {"published_research_total": 2, "published_v4_total": 1})
+        kart = sonuc["items"][0]
+        self.assertEqual((kart["record_type"], kart["kind"], kart["human_reviewed"], kart["status"]),
+                         ("v4", "research_report", False, "published"))
+        self.assertEqual((kart["publication"]["path"], kart["publication"]["human_reviewed"]), ("machine_gate", False))
+        self.assertTrue(kart["publication"]["label"]["tr"].startswith("İnsan incelemedi;"))
+        self.assertEqual(kart["link"], f"{ORIGIN}/api/community/v4/records/{v4}/v/1")
+        self.assertEqual(kart["search_match"]["matched_terms"], ["widget", "backups"])
+        self.assertEqual((kart["packet"]["kind"], kart["packet"]["title"], kart["packet"]["license"]),
+                         ("research", TEMEL_RAPOR["title"], "CC0-1.0"))
+        self.assertEqual([k["url"] for k in kart["packet"]["sources"]], [KAYNAK_1, KAYNAK_2])
+        self.assertIn("## Claims", kart["packet"]["body"])
+        self.assertEqual(kart["submission_type"], "anonymous")
+        v1_kart = sonuc["items"][1]
+        self.assertNotIn("record_type", v1_kart)
+        # Özet görünümü ve K2 köprüsünün paket doğrulaması v4 kartını değişiklik gerektirmeden kabul eder.
+        ozet = self.ara(query="widget backups", search_mode="ranked", view="summary")
+        self.assertNotIn("body", ozet["items"][0]["packet"])
+        from radar.topluluk_baglantisi import ToplulukBaglantisi
+        kopru = ToplulukBaglantisi.__new__(ToplulukBaglantisi)
+        dogrulanan = kopru.kart_dogrula(kart)
+        self.assertEqual((dogrulanan["record_type"], dogrulanan["kind"], dogrulanan["human_reviewed"]), ("v4", "research_report", False))
+        self.assertEqual(dogrulanan["publication"]["path"], "machine_gate")
+        self.assertTrue(dogrulanan["report_url"].endswith(f"/api/community/v4/records/{v4}/v/1"))
+        self.assertNotIn("record_type", kopru.kart_dogrula(v1_kart))
+
+    def test_answers_alani_dizinde_ve_kati_arama(self):
+        v4 = self.v4_yayinla()
+        sirali = self.ara(query="nightly snapshotting", search_mode="ranked")
+        self.assertEqual([item["id"] for item in sirali["items"]], [v4])
+        self.assertEqual(sirali["items"][0]["answers"], CEVAPLAR)
+        # Katı kip (varsayılan `search_mode=all`): v1 gibi alt dizge eşleşmesi; `answers` de taranır.
+        self.assertEqual([item["id"] for item in self.ara(query="SNAPSHOTTING")["items"]], [v4])
+        self.assertEqual([item["id"] for item in self.ara(query="backups")["items"]], [v4])
+        self.assertEqual(self.ara(query="kubernetes")["total"], 0)
+        # Sorgusuz liste de v4 kaydı gösterir; proje listesi değişmez.
+        self.assertEqual([item["id"] for item in self.ara()["items"]], [v4])
+        self.assertEqual(self.client().get("/api/community/cards", params={"kind": "project"}).json()["total"], 0)
+
+    def test_geri_cekilen_ve_kaldirilan_dizinden_duser(self):
+        v4 = self.v4_yayinla()
+        ikinci = self.v4_yayinla(aday(TEMEL_KART), token="B" * 43, anahtar="v4-request-0002")
+        self.assertEqual({item["id"] for item in self.ara(query="widget", search_mode="ranked")["items"]}, {v4, ikinci})
+        kart = next(item for item in self.ara(query="widget", search_mode="ranked")["items"] if item["id"] == ikinci)
+        self.assertEqual((kart["kind"], kart["packet"]["title"]), ("source_card", TEMEL_KART["claims"][0]["text"]))
+        self.client().post(f"/api/community/v4/submissions/{v4}/withdraw", json={"expected_revision": self.durum(v4)["revision"]},
+                           headers=self.headers())
+        self.assertEqual([item["id"] for item in self.ara(query="widget", search_mode="ranked")["items"]], [ikinci])
+        moderator = self.moderator()
+        self.mpost(moderator, f"/api/community/v4/records/{ikinci}/remove",
+                   {"expected_revision": self.durum(ikinci, "B" * 43)["revision"], "note": "Kaldırma talebi"})
+        self.assertEqual(self.ara(query="widget", search_mode="ranked")["total"], 0)
+        self.assertEqual(self.ara()["library"], {"published_research_total": 0, "published_v4_total": 0})
+
+    def test_sayfalama_iki_kaynakta_tam_ve_tekrarsiz(self):
+        self.now[0] += 60
+        v1 = self.v1_yayinla("Widget storage in Python")
+        self.now[0] += 60
+        v4 = self.v4_yayinla()
+        gorulen = []
+        for offset in (0, 1):
+            sayfa = self.ara(query="widget", search_mode="ranked", limit=1, offset=offset)
+            self.assertEqual((sayfa["total"], len(sayfa["items"])), (2, 1))
+            gorulen.append(sayfa["items"][0]["id"])
+        self.assertEqual(set(gorulen), {v1, v4})
+        self.assertEqual(self.ara(query="widget", search_mode="ranked", limit=1, offset=2)["items"], [])
+        # Katı kipte tarih sırası: en yeni yayın önce (v4 sonra yayımlandı).
+        self.assertEqual([item["id"] for item in self.ara(query="widget")["items"]], [v4, v1])
+
+    def quokka_kutuphanesi(self):
+        """K1 ikinci dilim kabulü orta bulgu 1'in örneği: v1 belgesi terimleri gövdede bir kez, v4 raporu beş kez anar;
+        ikisi de aynı kapsam ve alan ağırlığında. Ayrıca terimi bir kez anan uzun bir v1 belgesi ve ilgisiz altı v1 belgesi."""
+        kisa = self.v1_yayinla("Zebra conference notes", body="The quokka tuning guide was mentioned once in passing.",
+                               key="v1-quokka-kisa")
+        dolgu = " ".join("pad" + "".join(chr(97 + (i // 26 ** k) % 26) for k in range(3)) for i in range(400))
+        uzun = self.v1_yayinla("Zebra field almanac", body="The quokka tuning guide was mentioned once. " + dolgu,
+                               key="v1-quokka-uzun")
+        for i in range(6):
+            self.v1_yayinla(f"Unrelated topic {i}", body=f"Text about kangaroo and emu number {i}.", key=f"v1-ilgisiz-{i}")
+        self.now[0] += 60
+        v4 = self.v4_yayinla(aday(TEMEL_RAPOR, title="Report on marsupial parameters", summary="A neutral summary.",
+                                  short_answer="Quokka tuning: quokka tuning parameters, quokka tuning steps and quokka "
+                                               "tuning pitfalls are explained here.",
+                                  recommendations=["Apply quokka tuning carefully."]))
+        return kisa, uzun, v4
+
+    def test_bm25_iki_depoda_ayni_olcekte(self):
+        from radar.arastirma_siralama import sorgu_hazirla
+        kisa, uzun, v4 = self.quokka_kutuphanesi()
+        plan = sorgu_hazirla("quokka tuning")
+        with self.store.baglanti() as connection, self.k1.arama_kaynagi() as ek:
+            connection.execute("BEGIN")
+            _, v1_satirlari = self.store.sirali_adaylar(connection, plan, limit=10)
+            olcek = self.store.bm25_olcegi(connection, plan)
+            # Aynı formül v1 belgesinde SQLite'ın bm25() değerini verir: istatistik ve formül birebir.
+            for satir in v1_satirlari:
+                self.assertAlmostEqual(olcek(satir["fields"]), satir["key"][2], places=9)
+            _, kendi = ek.adaylar(plan=plan, en_cok=10)
+            _, olcekli = ek.adaylar(plan=plan, en_cok=10, puanlayici=olcek)
+        v1_anahtar = {satir["id"]: satir["key"] for satir in v1_satirlari}
+        self.assertEqual([aday_["id"] for aday_ in olcekli], [v4])
+        # Hata durumu: iki belgeli v4 dizininde idf çöker, kendi bm25 ≈ 0 (v4 her beraberlikte sona düşerdi).
+        self.assertGreater(kendi[0]["key"][2], -1e-3)
+        # Düzeltme: v4 puanı v1 ölçeğinde; kapsam ve alan ağırlığı v1 belgeleriyle aynı, karar içeriğe (uzunluk) kalır.
+        self.assertEqual(olcekli[0]["key"][:2], v1_anahtar[kisa][:2])
+        self.assertEqual(olcekli[0]["key"][:2], v1_anahtar[uzun][:2])
+        self.assertLess(olcekli[0]["key"][2], -0.1)
+        self.assertLess(v1_anahtar[kisa][2], olcekli[0]["key"][2])
+        self.assertLess(olcekli[0]["key"][2], v1_anahtar[uzun][2])
+
+    def test_kaynak_degil_icerik_siralar(self):
+        kisa, uzun, v4 = self.quokka_kutuphanesi()
+        sonuc = self.ara(query="quokka tuning", search_mode="ranked")
+        # Kısa v1 belgesi > v4 raporu > uzun v1 belgesi: üçü de terimleri bir kez dizinler (alanlar belirteç kümesi);
+        # aynı ölçekte bm25 kısa belgeyi öne alır. Eski anahtarda v4 iki v1 belgesinin de arkasındaydı.
+        self.assertEqual([item["id"] for item in sonuc["items"]], [kisa, v4, uzun])
+        # Sayfalama birleşik sırayla tutarlı.
+        self.assertEqual([self.ara(query="quokka tuning", search_mode="ranked", limit=1, offset=i)["items"][0]["id"]
+                          for i in range(3)], [kisa, v4, uzun])
+
+    def test_v4_rapor_baglantisi_kamu_kaydina_yonlenir(self):
+        v4 = self.v4_yayinla()
+        yanit = self.client().get(f"/r/{v4}/v/1", follow_redirects=False)
+        self.assertEqual((yanit.status_code, yanit.headers["location"]), (303, f"/api/community/v4/records/{v4}/v/1"))
+        self.assertEqual(self.client().get(f"/r/{v4}/v/2", follow_redirects=False).status_code, 404)
+        self.assertEqual(self.client().get(f"/r/{'f' * 32}/v/1", follow_redirects=False).status_code, 404)
+
+
+class DizinGocu(K1Taban):
+    """alpha.10 deposu (adres yalnız sütunda, yalnız kaynak kartı; arama tablosu yok) açılışta yeni dizinlere göçer."""
+
+    def setUp(self):
+        super().setUp()
+        self.kur(replace(self.AYARLAR, otomatik_yayin=True))
+
+    def eski_sema_yap(self):
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(self.k1.path)) as connection:
+            connection.executescript("""
+                DROP TABLE IF EXISTS v4_search_fts; DROP TABLE v4_search; DROP TABLE v4_record_addresses;
+                DELETE FROM v4_state WHERE name='search_index_version';
+                UPDATE v4_records SET address_key=NULL WHERE kind<>'source_card';
+            """)
+
+    def test_acilista_adres_ve_arama_dizini_kurulur(self):
+        rapor = self.gonder(aday(TEMEL_RAPOR)).json()["submission"]["id"]
+        kart = self.gonder(aday(TEMEL_KART), token="B" * 43, anahtar="v4-request-0002").json()["submission"]["id"]
+        self.assertEqual([s["status"] for s in self.isle()], ["published", "published"])
+        # Kart geri çekildi ve gövdesi saklama süresi sonunda silindi: adres yalnız eski sütunda kalır.
+        self.client().post(f"/api/community/v4/submissions/{kart}/withdraw",
+                           json={"expected_revision": self.durum(kart, "B" * 43)["revision"]}, headers=self.headers("B" * 43))
+        self.now[0] += 31 * 86400
+        self.k1.temizle(self.ayarlar)
+        self.eski_sema_yap()
+        anahtar_1, anahtar_2 = address_key(KAYNAK_1, "en"), address_key(KAYNAK_2, "en")
+        yeni = KatkiDeposu(self.k1.path, clock=lambda: self.now[0], origin=ORIGIN)
+        with yeni.baglanti() as connection:
+            adresler = {(row["id"], row["address_key"]) for row in connection.execute("SELECT id,address_key FROM v4_record_addresses")}
+            self.assertEqual(adresler, {(rapor, anahtar_1), (rapor, anahtar_2), (kart, anahtar_1)})
+            self.assertEqual([row["id"] for row in connection.execute("SELECT id FROM v4_search")], [rapor])
+            self.assertEqual(connection.execute("SELECT value FROM v4_state WHERE name='search_index_version'").fetchone()[0],
+                             ARAMA_DIZINI_SURUMU)
+        durum, govde = yeni.bakis(anahtar_2, None, None)
+        self.assertEqual((durum, govde["cards"][0]["server"]["id"]), (200, rapor))
+        kapsam = yeni.kapsam()
+        self.assertEqual(set(kapsam["addresses"]), {anahtar_1, anahtar_2})
+        self.assertEqual(kapsam["tombstones"], [])   # yayında rapor olan adrese iz yazılmaz
+        with yeni.baglanti() as connection:
+            toplam, adaylar = yeni.arama_adaylari(connection, query="backups", en_cok=10)
+        self.assertEqual((toplam, [a["id"] for a in adaylar]), (1, [rapor]))
+        ozet = yeni.yeniden_indeksle()
+        self.assertEqual((ozet["published_indexed"], ozet["distinct_addresses"]), (1, 2))
+
+    def test_komut_satiri_k1_reindex(self):
+        import topluluk
+        self.gonder(aday(TEMEL_RAPOR))
+        self.isle()
+        ayar = self.root / "k1.json"
+        ayar.write_text(json.dumps(ayar_ornegi()), encoding="utf-8")
+        cikti = io.StringIO()
+        with redirect_stdout(cikti):
+            topluluk.main(["k1-reindex", "--k1-db", str(self.k1.path), "--k1-config", str(ayar)])
+        sonuc = json.loads(cikti.getvalue())
+        self.assertEqual((sonuc["published_indexed"], sonuc["distinct_addresses"], sonuc["records_addressed"]), (1, 2, 1))
 
 
 class SaklamaVeDayaniklilik(K1Taban):
@@ -920,6 +1256,65 @@ class SaklamaVeDayaniklilik(K1Taban):
         self.assertNotIn("gizli-ayrinti", " ".join(gunluk.output))
 
 
+class GunlukKipi(K1Taban):
+    """K1 deposu WAL kipinde, v1 deposu gibi (K1 ikinci dilim kabulü, düşük bulgu 2)."""
+
+    def setUp(self):
+        super().setUp()
+        self.kur(replace(self.AYARLAR, otomatik_yayin=True))
+
+    def kip(self):
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(self.k1.path)) as connection:
+            return connection.execute("PRAGMA journal_mode").fetchone()[0]
+
+    def test_depo_wal_kipinde_ve_eski_delete_deposu_gecer(self):
+        import sqlite3
+        from contextlib import closing
+        self.assertEqual(self.kip(), "wal")
+        rapor = self.gonder(aday(TEMEL_RAPOR)).json()["submission"]["id"]
+        self.assertEqual(self.isle()[0]["status"], "published")
+        # alpha.10 deposu DELETE kipindedir; yeni kod ilk açılışta WAL'a geçirir, kayıtlar ve dizin yerinde.
+        with closing(sqlite3.connect(self.k1.path)) as connection:
+            self.assertEqual(connection.execute("PRAGMA journal_mode=DELETE").fetchone()[0], "delete")
+        yeni = KatkiDeposu(self.k1.path, clock=lambda: self.now[0], origin=ORIGIN)
+        self.assertEqual(self.kip(), "wal")
+        self.assertEqual(yeni.kayit_oku(rapor)[0], 200)
+        with yeni.baglanti() as connection:
+            self.assertEqual(yeni.arama_adaylari(connection, query="backups", en_cok=10)[0], 1)
+
+    def test_okuma_anlik_goruntusu_geri_cekmeyi_bekletmez(self):
+        import time
+        rapor = self.gonder(aday(TEMEL_RAPOR)).json()["submission"]["id"]
+        self.isle()
+        surum = self.durum(rapor)["revision"]
+        with self.k1.arama_kaynagi() as ek:
+            self.assertEqual(ek.adaylar(query="backups", en_cok=10)[0], 1)
+            basla = time.monotonic()
+            yanit = self.client().post(f"/api/community/v4/submissions/{rapor}/withdraw", json={"expected_revision": surum},
+                                       headers=self.headers())
+            sure = time.monotonic() - basla
+            # Okuyucu kendi anlık görüntüsünde kalır (sayı ile sayfa tutarlı); DELETE kipinde yazıcı burada 10 s bekleyip düşerdi.
+            self.assertEqual(ek.yayinda(), 1)
+        self.assertEqual(yanit.status_code, 200, yanit.text)
+        self.assertLess(sure, 5.0)
+        with self.k1.arama_kaynagi() as ek:
+            self.assertEqual(ek.adaylar(query="backups", en_cok=10)[0], 0)
+
+    def test_ozel_metin_temizliginden_sonra_wal_sifirlanir(self):
+        paket = aday(claims=[dict(TEMEL_KART["claims"][0], quote="Widget 2.0 encrypts every file with a hidden key before upload.")])
+        reddedilen = self.gonder(paket).json()["submission"]["id"]
+        self.assertEqual(self.isle()[0]["status"], "rejected")
+        wal = Path(str(self.k1.path) + "-wal")
+        self.now[0] += 31 * 86400
+        self.assertGreaterEqual(self.k1.temizle(self.ayarlar), 1)
+        self.assertTrue(not wal.exists() or wal.stat().st_size == 0)
+        self.assertNotIn(b"hidden key", self.k1.path.read_bytes())
+        with self.k1.baglanti() as connection:
+            self.assertEqual(connection.execute("SELECT candidate FROM v4_submissions WHERE id=?", (reddedilen,)).fetchone()[0], "{}")
+
+
 class SifreliYedek(K1Taban):
     """K1 deposu şifreli operatör yedeğinde (araclar/community-backup.py, rol `k1`)."""
 
@@ -950,12 +1345,18 @@ class SifreliYedek(K1Taban):
                        "k1": self.root / "k1" / "k1.sqlite3"}
 
     def test_tam_yedek_ve_geri_yukleme(self):
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(self.yollar["k1"])) as connection:   # kaynak WAL kipinde (yedek WAL sayfalarını alır)
+            self.assertEqual(connection.execute("PRAGMA journal_mode").fetchone()[0], "wal")
         manifest = self.yedek.backup(self.yollar, self.root / "sifreli", writers_stopped=True)
         self.assertIn("k1", manifest["roles"])
         self.assertNotIn(b"Widget", (self.root / "sifreli" / "k1.sqlite3.enc").read_bytes())
         hedef = self.yedek.restore(self.root / "sifreli", self.root / "geri")
         depo = KatkiDeposu(hedef / "k1" / "k1.sqlite3", origin=ORIGIN, clock=lambda: self.now[0])
         self.assertEqual(depo.kayit_oku(self.yayinlanan)[0], 200)
+        with closing(sqlite3.connect(hedef / "k1" / "k1.sqlite3")) as connection:   # geri yüklenen ilk açılışta WAL'a geçer
+            self.assertEqual(connection.execute("PRAGMA journal_mode").fetchone()[0], "wal")
         with depo.baglanti() as connection:
             self.assertEqual(connection.execute("SELECT candidate_purged FROM v4_submissions WHERE id=?",
                                                 (self.reddedilen,)).fetchone()[0], 0)   # saklama süresi dolmadı
