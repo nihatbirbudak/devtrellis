@@ -23,6 +23,9 @@ python -B -X utf8 topluluk.py serve --public-url https://community.example.org `
 - **Backup:** include `--k1 data/k1/k1.sqlite3` in the encrypted operator backup (`araclar/community-backup.py`, see
   [community-backup.md](community-backup.md)). It is the only copy of published v4 records. There is no plain copy command.
 - **Logs:** worker errors go to the `devtrellis.k1` logger with the error type only, never candidate text.
+- **Store permissions:** `--k1-db` must point into a directory used only by the K1 store. On every start the directory is
+  restricted to the owner (POSIX `0700`, Windows protected DACL) and the database file to `0600`, independent of the process
+  umask and of whether the directory already existed.
 - **Stop status:** `k1-status` and the moderator publishing view report `stopped_by` as `config` (settings file), `moderator`
   or `cli` (`topluluk.py k1-stop`).
 - **Contract schemas:** the r2 JSON schemas (`public-record-v4-r2`, `contribution-candidate-v4-r2`, `lookup-coverage`) live in

@@ -106,12 +106,14 @@ class KatkiDeposu:
         from radar.ozel_dosya_izinleri import ozel_dosya_izni
         if not self.path.parent.exists():
             self.path.parent.mkdir(mode=0o700, parents=True)
-            ozel_dosya_izni(self.path.parent, directory=True)
+        # K1 dizini ayrıdır ve her açılışta kısıtlanır: önceden açılmış olsa da (örn. umask 022 ile 0755) POSIX 0700 /
+        # Windows korumalı DACL. mkdir modu umask'a bağlıdır; os.chmod değildir (Ubuntu CI bulgusu, 8 Kasım 2026).
+        ozel_dosya_izni(self.path.parent, directory=True)
         try:
             os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
-            ozel_dosya_izni(self.path)
         except FileExistsError:
             pass
+        ozel_dosya_izni(self.path)
         with self.baglanti(write=True) as connection:
             kimlik = connection.execute("PRAGMA application_id").fetchone()[0]
             surum = connection.execute("PRAGMA user_version").fetchone()[0]

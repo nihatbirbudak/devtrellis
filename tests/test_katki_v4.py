@@ -4,6 +4,7 @@ anahtarı, moderasyon, geri çekme/kaldırma, yedek ve v1 akışının bozulmama
 import copy
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -576,6 +577,38 @@ class V1BozulmazVeYedek(K1Taban):
         with patch("radar.ozel_dosya_izinleri.ozel_dosya_izni") as izin:
             KatkiDeposu(self.root / "k1-yeni" / "k1.sqlite3", origin=ORIGIN)
         self.assertEqual([c.kwargs.get("directory", False) for c in izin.call_args_list], [True, False])
+
+    def test_onceden_acilmis_dizin_ve_dosyada_izin_yine_uygulanir(self):
+        # Ubuntu CI (8 Kasım 2026): dizin test ya da operatör tarafından önceden varsayılan modla açılmışsa izin uygulanmıyordu.
+        from unittest.mock import patch
+        hedef = self.root / "k1-var"
+        hedef.mkdir()
+        with patch("radar.ozel_dosya_izinleri.ozel_dosya_izni") as izin:
+            KatkiDeposu(hedef / "k1.sqlite3", origin=ORIGIN)             # dizin var, dosya yok
+        self.assertEqual([c.kwargs.get("directory", False) for c in izin.call_args_list], [True, False])
+        with patch("radar.ozel_dosya_izinleri.ozel_dosya_izni") as izin:
+            KatkiDeposu(hedef / "k1.sqlite3", origin=ORIGIN)             # ikisi de var
+        self.assertEqual([(c.args[0], c.kwargs.get("directory", False)) for c in izin.call_args_list],
+                         [(hedef, True), (hedef / "k1.sqlite3", False)])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX dosya modu; Windows'ta DACL uygulanır, mod denetimi anlamsız")
+    def test_umask_022_altinda_onceden_acilmis_dizin_0700_dosya_0600(self):
+        import stat
+        eski = os.umask(0o022)
+        try:
+            hedef = self.root / "k1-umask"
+            hedef.mkdir()                                                 # umask 022 ile 0755 açılır
+            self.assertEqual(stat.S_IMODE(hedef.stat().st_mode), 0o755)
+            KatkiDeposu(hedef / "k1.sqlite3", origin=ORIGIN)
+            self.assertEqual(stat.S_IMODE(hedef.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((hedef / "k1.sqlite3").stat().st_mode), 0o600)
+            os.chmod(hedef, 0o755)
+            os.chmod(hedef / "k1.sqlite3", 0o644)
+            KatkiDeposu(hedef / "k1.sqlite3", origin=ORIGIN)             # yeniden açılış gevşemiş izni geri sıkar
+            self.assertEqual(stat.S_IMODE(hedef.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE((hedef / "k1.sqlite3").stat().st_mode), 0o600)
+        finally:
+            os.umask(eski)
 
     def test_v1_deposu_k1_deposu_olarak_acilmaz(self):
         with self.assertRaises(ValueError):
