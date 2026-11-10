@@ -1,6 +1,7 @@
 """Hazır topluluk araştırmalarını yerel uygulama üzerinden bulur ve seçilen raporu açık izinle gönderir."""
 
 import argparse
+import hashlib
 import http.client
 import json
 import logging
@@ -43,14 +44,49 @@ INSTRUCTIONS = (
 )
 ALWAYS_LOAD = {"anthropic/alwaysLoad": True}
 LOOKUP_LIMIT = 5
-# Kart tanımı (K2 tasarımı (b)): en çok 6 iddia, iddia ≤240 karakter, alıntı ≤300 karakter aynen. Eşli ölçüm
+# Kart tanımı (K2 tasarımı (b)): iddia sınırı aşağıda, iddia ≤240 karakter, alıntı ≤300 karakter aynen. Eşli ölçüm
 # (8 Kasım 2026) gösterdi ki bayt bütçesi iddia kesince ajan sayfayı yine açıyor; bütçe bu yüzden iddia sayısını
 # değil yalnız ikincil metinleri (özet, başlık, etiket, düzeltme notu) kısar. Sınırı aşan iddialar sayılır.
-CARD_CLAIM_LIMIT = 6
+# alpha.13b: kaynak kartı kapıda 20 iddiaya kadar olabilir (teşhis T2: 6 iddialık kart sayfanın sorusunu karşılamadı);
+# kart görünümü şema sınırına kadar hepsini gösterir. Rapor ve konu özeti şemada 60.
+CARD_CLAIM_LIMIT = 20
 CARD_TARGET_BYTES = 1500
 OMITTED_CLAIMS_HINT = "{n} claims not shown; call lookup_source again with view=\"full\" for the whole card."
+# alpha.13b: arama kartının ipuçları. Eksik kalan iddia için doğru yol arama kartında `read_research`'tür (13a kabul notu);
+# rapor kartı eksiksizse ajan bunu bilmeli ki ikinci tam okumaya gitmesin (13a ölçümü: 12 iddia görüp okumaya gitti).
+SEARCH_OMITTED_HINT = "{n} claims not shown; call read_research(id, version) for the whole record."
+SEARCH_COMPLETE_HINT = "All {n} claims of this report are shown; read_research would repeat them."
+SEARCH_ALREADY_HINT = ("Card shown earlier in this session (within 20 minutes), content not repeated. If you do not hold it, "
+                       "repeat this call (it then returns the card in full) or call read_research(id, version).")
+# alpha.13a (teşhis testi 4): aynı kart bu oturumda ikinci kez tam içerikle gönderilmez; kimlik ve sürüm bilgisi yeter.
+CLAIM_NAME_LIMIT = 60
+# alpha.13a rapor kartında 12 iddia gösterdi ve ajan kalanlar için yine tam okumaya gitti (13a ölçümü); alpha.13b'de
+# kart raporun bütün iddialarını taşır (şema sınırı 60), ikinci okuma gerekmez.
+REPORT_CLAIM_LIMIT = 60
+REPORT_KINDS = frozenset({"research_report", "topic_summary"})
+# Teslim günlüğünün ömrü: süreç birden çok konuşmaya ya da alt ajana hizmet edebilir ve bağlam sıkışabilir; bu süreden
+# eski teslim "zaten verildi" sayılmaz (alpha.13a şartlı kabul, bulgu 1).
+DELIVERY_TTL_SECONDS = 20 * 60
+ALREADY_DELIVERED_HINT = ("Card shown earlier in this session (within 20 minutes), content not repeated. If you do not hold it, "
+                          "repeat this call (it then returns the card in full), or call read_research(id, version) or "
+                          "lookup_source(view=\"full\").")
+# alpha.13b (T5-13b-1): ajan aynı aramayı ikinci kez çağırdı, "already_delivered" ipucunun "read_research" önerisiyle tam okumaya
+# gitti; oysa ilk arama kartı raporun tamamıydı. Tamamı verilmiş kayıtta ipucu önce eldeki sonucu gösterir; okuma bir kez kısa döner.
+WHOLE_DELIVERED_HINT = ("Your earlier search_research result in this session holds this whole record (every claim and answer field); "
+                        "answer from it. If it is no longer in your context, repeat this call: it then returns the record in full.")
+READ_REPEAT_HINT = ("search_research already returned this whole record in this session (every claim and answer field); answer "
+                    "from that result. If it is no longer in your context, repeat this call: it then returns the record in full.")
 # alpha.12 K6 (eşli ölçüm B1): kart sorudan dar olunca ajan kartla yetindi ("hangi kısıtlar" sorusunda kapsam 5/10).
 CARD_SCOPE_HINT = "A card holds selected claims, not the whole page; for all/which questions check not_covered or read the page."
+# alpha.13b (T2 ölçümü): makine listesi kartta durduğu hâlde ajan onu görmeden kartla yetindi; liste varken ipucu onu adıyla anar.
+GAP_SCOPE_HINT = ("unquoted_page_sections names page parts that no claim quotes (found by machine); if your question needs one "
+                  "of them, read that part of the page.")
+_GAP_KEY = re.compile(r'(?<!\\)"unquoted_page_sections":\[')
+
+
+def scope_hint(card):
+    """Kartın kapsam ipucu: makineyle kapsam listesi varsa onu anan cümle, yoksa genel cümle."""
+    return GAP_SCOPE_HINT if isinstance(card.get("untrusted"), str) and _GAP_KEY.search(card["untrusted"]) else CARD_SCOPE_HINT
 COVERAGE_IDENTITY = "k0-canonical-json-v1"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -247,6 +283,10 @@ class CommunityClient:
                 raise ValueError("This DevTrellis record was removed or withdrawn; do not use earlier copies of it.")
             if response.status == 404 and path.startswith("/api/platform/community/v4-records/"):
                 raise UnknownLocalRoute()
+            if response.status == 404 and path.startswith("/api/platform/community/cards/"):
+                # alpha.13a D4: var olmayan kimlik ya da sürüm genel hata değil, açık "bulunamadı" iletisidir.
+                raise ValueError("Not found: DevTrellis has no published record with this id and version. "
+                                 "Use the id and version returned by search_research.")
             if response.status >= 400:
                 raise ValueError(f"Local DevTrellis returned HTTP {response.status}. Check the local app and community settings.")
             if response.getheader("Content-Type", "").split(";", 1)[0].strip() != "application/json":
@@ -354,7 +394,7 @@ class CommunityClient:
             raise ValueError("Use a section identifier returned by the outline.")
         result = self.read_record(research_id, version)
         if result.get("record_type") == "v4" and isinstance(result.get("agent_view"), dict):
-            return v4_read_view(result, research_id, version, view)
+            return v4_read_view(result, research_id, version, view, section_id)
         if view == "full":
             return result
         if result.get("id") != research_id or result.get("version") != version:
@@ -778,15 +818,190 @@ def machine_label(path):
     return MACHINE_GATE_LABEL if path == "machine_gate" else ""
 
 
-def _fit_card(build, rows, budget):
+class DeliveryLog:
+    """Bu köprü sürecinde (MCP oturumunda) kart görünümüyle teslim edilen iddialar; süreç yeniden başlarsa sıfırlanır.
+
+    Anahtar `kimlik@sürüm`, değer teslim edilen iddia kimlikleri. Aynı kayıt `lookup_source` ya da `search_research`
+    kart görünümünde yeniden çıkınca gösterilecek iddialar teslim edilenlerin altkümesiyse tam içerik yerine kimlik verilir.
+    Adres süzgeci iddia kümesini değiştirdiği için (bir kayıt farklı sayfalarda farklı iddialarla bulunur) anahtar iddia
+    kimlikleriyle birlikte bakılır; yeni iddia varsa kart yine tam gelir. Tam görünüm (`view="full"`) hiç kısaltılmaz.
+    """
+
+    LIMIT = 500
+
+    def __init__(self, ttl=DELIVERY_TTL_SECONDS, clock=time.time):
+        self.ttl, self.clock = ttl, clock
+        self.lock = Lock()
+        self.records = OrderedDict()  # kayıt -> {iddia kimliği: teslim zamanı}
+        self.whole = {}  # tamamı verilmiş kayıt -> teslim zamanı
+        # alpha.13b (TK-sicak-W-2): kısa yanıt kayıt başına bir kez verilir. Ajan çıktıyı kesip içeriği kaybettiyse aynı isteği
+        # yineler; ikinci istek tam içerik alır (yoksa ajan kaydı bir daha göremiyordu).
+        self.shortened = set()
+
+    def mark_whole(self, record):
+        """Kaydın tamamı (bütün iddialar ve cevap alanları) bu oturumda verildi (rapor arama kartı)."""
+        with self.lock:
+            self.whole[record] = self.clock()
+            while len(self.whole) > self.LIMIT:
+                self.whole.pop(next(iter(self.whole)))
+
+    def whole_recent(self, record):
+        with self.lock:
+            entry = self.whole.get(record)
+            return entry is not None and self.clock() - entry <= self.ttl
+
+    def short_once(self, record):
+        """Son tam teslimden beri bu kayda kısa yanıt verilmediyse True ve işaretler; verildiyse False (bu istek tam gelir)."""
+        with self.lock:
+            if record in self.shortened:
+                return False
+            self.shortened.add(record)
+            return True
+
+    def remind_once(self, record):
+        """Tamamı verilmiş kaydın açık okuması: süresi içinde ve henüz kısa yanıt verilmediyse True (kısa yanıt)."""
+        return self.whole_recent(record) and self.short_once(record)
+
+    def covered(self, record, claim_ids):
+        """Gösterilecek iddiaların hepsi `ttl` saniye içinde teslim edildiyse True; süresi dolan teslim sayılmaz."""
+        with self.lock:
+            seen = self.records.get(record)
+            now = self.clock()
+            return (bool(claim_ids) and seen is not None
+                    and all(i in seen and now - seen[i] <= self.ttl for i in claim_ids))
+
+    def add(self, record, claim_ids):
+        if not claim_ids:
+            return
+        with self.lock:
+            now = self.clock()
+            delivered = self.records.setdefault(record, {})
+            delivered.update({i: now for i in claim_ids})
+            self.shortened.discard(record)
+            self.records.move_to_end(record)
+            while len(self.records) > self.LIMIT:
+                self.records.popitem(last=False)
+
+
+def _already_delivered(reference, version_match, eligible):
+    """Teslim edilmiş kartın yerine geçen kısa yanıt: sürüm eşleşmesi ve uygunluk bu çağrıya göre yeniden söylenir."""
+    # `answer_eligible` yazılmaz: içerik bu yanıtta yok, kartı görmemiş ajan "uygun" okuyup cevaplamasın (şartlı kabul 1).
+    return {"card": reference, "already_delivered": True, "version_match": version_match,
+            "eligible_if_card_held": bool(eligible), "hint": ALREADY_DELIVERED_HINT}
+
+
+def _fit_card(build, rows, budget, *, limit=CARD_CLAIM_LIMIT, record=None, delivered=None, short=None):
     """Kart tanımındaki bütün iddiaları (en çok CARD_CLAIM_LIMIT) gösterir; bütçe yalnız ikincil metinleri kısar.
 
     `build(kept, omitted, tight)`: `tight` ikincil alanların (özet, başlık, etiket, düzeltme notu) kısa sınırını açar.
     İddia metni, alıntı ve `not_covered` hiçbir zaman kısaltılmaz; sınırı aşan iddialar `omitted_claims` ile sayılır.
     """
-    kept, omitted = rows[:CARD_CLAIM_LIMIT], max(len(rows) - CARD_CLAIM_LIMIT, 0)
+    kept, omitted = rows[:limit], max(len(rows) - limit, 0)
+    ids = [row.pop("_id", None) for row in kept]
+    ids = [i for i in ids if i is not None]
+    if delivered is not None and record is not None and delivered.covered(record, ids) and delivered.short_once(record):
+        return short()
     shown = build(kept, omitted, False)
-    return shown if _size(shown) <= budget else build(kept, omitted, True)
+    shown = shown if _size(shown) <= budget else build(kept, omitted, True)
+    if delivered is not None and record is not None:
+        delivered.add(record, ids)
+    return shown
+
+
+_WORD = re.compile(r"[A-Za-z0-9_]+")
+_FILLER = frozenset("the and for with that this from are was were has have had not its can may will but any all each into "
+                    "than then also only when which these those been being per via".split())
+_NEGATIONS = frozenset({"not", "no", "never", "without", "cannot", "neither", "nor", "none", "unless"})
+# Sınır ve niteleyici sözcükler: metinde olup alıntıda olmayan biri iddianın alıntıdan fazlasını söylediği anlamına gelir.
+_QUALIFIERS = frozenset({"only", "default", "defaults", "maximum", "minimum", "max", "min", "least", "most", "always",
+                         "all", "every", "must", "should", "required", "optional", "deprecated", "removed", "added",
+                         "since", "before", "after", "until", "both", "either", "any", "unlike", "instead", "except"})
+
+
+def _stem(word):
+    for suffix in ("ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[:-len(suffix)]
+    return word
+
+
+def _content_words(text):
+    return {_stem(w) for w in map(str.lower, _WORD.findall(text)) if len(w) >= 3 and w not in _FILLER}
+
+
+def _negated(text):
+    lowered = text.lower()
+    return "n't" in lowered or bool(_NEGATIONS.intersection(_WORD.findall(lowered)))
+
+
+def claim_restates_quote(text, quote):
+    """İddia metni alıntının aynı bilgisini tekrarlıyor mu? Temkinli: kuşkuda `False` (metin gösterilir).
+
+    Tekrar sayılması için metnin içerik sözcüklerinin en az %70'i alıntıda geçmeli; metindeki her kod adı, sayı ya da
+    alt çizgili ad ve her sınır/niteleyici sözcük (only, default, maximum, must …) alıntıda olmalı; metin olumsuzsa alıntı da
+    olumsuz olmalı. İddia alıntının söylemediği bir ad, sınır ya da olumsuzlama ekliyorsa (alpha.12 K5 ölçümü: kod adı alıntıda
+    yok) metin atılmaz.
+    """
+    mine, theirs = _content_words(text), _content_words(quote)
+    if not mine:
+        return False
+    identifiers = {w for w in mine if "_" in w or any(ch.isdigit() for ch in w)}
+    spoken = {w.lower() for w in _WORD.findall(quote)}
+    # Rakam içeren her sözcük uzunluğa bakmadan denetlenir ("22", "3", "17"); içerik sözcüğü süzgeci kısa sayıları atlardı.
+    numbers = {w.lower() for w in _WORD.findall(text) if any(ch.isdigit() for ch in w)}
+    if identifiers - theirs or numbers - spoken or (_negated(text) and not _negated(quote)):
+        return False
+    if {w.lower() for w in _WORD.findall(text)} & _QUALIFIERS - spoken:
+        return False
+    return len(mine & theirs) / len(mine) >= 0.7
+
+
+def claim_name(text):
+    """İddianın kısa adı: ilk yan tümce (en çok CLAIM_NAME_LIMIT karakter), yoksa kesilmiş başı."""
+    text = " ".join(str(text).split())
+    if len(text) <= CLAIM_NAME_LIMIT:
+        return text
+    for separator in (": ", "; ", " — "):
+        head = text.split(separator, 1)[0]
+        if 12 <= len(head) <= CLAIM_NAME_LIMIT:
+            return head
+    cut = text[:CLAIM_NAME_LIMIT - 1]
+    return (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip(" ,;:") + "…"  # sözcük ortasında kesilmez
+
+
+def _claim_row(n, text, quote, source_url, claim_id):
+    """Alıntı her zaman aynen; metin yalnız alıntının söylemediğini söylüyorsa, aksi halde yalnız kısa ad."""
+    text = _short(text or "", 240)
+    row = {"n": n}
+    if claim_restates_quote(text, quote):
+        row["name"] = claim_name(text)
+    else:
+        row["text"] = text
+    row.update(quote=str(quote or "")[:300], source_url=source_url, _id=claim_id)
+    return row
+
+
+def _source_refs(kept, listed=None):
+    """Gösterilen iddiaların kaynak adresleri. Dönen: (köke yazılacak alanlar, iddia satırları).
+
+    Tek adres kökte `source_url` olarak bir kez yazılır; birden çok adres bir `sources` listesi ve iddiada `src`
+    (1'den başlayan sıra) olur. `listed`: kayıtta zaten bulunan kaynak listesi (sıra korunur, kökte yinelenmez).
+    Listede olmayan adres iddiada `source_url` olarak açık kalır.
+    """
+    urls = [row.get("source_url") for row in kept]
+    distinct = list(dict.fromkeys(u for u in urls if u))
+    if not distinct:
+        return {}, kept
+    if listed is None and len(distinct) == 1 and all(urls):
+        return {"source_url": distinct[0]}, [{k: v for k, v in row.items() if k != "source_url"} for row in kept]
+    order = listed if listed is not None else distinct
+    rows = []
+    for row in kept:
+        if row.get("source_url") in order:
+            rows.append({**{k: v for k, v in row.items() if k != "source_url"}, "src": order.index(row["source_url"]) + 1})
+        else:
+            rows.append(row)
+    return ({"sources": order} if listed is None else {}), rows
 
 
 def omitted_hint(card):
@@ -795,7 +1010,7 @@ def omitted_hint(card):
     return OMITTED_CLAIMS_HINT.format(n=omitted) if omitted else None
 
 
-def _source_card_view(card, version_match, answer_eligible, budget):
+def _source_card_view(card, version_match, answer_eligible, budget, delivered=None):
     if not isinstance(card.get("claims"), list) or not isinstance(card.get("source_freshness"), dict):
         raise ValueError("invalid card")
     usable, stale, disputed = [], 0, 0
@@ -826,8 +1041,9 @@ def _source_card_view(card, version_match, answer_eligible, budget):
     if disputed:
         server["disputed_claims"] = disputed
     declared = {"applies_to": scope[:3], "claim_types": sorted({c["claim_type"] for c in usable})}
-    rows = [{"n": n, "text": _short(c["text"], 240), "quote": c["evidence"]["quote"][:300]}
+    rows = [{"n": n, "text": _short(c["text"], 240), "quote": c["evidence"]["quote"][:300], "_id": c.get("id")}
             for n, c in enumerate(usable, 1)]
+    reference = _card_ref({"id": card["id"], "version": card["version"]})
     not_covered = [_short(item, 80) for item in card.get("not_covered") or []]
 
     def build(kept, omitted, tight):
@@ -839,16 +1055,16 @@ def _source_card_view(card, version_match, answer_eligible, budget):
                 "answer_eligible": bool(answer_eligible and usable), "server": shown, "declared": declared,
                 "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted({"claims": kept, **extra})}
 
-    return _fit_card(build, rows, budget)
+    return _fit_card(build, rows, budget, record=reference, delivered=delivered,
+                     short=lambda: _already_delivered(reference, version_match, answer_eligible and usable))
 
 
-def _agent_view(card, version_match, answer_eligible, key, budget, freshness=None):
-    """K1-V4 r2 ajan görünümü (`server` / `declared` / `untrusted`): yalnız bu adrese bağlı iddialar gösterilir.
+def _agent_facts(card, key):
+    """K1-V4 r2 ajan görünümünden ortak okumalar (kart ve rapor okuma görünümü); `key` verilirse yalnız o adrese bağlı iddialar.
 
-    Tazelik bulma yanıtının kökünden gelir (`freshness.state`); yoksa kayıttaki alan, o da yoksa `unknown`.
+    Kayıt alanları `null` olabilir (canlı v4 raporunda iddia `applies_to: null`, kapsam rapor düzeyinde serbest metin):
+    her okuma `or` ile boş değere iner; `.get(ad, varsayılan)` yalnız alan yoksa varsayılanı verir (alpha.11 kabulü, bulgu 1).
     """
-    # Kayıt alanları `null` olabilir (canlı v4 raporunda iddia `applies_to: null`, kapsam rapor düzeyinde serbest metin):
-    # her okuma `or` ile boş değere iner; `.get(ad, varsayılan)` yalnız alan yoksa varsayılanı verir (alpha.11 kabulü, bulgu 1).
     server, declared, untrusted = card["server"], card["declared"], card["untrusted"]
     matches = {m["claim_id"]: m for m in server.get("quote_matches") or []
                if isinstance(m, dict) and (key is None or m.get("address_key") == key)}
@@ -862,56 +1078,173 @@ def _agent_view(card, version_match, answer_eligible, key, budget, freshness=Non
             entry = {"product": item.get("product"), "versions": item.get("versions")}
             if entry not in scope:
                 scope.append(entry)
-    label = server.get("label") if isinstance(server.get("label"), dict) else {}
-    published = server.get("published_at")
     checked = [stated[c["claim_id"]]["checked_on"] for c in claims
                if isinstance((stated.get(c["claim_id"]) or {}).get("checked_on"), str)]
     generated = declared.get("generated_at")
+    label = server.get("label") if isinstance(server.get("label"), dict) else {}
+    origin = (declared.get("provenance") or {}).get("origin")
+    return {"origin": origin if isinstance(origin, str) else None, "written_with": _written_with(declared.get("provenance")),
+            "matches": matches, "stated": stated, "server": server, "claims": claims, "scope": scope[:3], "label": label.get("en") or machine_label(server.get("path")),
+            "checked_on": min(checked) if checked else None, "generated_at": generated[:10] if isinstance(generated, str) else None,
+            "content": untrusted.get("content") if isinstance(untrusted.get("content"), dict) else {},
+            "inexact": sum(1 for c in claims if matches[c["claim_id"]].get("state") != "exact")}
+
+
+# Boşluk yok (alpha.13 şartlı kabulü 2): `declared` güvenilmeyen bloğun dışındadır; boşluklu serbest metin ("Ignore rules …")
+# buraya taşınmasın. Model kimlikleri (grok-4, claude-opus-5-5, gpt-5.1) boşluksuzdur.
+_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
+
+
+def _written_with(provenance):
+    """alpha.13b madde 6: katkıcının beyan ettiği model aşamaları ("Written with Grok" gibi gösterim için). Sözleşmede alan
+    zaten var (`provenance.stages[].provider/model/access_type`); Grok `provider: "other"`, `model: "grok-4"`, `access_type:
+    "non_trial"` olarak beyan edilir. Kısa ve düz adlar alınır, en çok 3; beyan doğrulanmaz (kapı etiketi de öyle der)."""
+    if not isinstance(provenance, dict) or provenance.get("origin") not in ("model_assisted", "mixed"):
+        return []
+    names = []
+    for stage in provenance.get("stages") or []:
+        if not isinstance(stage, dict):
+            continue
+        name = stage.get("model") if isinstance(stage.get("model"), str) else stage.get("provider")
+        if isinstance(name, str) and _MODEL_NAME.fullmatch(name.strip()) and name.strip() not in names:
+            names.append(name.strip())
+    return names[:3]
+
+
+def _label_text(label, limit):
+    """Sunucu etiketinden ajana gereken kısım: insan incelemesi, kaynak erişimi, alıntı bulma ve "desteği denetlenmedi" notu.
+
+    Uzun makine denetimi listesi (`machine checks passed: …`, kayıtta `checks_passed` olarak durur), bağlanmamış alanların
+    adları (ayrıca `unsourced_fields`) ve sondaki tarih atılır; kalanı `limit` karaktere kısaltılır.
+    """
+    parts = [p for p in str(label or "").split("; ")
+             if not p.startswith("machine checks passed") and "not tied to any source" not in p
+             and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", p.strip())]
+    return _short("; ".join(parts), limit)
+
+
+def _agent_flags(facts):
+    """Yalnız söylenmesi gereken durumlar: kayıt temizse hiçbiri yazılmaz (alpha.13a)."""
+    server, flags = facts["server"], {}
+    if facts["inexact"]:
+        flags["quotes_not_exact"] = facts["inexact"]
+    if server.get("warnings"):
+        flags["warnings"] = len(server["warnings"])
+    if (server.get("corrections") or {}).get("open"):
+        flags["corrections_open"] = server["corrections"]["open"]
+    if server.get("fields_not_tied_to_sources"):
+        flags["unsourced_fields"] = [f for f in server["fields_not_tied_to_sources"] if isinstance(f, str)]
+    return flags
+
+
+def _machine_gaps(server):
+    """alpha.13b: kapının sayfa bölümleri ↔ alıntılar karşılaştırması (`server.machine_not_covered`). Adlar sayfa metninden
+    gelir; kartta güvenilmeyen blokta katkıcının `not_covered` listesinden ayrı ve makine kaynaklı olduğu adından belli bir
+    alan olarak durur (`unquoted_page_sections`). Alan yoksa (eski kayıt, eski sunucu) hiçbir şey."""
+    gaps = server.get("machine_not_covered")
+    if not isinstance(gaps, list):
+        return {}
+    names = [_short(item, 80) for item in gaps if isinstance(item, str) and item.strip()][:12]
+    return {"unquoted_page_sections": names} if names else {}
+
+
+def _declared_block(facts):
+    return {name: value for name, value in (("checked_on", facts["checked_on"]), ("applies_to", facts["scope"]),
+                                            ("generated_at", facts["generated_at"]),
+                                            ("written_with", facts.get("written_with"))) if value}
+
+
+def _agent_view(card, version_match, answer_eligible, key, budget, freshness=None, delivered=None):
+    """K1-V4 r2 ajan görünümü (`server` / `declared` / `untrusted`): yalnız bu adrese bağlı iddialar gösterilir.
+
+    Tazelik bulma yanıtının kökünden gelir (`freshness.state`); yoksa kayıttaki alan, o da yoksa `unknown`.
+    alpha.13a kompakt biçim: üst veri yalnız kind, insan incelemesi ve etiketi, tazelik, `link`, `checked_on`, kapsam ve
+    gerçekten söylenmesi gereken durumlardır; iddia metni alıntıyla aynı bilgiyse yalnız kısa ad gösterilir.
+    """
+    facts = _agent_facts(card, key)
+    server, claims, content = facts["server"], facts["claims"], facts["content"]
     stated_freshness = freshness if freshness is not None else server.get("freshness", card.get("freshness"))
     if isinstance(stated_freshness, dict):
         stated_freshness = stated_freshness.get("state")
-    short_declared = {"checked_on": min(checked) if checked else None, "applies_to": scope[:3],
-                      "generated_at": generated[:10] if isinstance(generated, str) else None,
-                      "origin": (declared.get("provenance") or {}).get("origin")}
-    content = untrusted.get("content") if isinstance(untrusted.get("content"), dict) else {}
-    rows = [{"n": n, "text": _short(c.get("text") or "", 240), "quote": str(c.get("quote") or "")[:300],
-             "source_url": c.get("source_url")} for n, c in enumerate(claims, 1)]
+    rows = [_claim_row(n, c.get("text"), c.get("quote"), c.get("source_url"), c.get("claim_id"))
+            for n, c in enumerate(claims, 1)]
+    reference = _card_ref({"id": server["id"], "version": server["version"]})
+    limit = REPORT_CLAIM_LIMIT if server.get("kind") in REPORT_KINDS else CARD_CLAIM_LIMIT
+    whole_report = key is None and server.get("kind") in REPORT_KINDS
 
     def build(kept, omitted, tight):
-        short_server = {"kind": server.get("kind"), "published_at": published[:10] if isinstance(published, str) else None,
-                        "path": server.get("path"), "human_reviewed": server.get("human_reviewed"),
-                        "checks_passed": len(server.get("checks_passed") or []),
-                        "warnings": len(server.get("warnings") or []),
-                        "quotes_exact": sum(1 for c in claims if matches[c["claim_id"]].get("state") == "exact"),
-                        "label": _short(label.get("en") or machine_label(server.get("path")), 60 if tight else 120) or None,
-                        **_freshness(stated_freshness),
-                        "corrections": {"open": (server.get("corrections") or {}).get("open", 0)}}
-        # Başlık ve özet ikincil metindir; sıkı kipte kısalır. `not_covered` kapsam sınırıdır, aynen kalır.
+        short_server = {"kind": server.get("kind"), "human_reviewed": server.get("human_reviewed"),
+                        "label": _label_text(facts["label"], 60 if tight else 120) or None,
+                        **_freshness(stated_freshness), **_agent_flags(facts)}
+        short_server = {name: value for name, value in short_server.items() if value is not None}
+        # Başlık ve özet ikincil metindir; sıkı kipte kısalır. `not_covered` kapsam sınırıdır, aynen kalır. Kaydın tamamını
+        # gösteren rapor kartında özet de cevap alanıdır, kısalmaz (şartlı kabul 4: kısa cevapsız raporda özet kesiliyordu).
         text_limit = 80 if tight else 300
         extra = {}
-        for name in ("title", "summary", "not_covered"):
+        names = ("title", "summary", "not_covered")
+        if whole_report:
+            # alpha.13b tek okuma: kaydın tamamını gösteren rapor kartı cevap alanlarını da taşır; kısa cevap varsa özet
+            # yinelenmez. Bunlar ikincil metin değildir, kısalmaz.
+            names = ("title", "short_answer" if content.get("short_answer") else "summary", "answers", "recommendations",
+                     "not_covered")
+        for name in names:
             if name in content:
                 value = content[name]
-                extra[name] = (_short(value, 300 if name == "not_covered" else text_limit)
+                primary = name in ("not_covered", "short_answer", "answers", "recommendations") or (
+                    whole_report and name == "summary")
+                extra[name] = (_short(value, 1200 if name in ("short_answer", "summary") and whole_report
+                                      else 300 if primary else text_limit)
                                if isinstance(value, str) else value)
+        extra.update(_machine_gaps(server))
         shown = dict(short_server, **({"omitted_claims": omitted} if omitted else {}), link=server.get("link"))
         # Gösterilen iddiaların hepsi aynı kaynak adresindeyse (adresle bulmada olağan durum) adres bir kez yazılır;
-        # farklıysa her iddiada kalır (K2 kart bütçesi kabulü notu: `source_url` tekrarı).
-        urls = {row.get("source_url") for row in kept}
-        shared_url = next(iter(urls)) if len(urls) == 1 else None
-        if shared_url:
-            payload = {"source_url": shared_url,
-                       "claims": [{k: v for k, v in row.items() if k != "source_url"} for row in kept], **extra}
-        else:
-            payload = {"claims": kept, **extra}
-        return {"card": _card_ref({"id": server["id"], "version": server["version"]}), "version_match": version_match,
-                "answer_eligible": bool(answer_eligible and claims), "server": shown, "declared": short_declared,
-                "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted(payload)}
+        # farklıysa bir `sources` listesi ve iddiada sıra (`src`) kullanılır.
+        refs, shown_rows = _source_refs(kept)
+        return {"card": reference, "version_match": version_match,
+                "answer_eligible": bool(answer_eligible and claims), "server": shown, "declared": _declared_block(facts),
+                "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted({**refs, "claims": shown_rows, **extra})}
 
-    return _fit_card(build, rows, budget)
+    return _fit_card(build, rows, budget, limit=limit, record=reference, delivered=delivered,
+                     short=lambda: _already_delivered(reference, version_match, answer_eligible and claims))
 
 
-def compact_card(card, version_match, answer_eligible, *, key=None, budget=CARD_TARGET_BYTES, freshness=None):
+def agent_read_view(card):
+    """Rapor okuması (`read_research`) için kompakt ajan görünümü: (sunucu bloğu, beyan bloğu, güvenilmeyen gövde).
+
+    Ajanın kullanmadığı makine üst verisi (alıntı özetleri, iddia başına beyan satırları, kapı kimliği ve sürümü, hak
+    alanları) çıkar; tam kayıt `report_url` adresindedir. İçerik alanları (başlık, özet, kısa cevap, öneriler, kapsam,
+    kaynaklar) ve bütün iddialar eksiksiz kalır.
+    """
+    facts = _agent_facts(card, None)
+    server, claims, content = facts["server"], facts["claims"], dict(facts["content"])
+    published = server.get("published_at")
+    short_server = {"label": _label_text(facts["label"], 200) or None,
+                    "published_at": published[:10] if isinstance(published, str) else None, **_agent_flags(facts),
+                    "link": server.get("link")}  # kamu API JSON adresi (görüntüleme sayacı artmaz); tam kayıt burada
+    short_server = {name: value for name, value in short_server.items() if value is not None}
+    short_declared = {**_declared_block(facts), **({"origin": facts["origin"]} if facts["origin"] else {})}
+    rows = [_claim_row(n, c.get("text"), c.get("quote"), c.get("source_url"), None) for n, c in enumerate(claims, 1)]
+    # alpha.13a kabulü bulgu 3: iddia başına alıntı eşleşmesi (yalnız "exact" değilse) ve kapsam (iddialar farklı sürümlere
+    # aitse; hepsi aynıysa bir kez `declared.applies_to`'da).
+    scopes = [", ".join(f"{i.get('product')} {i.get('versions')}" for i in (facts["stated"].get(c["claim_id"]) or {}).get("applies_to") or []
+                        if isinstance(i, dict)) for c in claims]
+    for row, claim, scope in zip(rows, claims, scopes):
+        row.pop("_id")
+        state = (facts["matches"].get(claim["claim_id"]) or {}).get("state")
+        if state and state != "exact":
+            row["match"] = state
+        if len(set(scopes)) > 1 and scope:
+            row["applies_to"] = scope
+    listed = None
+    if isinstance(content.get("sources"), list):
+        urls = [s.get("url") for s in content["sources"] if isinstance(s, dict) and isinstance(s.get("url"), str)]
+        listed = urls if len(urls) == len(content["sources"]) else None
+    refs, rows = ({}, rows) if "sources" in content and listed is None else _source_refs(rows, listed)
+    return short_server, short_declared, {**content, **_machine_gaps(server), **refs, "claims": rows}
+
+
+def compact_card(card, version_match, answer_eligible, *, key=None, budget=CARD_TARGET_BYTES, freshness=None,
+                 delivered=None):
     """Ajan görünümü: sunucunun ürettiği (`server`), katkıcının beyan ettiği (`declared`) ve güvenilmeyen metin ayrı.
 
     Kaynak kartı v4 (r1) ve K1-V4 r2 ajan görünümü desteklenir. Kart tanımındaki bütün iddialar (en çok
@@ -921,10 +1254,10 @@ def compact_card(card, version_match, answer_eligible, *, key=None, budget=CARD_
     if not isinstance(card, dict):
         raise ValueError("invalid card")
     if card.get("schema") == "devtrellis-source-card" and card.get("schema_version") == 4:
-        return _source_card_view(card, version_match, answer_eligible, budget)
+        return _source_card_view(card, version_match, answer_eligible, budget, delivered)
     if (card.get("schema") == "devtrellis-agent-view" and card.get("schema_version") == 1
             and all(isinstance(card.get(part), dict) for part in ("server", "declared", "untrusted"))):
-        return _agent_view(card, version_match, answer_eligible, key, budget, freshness)
+        return _agent_view(card, version_match, answer_eligible, key, budget, freshness, delivered)
     raise ValueError("invalid card")
 
 
@@ -933,20 +1266,55 @@ def full_view(card):
     return {"untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted(card)}
 
 
-def v4_read_view(result, research_id, version, view):
-    """K1 v4 kaydının okuması (alpha.12 K2): sunucu ajan görünümü bütünüyle güvenilmeyen bloğun içinde.
+def v4_read_view(result, research_id, version, view, section_id=None):
+    """K1 v4 kaydının okuması (alpha.12 K2): kompakt ajan görünümü (alpha.13a); kayıt metni güvenilmeyen blokta.
 
     v4 kayıtları kısadır ve bölüm kimliği taşımaz; yalnız `full` görünümü vardır. Kimlik ve istenen sürüm eşleşmeli.
+    Sunucu ve beyan blokları güvenilmeyen metinden ayrıdır; makine üst verisinin tamamı `report_url` adresindeki kayıttadır.
     """
-    if view != "full":
-        raise ValueError('This record has no sections; read it with view="full".')
     if (result.get("id") != research_id or type(result.get("version")) is not int
             or (version is not None and result["version"] != version)):
         raise ValueError("The local app returned a different report snapshot.")
     publication = result.get("publication") if isinstance(result.get("publication"), dict) else {}
-    return {"card": research_id + "@" + str(result["version"]), "record_type": "v4", "kind": result.get("kind"),
+    try:
+        server, declared, body = agent_read_view(result["agent_view"])
+    except (KeyError, TypeError, AttributeError):
+        raise ValueError("The local app returned an invalid report record.") from None
+    head = {"card": research_id + "@" + str(result["version"]), "record_type": "v4", "kind": result.get("kind"),
             "path": publication.get("path"), "human_reviewed": result.get("human_reviewed"),
-            "report_url": result.get("report_url"), **full_view(result["agent_view"])}
+            "report_url": result.get("report_url"), "server": server, "declared": declared}
+    if view == "full":
+        return {**head, "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted(body)}
+    # alpha.13b (Grok D2): uzun v4 raporda bölüm okuma. Bölümler: cevap alanları ("answer") ve kaynak sayfası başına iddialar.
+    sections = v4_sections(head["card"], body)
+    if view == "outline":
+        outline = [{"section_id": s["section_id"], "title": s["title"], "claims": len(s["body"].get("claims") or [])}
+                   for s in sections]
+        return {**head, "view": "outline", "complete_report": False, "untrusted_notice": UNTRUSTED_NOTICE,
+                "untrusted": wrap_untrusted({"sections": outline})}
+    chosen = next((s for s in sections if s["section_id"] == section_id), None)
+    if chosen is None:
+        raise ValueError("Use a section identifier returned by the outline.")
+    return {**head, "view": "section", "complete_report": False, "section_id": section_id,
+            "untrusted_notice": UNTRUSTED_NOTICE, "untrusted": wrap_untrusted({"title": chosen["title"], **chosen["body"]})}
+
+
+def v4_sections(reference, body):
+    """v4 okuma gövdesinin bölümleri; kimlik kayıt@sürüm ve bölüm adına bağlı (`section-<sha256>`)."""
+    def ident(name):
+        return "section-" + hashlib.sha256(f"{reference}:{name}".encode("utf-8")).hexdigest()
+    answer = {k: v for k, v in body.items() if k not in ("claims", "sources", "source_url")}
+    sections = [{"section_id": ident("answer"), "title": "Answer fields", "body": answer}]
+    listed = body.get("sources") if isinstance(body.get("sources"), list) else None
+    groups = {}
+    for claim in body.get("claims") or []:
+        groups.setdefault(claim.get("src", claim.get("source_url", body.get("source_url"))), []).append(claim)
+    for key, claims in groups.items():
+        url = listed[key - 1] if isinstance(key, int) and listed and 0 < key <= len(listed) else key
+        url = url.get("url") if isinstance(url, dict) else url
+        sections.append({"section_id": ident(f"source:{url}"), "title": str(url)[:200],
+                         "body": {"source_url": url, "claims": claims}})
+    return sections
 
 
 def card_address_matches(card, key):
@@ -1002,8 +1370,9 @@ def validate_lookup(status, body, key):
 class SourceLookup:
     """Adres anahtarlı kart bakışı: yerel kapsam listesi kesin ıskayı ağsız çözer, isabette tek GET."""
 
-    def __init__(self, client, coverage=None, hits=None, topics=None):
+    def __init__(self, client, coverage=None, hits=None, topics=None, delivered=None):
         self.client, self.coverage, self.hits, self.topics = client, coverage, hits, topics
+        self.delivered = delivered  # alpha.13a: bu oturumda teslim edilen iddialar (DeliveryLog) ya da None
         # H8: bakış yanıtları anahtar ve sürüm parametresiyle, yalnız bellekte; If-None-Match ile yeniden doğrulanır.
         self.etags = OrderedDict()
         self.lock = Lock()
@@ -1083,11 +1452,16 @@ class SourceLookup:
                     shown = full_view(card)
                 else:
                     shown = compact_card(card, body["version_match"], body["answer_eligible"], key=key,
-                                         freshness=lookup_freshness(body))
-                eligible = body["answer_eligible"] and (view == "full" or shown["answer_eligible"])
+                                         freshness=lookup_freshness(body), delivered=self.delivered)
+                delivered_before = bool(shown.get("already_delivered"))
+                eligible = body["answer_eligible"] and (view == "full" or delivered_before or shown["answer_eligible"])
                 hint = omitted_hint(shown) if view == "card" else None
-                return finish("found", eligible=eligible, match=body["version_match"], network=True, card=shown,
-                              **({"hint": hint} if hint else {}), scope_hint=CARD_SCOPE_HINT)
+                result = finish("found", eligible=eligible, match=body["version_match"], network=True, card=shown,
+                                **({"hint": hint} if hint else {}),
+                                **({} if delivered_before else {"scope_hint": scope_hint(shown)}))
+                if delivered_before:
+                    result.pop("answer_eligible", None)  # kısa yanıt `eligible_if_card_held` taşır
+                return result
             candidates = [{"card": _card_ref(item["card"]), "applies_to": (item.get("applies_to") or [])[:3],
                            "version_match": item.get("version_match")} for item in body["candidates"]]
             extra = {"candidates": candidates} if candidates else {}
@@ -1164,10 +1538,11 @@ PRODUCT_ALIASES = {"ros2": [("ros", "2")], "k8s": [("kubernetes", None)], "postg
 
 
 class TopicGate:
-    """Arama ıska geçidi: sorgu yalnız kütüphanede hiç olmayan ürünleri adlandırıyorsa ağa çıkmaz.
+    """Arama ıska geçidi: sorgu yalnız kütüphanede hiç olmayan ürünleri adlandırıyorsa `blocked` der.
 
-    Temkinlidir: liste yoksa, eskiyse ya da sorguda ürün adı tanınmıyorsa her zaman sunucuya sorar.
-    Ürün sürümü konu kapsamının dışındaysa sonucu `version_match: mismatch` diye işaretler.
+    alpha.13b'den beri `blocked` yalnız etikettir (`in_scope: false`); arama yine sunucuya gider, çünkü konu listesi
+    bütün kayıtları taşımayabilir (Grok S3/S4 yanlış ıskası). Ürün sürümü konu kapsamının dışındaysa sonucu
+    `version_match: mismatch` diye işaretler.
     """
 
     def __init__(self, topics):
@@ -1257,7 +1632,7 @@ def _report_card(item, version_match, applies):
     return card
 
 
-def v4_search_card(card, connection, budget=CARD_TARGET_BYTES):
+def v4_search_card(card, connection, budget=CARD_TARGET_BYTES, delivered=None):
     """alpha.12 K4: yüksek isabetteki v4 kaydı (kaynak kartı, rapor, konu özeti) için arama kartı iddiaları gösterir.
 
     v4 arama özeti iddia metinlerinin birleşimidir ve sunucuda 600 karakterde kesilir; ajan bu yüzden ikinci çağrıya
@@ -1271,15 +1646,24 @@ def v4_search_card(card, connection, budget=CARD_TARGET_BYTES):
         view = result.get("agent_view") if result.get("record_type") == "v4" else None
         if not isinstance(view, dict):
             return card
-        shown = compact_card(view, card["version_match"], card["answer_eligible"], budget=budget)
+        shown = compact_card(view, card["version_match"], card["answer_eligible"], budget=budget, delivered=delivered)
     except (ValueError, KeyError, TypeError):
         return card
-    shown["server"] = {"record_type": "v4", **shown["server"]}
     if card.get("missing_terms"):
         shown["missing_terms"] = card["missing_terms"]
-    hint = omitted_hint(shown)
-    if hint:
-        shown["hint"] = hint
+    if shown.get("already_delivered"):
+        # Arama yolunda adres yok: kısa yanıtın ikinci yolu (`lookup_source(view="full")`) adres ister; yalnız okuma önerilir.
+        shown["hint"] = (WHOLE_DELIVERED_HINT if delivered is not None and delivered.whole_recent(shown["card"])
+                         else SEARCH_ALREADY_HINT)
+        return shown
+    shown["server"] = {"record_type": "v4", **shown["server"]}
+    omitted = shown["server"].get("omitted_claims")
+    if omitted:
+        shown["hint"] = SEARCH_OMITTED_HINT.format(n=omitted)
+    elif shown["server"].get("kind") in REPORT_KINDS:
+        shown["hint"] = SEARCH_COMPLETE_HINT.format(n=len(view["untrusted"].get("claims") or []))
+        if delivered is not None:
+            delivered.mark_whole(shown["card"])
     return shown
 
 
@@ -1439,7 +1823,8 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
                                folder / "topics-v1.json" if folder else None)
     if hits is None:
         hits = HitLog(folder / "hit-log-v1.json" if folder else None)
-    lookups = SourceLookup(connection, coverage, hits, topics)
+    delivered = DeliveryLog()
+    lookups = SourceLookup(connection, coverage, hits, topics, delivered)
     gate = TopicGate(topics)
     if prefetch:
         # Liste indirmesi açılışı ve ilk araç listesini beklemez.
@@ -1468,9 +1853,10 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
         snapshot does not list it, nothing is sent (network=false). Otherwise only its SHA-256 key is sent.
         A found card holds exact source quotes; use it instead of the page only when answer_eligible
         is true and its claims cover your need, and cite its link. version_match, not_covered,
-        checked_on and freshness limit it; not_listed is not proof that no card exists.
-        The card view shows all claims up to 6; when omitted_claims is set, the hint says how many
-        were left out and view="full" returns the whole record. Never pass private, signed or
+        checked_on and freshness limit it, and so does unquoted_page_sections (page parts no claim quotes);
+        not_listed is not proof that no card exists.
+        The card view shows every claim of the record; when omitted_claims is set, the hint says how
+        many were left out and view="full" returns the whole record. Never pass private, signed or
         session URLs. check_server=true bypasses the snapshot.
         """
         return execute(lookups.lookup, urls, language, expected_product, expected_version, check_server, view)
@@ -1482,8 +1868,9 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
 
         Default card view: a clear hit returns one answer card (short_answer, sources, version_match,
         link); an unclear result returns up to 3 candidate rows to read with read_research using the
-        card id before @ and the version after it. hit=false with network=false means the local topic
-        list names none of the query's products. Retry an empty result at most once.
+        card id before @ and the version after it. hit=false means the server found no record;
+        in_scope=false only says the local topic list names none of the query's products.
+        Retry an empty result at most once.
         brief and summary keep the older report metadata and report_url. Lexical match is not sufficiency.
         The query goes to the configured community. No model or source freshness check is performed.
         """
@@ -1498,9 +1885,9 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
             decision = gate.decide(text, snapshot)
             hits.count("search")
             if decision["blocked"]:
+                # alpha.13b (Grok S3/S4): yerel konu listesi eksik olabilir (canlı liste yalnız v4 kayıtlarını taşıyor, eski
+                # raporlar yok). Liste yalnız etiket verir; "yok" kararını sunucu verir. Sayaç adı geriye uyum için aynı kalır.
                 hits.count("search_blocked")
-                return {"hit": False, "in_scope": False, "network": False,
-                        "hint": "No DevTrellis topic lists these products; continue without DevTrellis."}
             summary = connection.search(text, limit, view="summary")
             for item in summary.get("items", []):
                 if isinstance(item, dict) and item.get("record_type") == "v4":
@@ -1508,9 +1895,9 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
             answer = search_cards(summary, snapshot, decision)
             if answer.get("card") and answer["card"]["server"].get("record_type") == "v4":
                 summary_card = answer["card"]
-                answer["card"] = v4_search_card(summary_card, connection)
-                if answer["card"] is not summary_card:
-                    answer["scope_hint"] = CARD_SCOPE_HINT
+                answer["card"] = v4_search_card(summary_card, connection, delivered=delivered)
+                if answer["card"] is not summary_card and not answer["card"].get("already_delivered"):
+                    answer["scope_hint"] = scope_hint(answer["card"])
             hits.count("search_" + answer["match"] if answer["hit"] else "search_empty")
             return answer
 
@@ -1533,9 +1920,13 @@ def create_server(local_url=DEFAULT_LOCAL_URL, *, client=None, source_memory=Fal
         GET only: no access/reuse event or contribution approval. record_research_use is a separate
         optional write. This read does not check the original sources or prove that facts are current.
         """
-        result = execute(connection.read, research_id, version, view=view, section_id=section_id)
         hits.count("read")
-        return result
+        # alpha.13b: arama kartı kaydın tamamını bu oturumda verdiyse ilk açık okuma kısa döner (T5-13b-1'de 9,6 KB yineleme);
+        # aynı okuma yeniden istenirse tam gelir (bağlamı sıkışmış ajan için).
+        if (view == "full" and type(version) is int and isinstance(research_id, str)
+                and delivered.remind_once(f"{research_id}@{version}")):
+            return {"card": f"{research_id}@{version}", "already_delivered": True, "hint": READ_REPEAT_HINT}
+        return execute(connection.read, research_id, version, view=view, section_id=section_id)
 
     if source_memory:
         @server.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True), structured_output=True)

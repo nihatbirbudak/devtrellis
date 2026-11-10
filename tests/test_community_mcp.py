@@ -310,7 +310,7 @@ class CommunityMcpTests(unittest.TestCase):
         self.client.remember_v4("not-a-record-id")
         self.assertEqual(self.client.v4_records, {record})
         before = len(self.server.calls)
-        with self.assertRaisesRegex(ValueError, "HTTP 404"):
+        with self.assertRaisesRegex(ValueError, "Not found: DevTrellis has no published record"):
             self.client.read(record, 1)
         self.assertEqual([urlsplit(path).path for path, _, _ in self.server.calls[before:]],
                          ["/api/platform/community/v4-records/" + record, "/api/platform/community/cards/" + record])

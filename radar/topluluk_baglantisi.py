@@ -21,6 +21,12 @@ from radar.topluluk_adresi import topluluk_adresi
 
 
 COMMUNITY_URL = topluluk_adresi()
+
+
+def kayit_adresi(kimlik, surum):
+    """alpha.13b (Grok testi): v1 kaydın kalıcı adresi. `/?card=` sayfası görüntüleme sayacını artırır ve ajan bu adresi
+    kullanıcıya veriyordu; paket ucu sayaçsız, sürüme sabit JSON'dur (v4 kayıtlarındaki `/api/…/records/…/v/N` gibi)."""
+    return f"{COMMUNITY_URL}/api/community/cards/{kimlik}/packet?" + urlencode({"version": surum})
 # K1-V4 sözleşme uçları (r2): yerel uygulama bunları değiştirmeden geçirir; K2 köprüsü yalnız bu üç yolu ister.
 SOZLESME_YOLU = re.compile(r"^/api/community/(?:coverage|topics|sources/[0-9a-f]{64})$")
 SOZLESME_SEMALARI = {"devtrellis-source-lookup", "devtrellis-coverage", "devtrellis-topics"}
@@ -379,7 +385,7 @@ class ToplulukBaglantisi:
                 raise ValueError("Düzeltme tarihi geçersiz.")
             items.append({"id": identifier, "summary": sorguyu_dogrula(metin(item["summary"], "Kamu düzeltmesi", 600, required=True, multiline=True)),
                           "withdrawn": item["withdrawn"], "correction": dict(correction), "reviewed_at": stamp,
-                          "report_url": COMMUNITY_URL + "/?" + urlencode({"card": correction["research_id"], "version": correction["version"]})})
+                          "report_url": kayit_adresi(correction["research_id"], correction["version"])})
         return {**value, "research_id": research_id, "version": version, "items": items,
                 "more_available": value["total"] > len(items)}
 
@@ -424,7 +430,7 @@ class ToplulukBaglantisi:
             if "public_corrections" in result:
                 card["public_corrections"] = self.kamu_duzeltmelerini_dogrula(result["public_corrections"], card["id"], card["version"])
             # Uzak adres iddiasını kullanma; bağlantı doğrulanmış kaydın tam sürümünü açar.
-            card["report_url"] = COMMUNITY_URL + "/?" + urlencode({"card": card["id"], "version": card["version"]})
+            card["report_url"] = kayit_adresi(card["id"], card["version"])
             if result.get("record_type") == "v4":
                 # K1 v4 kaydı (makine kapısı): tür, yayın yolu ve etiket doğrulanıp taşınır; bağlantı yerelde kurulur.
                 card.update(self.v4_alanlarini_dogrula(result))

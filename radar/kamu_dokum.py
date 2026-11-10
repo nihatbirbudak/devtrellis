@@ -50,7 +50,9 @@ V4_ASAMA_ALANLARI = {"provider", "model", "access_type", "basis", "terms_url"}
 V4_HAK_ALANLARI = {"own_text_license", "quotes"}
 V4_ALINTI_HAK_ALANLARI = {"basis", "max_chars"}
 V4_YAYIN_ALANLARI = {"state", "path", "policy_version", "published_at", "human_reviewed", "gate", "label"}
-V4_KAPI_ALANLARI = {"version", "ran_at", "input_sha256", "checks_passed", "warnings", "fields_not_tied_to_sources"}
+# alpha.13b kayıt eki `machine_not_covered` (isteğe bağlı; yetenekler `record_extensions`).
+V4_KAPI_ALANLARI = {"version", "ran_at", "input_sha256", "checks_passed", "warnings", "fields_not_tied_to_sources",
+                    "machine_not_covered"}
 V4_ETIKET_ALANLARI = {"tr", "en"}
 V4_DUZELTME_ALANLARI = {"open", "latest_public_version", "public_note"}
 V4_IZ_ALANLARI = {"schema", "schema_version", "contract", "id", "version", "state", "removed_at"}

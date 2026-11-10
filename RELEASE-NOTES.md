@@ -1,3 +1,113 @@
+# DevTrellis 0.1.0-alpha.13 — answer-ready records (alpha.13b) on top of the delivery fixes (alpha.13a); independently accepted 10 November 2026
+
+alpha.13a and alpha.13b ship together as one release. It passed an independent acceptance (Claude-side review; its two conditions, the coverage backfill's write transaction and the `written_with` filter, are fixed in this entry). It has not been deployed yet.
+
+## Answer-ready records (alpha.13b)
+
+- **Search asks the server even when the local topic list does not name the product.** The live topic list carries only
+  machine-gate (v4) records while saying it is complete, so older reports (ROS 2 Jazzy, SQLite FTS5) were answered `hit=false`
+  without asking (outside agent test, 9 November). The list now only labels the result (`in_scope: false`); "no record" comes from
+  the server. A product outside the library therefore costs one search request.
+- **Source cards may hold up to 20 claims** (was 6; reports stay at 60). Card views show every claim up to these limits, so a
+  report search card no longer stops at 12.
+- **Machine coverage.** When the gate fetches a source page it compares the page's sections (headings, definition ids, and on
+  pages with few sections list items and table rows) with the quotes. The gate result lists the parts no quote comes from
+  (`makine_kapsam_disi`; names the card mentions but does not quote first, then siblings of covered definitions, then other
+  headings; low-value headings such as "Examples" are left out). It is information, not a rejection: verdict, label and warnings
+  are unchanged. The readable gate output (the contribution preview) shows it. A published record carries it as the optional
+  record extension `machine_not_covered` (`publication.gate`, agent view `server`; at most 12 names), announced in
+  capabilities as `record_extensions`; the bridge shows it as `unquoted_page_sections`, apart from the contributor's
+  `not_covered`. On the five live v4 records: 19 flags, none for something the card covers.
+- **One read for a report.** A clear report or topic summary search hit carries every claim and the answer fields
+  (`short_answer`, `answers`, `recommendations`, `not_covered`) and says "All N claims of this report are shown". A repeated
+  search says the earlier result holds the whole record, and the first `read_research` of it in the same session answers
+  `already_delivered` once. The PostgreSQL report flow (search + read) falls from 14,972 to 9,571 bytes.
+- **Claim–quote support in the preview.** When a claim names a code identifier or number its quote lacks, the gate looks 300
+  characters around the quote and suggests extending the quote (or says the claim may say more than the quote). Information
+  only; it is not a gate rule because the earlier rule rejected good packets.
+- **Provider label.** Cards and `read_research` show `declared.written_with` (the declared models, e.g. `grok-4`). A Grok note is
+  declared as `provider: "other"`, `model: "grok-4"`, `access_type: "non_trial"`.
+- **Version ranges.** An `applies_to` comparison in pep440/semver (`>=17`, `>=16,<19`) matches the asked version as
+  `version_match: in_range` (answer-eligible); exact matches are preferred.
+- **Smaller items.** `read_research` on a v4 report supports `outline` and `section`; it shows a claim's quote match when not
+  exact and its scope when claims differ. v1 records link to the counter-free packet address instead of `/?card=`. A repeated
+  search card points only to `read_research`. A flaky worker test no longer ends before the gate result is written.
+
+### Deployment and rollback (alpha.13b)
+
+1. Deploy server, local app and bridge together (the bridge works against an alpha.12 server, but the record extension, the
+   20-claim cards and `in_range` come from the server).
+2. After the server starts, write the coverage list into the records published before this release, once:
+   `python araclar/makine-kapsam-yeniden.py --db <v4 store .sqlite3>` (dry run), then the same with `--yaz`. It fetches the
+   sources with the gate's polite fetcher (about 13 requests to three documentation sites for the five live records), computes
+   every list first and then writes them in one short transaction, so the server keeps writing while pages are fetched. A
+   record whose quote is no longer on today's page is skipped.
+3. **Before rolling back to alpha.13a or alpha.12, remove the extension first:** stop the new server and worker, run
+   `python araclar/makine-kapsam-yeniden.py --db <v4 store .sqlite3> --geri-al --yaz`, then start the older version (otherwise a
+   record published in between carries the field again). Older code opens records with the field in the server, bridge and local
+   app, but its public dump stops on the unknown field.
+4. A packet with more than 6 claims on a source card is rejected by an older server.
+
+### Known limits (alpha.13b)
+
+- Machine coverage finds no sections on some sites (MDN: its class names match the navigation filter), so the record gets no
+  list. In a multi-source report a page that could not be read adds nothing while other pages still produce a list; an empty
+  or short list is not proof that nothing is missing.
+- The counter-free v1 address (`/api/community/cards/{id}/packet?version=N`) is served as a JSON download; a browser saves a
+  file instead of showing a page.
+- A query naming a product outside the local topic list now goes to the server; offline it returns a tool error instead of the
+  former local `hit=false`.
+- `in_range` understands only numeric comparisons; when the asked version is shorter than a bound ("17" against "<17.2") it does
+  not match.
+- The agent-view schema keeps `server` closed with only the new optional field listed (it had no listed fields before); a strict
+  JSON Schema validator rejects real agent views. To fix in contract r3.
+
+
+## Smaller, single delivery of cards and reports (alpha.13a)
+
+Diagnostic tests on 9 November 2026 (a stand-in server running the real alpha.12 bridge, plus an outside agent test) showed
+that the card and report delivery was bloated and doubled: the same card came back in full from `lookup_source` and again from
+`search_research`, every claim was sent both as text and as quote, and `read_research` returned 16–27 KB of machine metadata for a
+report. The answer quality was not the problem; the bytes were. This candidate fixes only these well-defined delivery issues.
+Items that need design (machine-written `not_covered`, the 6-claim limit of source cards, `introduced_in`, report outline) are
+alpha.13b. Nothing is deployed, pushed or tagged.
+
+- **A card is delivered once per session.** The bridge remembers which claims of a card or report it showed (per process; a
+  restart clears it). When `lookup_source` or `search_research` (card view) would show only claims it already delivered, it
+  returns `{card, already_delivered: true, version_match, eligible_if_card_held, hint}` instead of the card. `version_match` is
+  repeated because it depends on the call; `answer_eligible` is left out on purpose (the content is not in that answer), and the
+  hint says to call `read_research(id, version)` or `lookup_source(view="full")` if the card is not at hand. The memory lasts
+  20 minutes (one bridge process can serve several agents and a conversation can lose the card). A different address filter or a wider view that adds claims
+  brings the full card again; `lookup_source(view="full")` is never shortened; `read_research` returns the report again.
+- **Compact card view.** The card's `server` block now holds the kind, the human-review state and its label, freshness (with its
+  note when not fresh), `link` and only the states that need saying (inexact quotes, warnings, open corrections, fields not tied to
+  sources). `checks_passed`, `quotes_exact`, `path`, `published_at`, `origin` and empty fields are gone; the full record stays at
+  `link`. `declared` keeps `checked_on`, `applies_to` and `generated_at`. A claim shows a short `name` instead of its `text`
+  when its quote says the same (every content word, code name, number, qualifier such as "only" or "default" and negation of the
+  text is in the quote; otherwise text and quote both stay). When the shown claims cite several addresses, the card lists them
+  once as `sources` and each claim carries `src`. `not_covered`, `scope_hint`, the quotes and the "Not human-reviewed" label stay.
+- **`read_research` on a v4 record is compact.** It returns card, kind, path, `human_reviewed`, `report_url`, a short `server`
+  block (label, published date, fields not tied to sources), `declared` (checked on, generated on, scope) and the untrusted body
+  with all content fields and every claim. `server.link` (the public API JSON with the full record) and `declared.origin` stay. The per-claim quote hashes, the repeated per-claim declaration rows, the gate id, version
+  and check list and the rights fields are no longer sent; the whole record is at `link`.
+- **Report cards show 12 claims** (superseded in alpha.13b: cards show every claim). Research reports and topic summaries showed up to 12 claims in the card view (was 6).
+- **Unknown id or version says so.** `read_research` and `record_research_use` for an id or version that does not exist answer
+  "Not found: DevTrellis has no published record with this id and version" instead of "HTTP 502" (the local API now passes the
+  community 404 through, as it does 410).
+
+Measured with the real bridge code against a stand-in server (bytes of the structured result): the Python zstd card (one
+`lookup_source` plus one `search_research`) 6,953 → 3,430 bytes (−51%); a repeated lookup 3,551 → 426 bytes; the live GitHub report
+`6322704e` read 16,301 → 6,857 bytes; the PostgreSQL report (25 claims) read 26,847 → 9,484 bytes. A report search card grows
+(4,024 → 5,323 bytes for the GitHub report) because it shows 12 claims instead of 6.
+
+### Upgrade notes
+
+- Bridge-only change (`mcp_topluluk.py`, `radar/platform_api.py`); it works against the alpha.12 server. With an older local app
+  an unknown id still reads as HTTP 502 (the pass-through is in the local API).
+- Tool descriptions and input schemas are unchanged. Clients that read the card's old metadata fields (`checks_passed`,
+  `quotes_exact`, `path`) must use `link` or `lookup_source(view="full")` for them.
+- Not included: deployment, GitHub push, release tag.
+
 # DevTrellis 0.1.0-alpha.12 — independently accepted 8 November 2026 (Claude-side); not yet deployed
 
 ## Fixes from the alpha.11 paired measurement

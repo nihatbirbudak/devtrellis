@@ -478,7 +478,7 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         card = self.bridge.oku(sent["submission"]["id"])
         self.assertEqual(card["packet"]["body"], self.packet["body"])
         self.assertEqual(result["items"][0]["report_url"], card["report_url"])
-        self.assertEqual(card["report_url"], COMMUNITY_URL + "/?card=" + card["id"] + "&version=" + str(card["version"]))
+        self.assertEqual(card["report_url"], COMMUNITY_URL + "/api/community/cards/" + card["id"] + "/packet?version=" + str(card["version"]))
         imported = self.bridge.ice_aktar(sent["submission"]["id"])
         self.assertEqual(imported["entry"]["origin"], "imported")
         with self.assertRaises(ValueError):
@@ -532,7 +532,7 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         remote = {"id": identifier, "status": "published", "version": 2, "published_version": 7,
                   "created_at": self.packet["created_at"], "updated_at": self.packet["updated_at"],
                   "packet": self.packet, "report_url": "https://attacker.example/steal?token=untrusted"}
-        expected = COMMUNITY_URL + "/?card=" + identifier + "&version=2"
+        expected = COMMUNITY_URL + "/api/community/cards/" + identifier + "/packet?version=2"
         for requested_view in ("full", "summary"):
             result = {"items": [copy.deepcopy(remote)], "total": 1}
             if requested_view == "summary":
@@ -564,7 +564,7 @@ class ToplulukBaglantisiTestleri(unittest.TestCase):
         safe = card["public_corrections"]
         self.assertEqual((safe["research_id"], safe["version"]), (identifier, 2))
         self.assertTrue(safe["more_available"])
-        self.assertEqual(safe["items"][0]["report_url"], COMMUNITY_URL + "/?card=" + correction_id + "&version=7")
+        self.assertEqual(safe["items"][0]["report_url"], COMMUNITY_URL + "/api/community/cards/" + correction_id + "/packet?version=7")
         # Özet araması ve MCP brief de uyarıyı düşürmez.
         from radar.arastirma_kisa import kisa_arama_sonucu
         with patch.object(self.bridge, "request", return_value={"items": [remote], "total": 1}):
