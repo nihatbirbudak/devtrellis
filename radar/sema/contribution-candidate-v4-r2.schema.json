@@ -97,7 +97,7 @@
           "type": "array",
           "items": {"allOf": [{"$ref": "#/$defs/claim"}, {"required": ["claim_type", "applies_to"]}]},
           "minItems": 1,
-          "maxItems": 6,
+          "maxItems": 20,
           "$comment": "All claims of a source card share one source_url."
         },
         "not_covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}, "maxItems": 3},

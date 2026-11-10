@@ -224,6 +224,20 @@ def etiket(sonuc, yol):
     return {"tr": tr, "en": en}
 
 
+# alpha.13b kayıt eki (yönetici onayı, 9 Kasım 2026): kapının makineyle kapsam listesi isteğe bağlı alan olarak kayda
+# ve ajan görünümüne girer. Katı tüketici eki yeteneklerden (`record_extensions`) bilerek tanır.
+KAYIT_EKLERI = ("machine_not_covered",)
+
+
+def makine_kapsami(sonuc):
+    """Kapı kaynakları getirip bölüm bulduysa `{"machine_not_covered": [≤12 ad]}`; yoksa (ağsız kapı, eski sonuç) boş."""
+    kapsam = sonuc.get("makine_kapsam_disi") if isinstance(sonuc, dict) else None
+    if not isinstance(kapsam, dict) or not kapsam.get("kaynaklar"):
+        return {}
+    adlar = [" ".join(str(ad).split())[:80] for ad in kapsam.get("adlar") or [] if str(ad).strip()]
+    return {"machine_not_covered": adlar[:12]}
+
+
 def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
     """Kapıdan `yayimlanir` almış adaydan kamu kaydı. Sunucu alanları istemciden gelmez; hepsi burada üretilir."""
     if sonuc["hukum"] != "yayimlanir" or yol not in ("machine_gate", "moderator"):
@@ -277,7 +291,8 @@ def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
             "human_reviewed": yol == "moderator",
             "gate": {"version": sonuc["denetim_surumu"], "ran_at": sonuc["calisma_zamani"],
                      "input_sha256": sonuc["girdi"]["paket_sha256"], "checks_passed": sonuc["gecilen_denetimler"],
-                     "warnings": sonuc["uyarilar"], "fields_not_tied_to_sources": sonuc["kaynaga_baglanmayan_alanlar"]},
+                     "warnings": sonuc["uyarilar"], "fields_not_tied_to_sources": sonuc["kaynaga_baglanmayan_alanlar"],
+                     **makine_kapsami(sonuc)},
             "label": etiket(sonuc, yol),
         },
         "corrections": {"open": 0, "latest_public_version": None, "public_note": None},
@@ -296,7 +311,8 @@ def yetenekler(otomatik_yayin_ayari):
     return {"schema": YETENEK_SEMASI, "schema_version": 1, "contract": SOZLESME, "record_schema_version": 4,
             "kinds": list(TURLER), "submissions": True, "auto_publish": otomatik_yayin_ayari,
             "quote_rule": ALINTI_KURALI, "quote_basis": ALINTI_DAYANAGI, "own_text_licenses": list(LISANSLAR),
-            "lookup": True, "coverage": True, "topics": True, "source_checks": False, "does_not_prove_tr": KANITLAMADIKLARI}
+            "lookup": True, "coverage": True, "topics": True, "source_checks": False, "record_extensions": list(KAYIT_EKLERI),
+            "does_not_prove_tr": KANITLAMADIKLARI}
 
 
 AJAN_SEMASI = "devtrellis-agent-view"
@@ -320,6 +336,7 @@ def ajan_gorunumu(kayit):
             "human_reviewed": yayin["human_reviewed"], "gate_version": yayin["gate"]["version"],
             "gate_ran_at": yayin["gate"]["ran_at"], "checks_passed": yayin["gate"]["checks_passed"],
             "warnings": yayin["gate"]["warnings"], "fields_not_tied_to_sources": yayin["gate"]["fields_not_tied_to_sources"],
+            **({"machine_not_covered": yayin["gate"]["machine_not_covered"]} if "machine_not_covered" in yayin["gate"] else {}),
             "label": yayin["label"], "quote_rights": kayit["rights"]["quotes"], "corrections": kayit["corrections"],
             "link": kayit["link"],
             "quote_matches": [{"claim_id": i["id"], "state": i["quote_match"]["state"],
@@ -363,7 +380,7 @@ KAPSAM_KIMLIGI = "k0-canonical-json-v1"
 KAPSAM_SURESI = 300          # r1 §7 başlangıç önerisi
 _URUN = re.compile(r"[a-z][a-z0-9-]{0,63}")
 _SURUM_METNI = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,39}")
-UYGUN_ESLESMELER = ("exact", "unspecified")
+UYGUN_ESLESMELER = ("exact", "in_range", "unspecified")  # alpha.13b: aralık beyanı da cevaba uygundur
 
 
 def sozlesme_hatasi(kod, retry=None):
@@ -440,8 +457,38 @@ def kapsam_listesi(kayit):
     return sonuc
 
 
+_KARSILASTIRMA = re.compile(r"\s*(>=|<=|==|!=|>|<)\s*v?(\d+(?:\.\d+){0,3})\s*")
+
+
+def _surum_demeti(metin_):
+    return tuple(int(p) for p in metin_.split("."))
+
+
+def surum_araliginda(belirtec, surum):
+    """alpha.13b (Grok F3-2): "hangi sürümde geldi" (`>=17`) ve aralık (`>=3.13,<3.15`) beyanı. Yalnız sayısal karşılaştırma
+    öbekleri anlaşılır; anlaşılmayan belirteç None döner (eşleşme sayılmaz). Sorulan sürüm bir sınırdan kısaysa ("17" ile
+    "<17.2") hangi alt sürüm olduğu bilinmez: None (şartlı kabul 3; eskiden "17" = 17.0 sayılıp `in_range` çıkıyordu)."""
+    if not re.fullmatch(r"v?\d+(?:\.\d+){0,3}", surum.strip()):
+        return None
+    parcalar = belirtec.split(",")
+    if not parcalar or not all(_KARSILASTIRMA.fullmatch(p) for p in parcalar):
+        return None
+    istenen = _surum_demeti(surum.strip().lstrip("v"))
+    for parca in parcalar:
+        islec, deger = _KARSILASTIRMA.fullmatch(parca).groups()
+        sinir = _surum_demeti(deger)
+        if len(istenen) < len(sinir):
+            return None
+        n = max(len(istenen), len(sinir))
+        a, b = istenen + (0,) * (n - len(istenen)), sinir + (0,) * (n - len(sinir))
+        if not {">=": a >= b, "<=": a <= b, "==": a == b, "!=": a != b, ">": a > b, "<": a < b}[islec]:
+            return False
+    return True
+
+
 def surum_eslesmesi(kayit, urun, surum):
-    """Basit ve güvenli yön: ürün süzülür; sürüm yalnız aynı metinse `exact`. Aralık çözümlemesi yok (`in_range` üretilmez).
+    """Basit ve güvenli yön: ürün süzülür; sürüm aynı metinse `exact`, pep440/semver karşılaştırma beyanının içindeyse
+    `in_range` (alpha.13b; `>=17` = "17'de geldi", `>=16,<19` = çok sürüm). Başka aralık biçimi çözümlenmez.
 
     Yapılı kapsamı olmayan kayıt (serbest metin `applies_to`; canlıdaki iki GitHub raporu) ürün ya da sürüm beyan etmez:
     sonuç `unspecified` (alpha.12 kabulü, orta bulgu 1). Eskiden ürün/sürüm verilince her zaman `mismatch` çıkıyor ve kayıt
@@ -457,7 +504,11 @@ def surum_eslesmesi(kayit, urun, surum):
             return "mismatch"
     if surum is None:
         return "unspecified"
-    return "exact" if any(oge["versions"].lower() == surum.lower() for oge in ogeler) else "mismatch"
+    if any(oge["versions"].lower() == surum.lower() for oge in ogeler):
+        return "exact"
+    if any(oge.get("version_scheme") in ("pep440", "semver") and surum_araliginda(oge["versions"], surum) for oge in ogeler):
+        return "in_range"
+    return "mismatch"
 
 
 def kart_referansi(kayit):
@@ -481,7 +532,8 @@ def bakis_govdesi(address_key, revizyon, kayitlar, izler, urun, surum):
             return 410, govde
         return 404, govde
     eslesmeler = [(kayit, surum_eslesmesi(kayit, urun, surum)) for kayit in kayitlar]
-    uygun = [(kayit, eslesme) for kayit, eslesme in eslesmeler if eslesme in UYGUN_ESLESMELER]
+    uygun = sorted([(kayit, eslesme) for kayit, eslesme in eslesmeler if eslesme in UYGUN_ESLESMELER],
+                   key=lambda ke: UYGUN_ESLESMELER.index(ke[1]))  # tam eşleşen önce
     secilen = uygun[0] if uygun else None
 
     def aday(kayit, eslesme):

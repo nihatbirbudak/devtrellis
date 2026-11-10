@@ -79,9 +79,13 @@ class SemaTestleri(unittest.TestCase):
         self.assertIn("sema.iddia_turu", d.nedenler)
         self.assertIn("sema.kapsam", d.nedenler)
 
-    def test_kart_en_cok_alti_iddia(self):
+    def test_kart_en_cok_yirmi_iddia(self):
+        # alpha.13b: sınır 6'dan 20'ye çıktı; 20 iddia şema sınırına takılmaz, 21 takılır.
         paket = kart()
-        paket["claims"] = paket["claims"] * 4
+        tek = paket["claims"][0]
+        paket["claims"] = [dict(tek, quote=f"{tek['quote']} {n}") for n in range(20)]
+        self.assertNotIn("sema.liste_boyutu", self.sina(paket).nedenler)
+        paket["claims"].append(dict(tek))
         self.assertIn("sema.liste_boyutu", self.sina(paket).nedenler)
 
     def test_adres_bicimi(self):

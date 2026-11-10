@@ -24,6 +24,7 @@ RAPOR_ALANLARI = {"kind", "schema_version", "language", "title", "summary", "sho
                   "recommendations", "not_covered", "applies_to", "sources", "provenance", "generated_at", "rights",
                   "answers"}
 IDDIA_ALANLARI = {"text", "quote", "source_url", "checked_on", "claim_type", "applies_to"}
+KART_IDDIA_SINIRI = 20
 ASAMA_ALANLARI = {"provider", "model", "access_type", "basis", "terms_url"}
 
 _GUN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -192,7 +193,9 @@ def denetle(paket, *, bugun=None):
     if "rights" in paket and not isinstance(paket["rights"], dict):
         d.kal("sema.tip", "paket.rights bir nesne olmalı (hak denetimi bu kapının dışında).")
 
-    iddialar = s.liste(paket.get("claims"), "paket.claims", 1, 6 if kart else 60) if "claims" in paket else []
+    # alpha.13b: kaynak kartı 6 iddiayla sınırlıydı; teşhis T2 eksik kartın kapsamı düşürdüğünü gösterdi (sayfanın
+    # bir sorusu 6 maddeye sığmıyordu). Sınır 20; rapor 60.
+    iddialar = s.liste(paket.get("claims"), "paket.claims", 1, KART_IDDIA_SINIRI if kart else 60) if "claims" in paket else []
     gorulen, adresler = set(), []
     for sira, iddia in enumerate(iddialar):
         yer = f"paket.claims[{sira}]"

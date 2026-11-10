@@ -329,6 +329,16 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "machine_not_covered": {
+                  "$comment": "alpha.13b record extension 'machine_not_covered' (capabilities.record_extensions): optional; page sections (headings, definition ids, list items) the gate found without any quote, at most 12 short names taken from the source page (third-party text). Absent when the gate did not fetch the sources or the record predates the extension.",
+                  "type": "array",
+                  "maxItems": 12,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
                 }
               },
               "required": [
@@ -532,6 +542,15 @@
         "topics": {
           "type": "boolean",
           "$comment": "GET /api/community/topics (devtrellis-topics v1)."
+        },
+        "record_extensions": {
+          "$comment": "alpha.13b: optional record extensions this server writes; a strict reader accepts their fields only when listed here. Known: machine_not_covered (publication.gate and agent_view.server).",
+          "type": "array",
+          "items": {
+            "enum": [
+              "machine_not_covered"
+            ]
+          }
         }
       },
       "required": [
@@ -752,7 +771,19 @@
             "link",
             "quote_matches"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "properties": {
+            "machine_not_covered": {
+              "$comment": "alpha.13b record extension 'machine_not_covered' (capabilities.record_extensions): optional; page sections (headings, definition ids, list items) the gate found without any quote, at most 12 short names taken from the source page (third-party text). Absent when the gate did not fetch the sources or the record predates the extension.",
+              "type": "array",
+              "maxItems": 12,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            }
+          }
         },
         "declared": {
           "type": "object",

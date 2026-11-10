@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from . import adres, alinti, getirme, gizlilik, paketler, saglayici, sema, yinelenen, yonerge
+from . import adres, alinti, destek, getirme, gizlilik, kapsam, paketler, saglayici, sema, yinelenen, yonerge
 from .ayarlar import SURUM, Ayarlar
 from .sonuc import DENENEMEDI, KALDI, Denetim
 
@@ -181,6 +181,16 @@ def denetle(paket, *, yayindakiler=None, ag=True, getirici=None, ayarlar=None, s
     serbest = serbest_alanlar(paket)
     etiket, etiket_en = kanit_etiketleri(denetimler, len(kaynaklar), erisilen, toplam_iddia, bulunan, serbest, gun, ag_acik)
 
+    # alpha.13b makineyle kapsam: bilgi, hüküm ve etiketi etkilemez. Yalnız ağ açıkken (sayfa elde) hesaplanır.
+    try:
+        makine_kapsami = kapsam.paket_kapsami(paket, sonuclar) if ag_acik else {"kaynaklar": [], "adlar": []}
+    except Exception:
+        makine_kapsami = {"kaynaklar": [], "adlar": []}
+    # Madde 5: iddia–alıntı desteği önerisi (bilgi; kapıda ret kuralı değildir, K5 yanlış ret üretti).
+    try:
+        iddia_destegi = destek.oneriler(paket, sonuclar) if ag_acik else []
+    except Exception:
+        iddia_destegi = []
     ozet_girdi = json.dumps(paket, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return {
         "denetim_surumu": SURUM,
@@ -200,6 +210,8 @@ def denetle(paket, *, yayindakiler=None, ag=True, getirici=None, ayarlar=None, s
         "kanit_etiketi_en": etiket_en,
         "gecilen_denetimler": [d.ad for d in denetimler if d.durum in ("gecti", "uyari")],
         "kaynaga_baglanmayan_alanlar": serbest,
+        "makine_kapsam_disi": makine_kapsami,
+        "iddia_destegi": iddia_destegi,
         "denetimler": [d.sozluk() for d in denetimler],
         "kanitlamadiklari": KANITLAMADIKLARI,
     }

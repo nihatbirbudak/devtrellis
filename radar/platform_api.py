@@ -31,8 +31,10 @@ def router_olustur(depo, csrf_token, workflow=None, community=None, source_memor
         except PlatformSurumCatismasi as exc:
             raise HTTPException(409, str(exc)) from exc
         except (ToplulukBaglantiHatasi, KaynakHafizasiIstemciHatasi) as exc:
-            # Kaldırılmış/geri çekilmiş kayıt (uzak 410) genel 502 değil, 410 olarak iletilir (alpha.12 kabulü düşük 5).
-            raise HTTPException(410 if getattr(exc, "durum", None) == 410 else 502, str(exc)) from exc
+            # Kaldırılmış/geri çekilmiş kayıt (uzak 410) ve var olmayan kimlik ya da sürüm (uzak 404) genel 502 değil,
+            # aynı durumla iletilir (alpha.12 kabulü düşük 5; alpha.13a D4).
+            durum = getattr(exc, "durum", None)
+            raise HTTPException(durum if durum in (404, 410) else 502, str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(404, "İstenen kayıt bulunamadı.") from exc
         except ValueError as exc:

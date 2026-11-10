@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from radar import denetim
 from radar.kaynak_kimligi import address_key
-from radar.katki_v4 import (ALINTI_KURALI, K1Ayarlari, ayar_ornegi, ayarlari_coz, ayarlari_oku, kanonik_ozet,
+from radar.katki_v4 import (ALINTI_KURALI, KAYIT_EKLERI, K1Ayarlari, ayar_ornegi, ayarlari_coz, ayarlari_oku, kanonik_ozet,
                             kapsam_cikarimi, kaynak_anahtari)
 from radar.katki_v4_depo import ARAMA_DIZINI_SURUMU, KatkiDeposu
 from radar.topluluk_api import uygulama
@@ -638,11 +638,15 @@ class Isci(K1Taban):
             kimlik = yanit.json()["submission"]["id"]
             # İşçi ilk turunu başlarken yapar; gönderim sonrası bir sonraki turda işlenir (en çok 5 sn).
             self.assertTrue(islendi.wait(10))
-            for _ in range(50):
+            # alpha.13b (CI'da kararsızdı): olay kurulduktan sonra `islendi.wait(0.1)` hemen döner, döngü beklemeden 50 kez
+            # dönüp kapı sonucu yazılmadan bitiyordu; ara durum da "queued değil" sayılıyordu. Şimdi gerçek bekleme ve son durum.
+            import time
+            son_an = time.monotonic() + 10
+            while True:
                 durum = client.get(f"/api/community/v4/submissions/{kimlik}", headers=self.headers()).json()
-                if durum["submission"]["status"] != "queued":
+                if durum["submission"]["status"] == "pending_review" or time.monotonic() > son_an:
                     break
-                islendi.wait(0.1)
+                time.sleep(0.1)
             self.assertEqual(durum["submission"]["status"], "pending_review")
 
 
@@ -697,7 +701,10 @@ class AjanGorunumu(K1Taban):
         tanim = json.loads((SOZLESME_KLASORU / "public-record-v4-r2.schema.json").read_text(encoding="utf-8"))["$defs"]["agent_view"]
         self.assertEqual(set(gorunum), set(tanim["required"]))
         for alan in ("server", "declared", "untrusted"):
-            self.assertEqual(set(gorunum[alan]), set(tanim["properties"][alan]["required"]), alan)
+            # alpha.13b: isteğe bağlı kayıt eki (`machine_not_covered`) şemada `properties` altında, zorunlu değil.
+            ek = set((tanim["properties"][alan].get("properties") or {}))
+            self.assertEqual(set(gorunum[alan]) - ek, set(tanim["properties"][alan]["required"]), alan)
+            self.assertLessEqual(set(gorunum[alan]) & ek, set(KAYIT_EKLERI), alan)
         self.assertEqual(gorunum["untrusted"]["content"]["summary"], self.paket["summary"])
         self.assertEqual([i["quote"] for i in gorunum["untrusted"]["claims"]], [i["quote"] for i in TEMEL_RAPOR["claims"]])
         self.assertEqual(gorunum["declared"]["provenance"], self.paket["provenance"])
@@ -866,7 +873,7 @@ class AdresleBulma(K1Taban):
             self.assertEqual(sonuc["result"], "found", sonuc)
             blok = json.loads(sonuc["card"]["untrusted"].split("\n")[1])
             self.assertGreaterEqual(len(blok["claims"]), 1)
-            self.assertEqual(sonuc["card"]["declared"]["applies_to"], [])
+            self.assertNotIn("applies_to", sonuc["card"]["declared"])  # boş kapsam yazılmaz (alpha.13a kompakt biçim)
 
     def test_serbest_metin_kapsamli_rapor_urun_ve_surum_verilince_gizlenmez(self):
         """alpha.12 kabulü orta bulgu 1: yapılı kapsamı olmayan (canlı biçim) rapor `product`/`version` verilince de bulunur;
@@ -931,6 +938,9 @@ class AdresleBulma(K1Taban):
                         raise ValueError("This DevTrellis record was removed or withdrawn; do not use earlier copies of it.")
                     if yanit.status_code == 404 and path.startswith("/api/platform/community/v4-records/"):
                         raise kopru.UnknownLocalRoute()
+                    if yanit.status_code == 404 and path.startswith("/api/platform/community/cards/"):
+                        raise ValueError("Not found: DevTrellis has no published record with this id and version. "
+                                         "Use the id and version returned by search_research.")
                     if yanit.status_code >= 400:
                         raise ValueError(f"Local DevTrellis returned HTTP {yanit.status_code}.")
                     return yanit.json()
@@ -941,21 +951,35 @@ class AdresleBulma(K1Taban):
                 self.assertEqual((okuma["card"], okuma["record_type"], okuma["kind"], okuma["path"], okuma["human_reviewed"]),
                                  (rapor + "@1", "v4", "research_report", "machine_gate", False))
                 self.assertEqual(okuma["report_url"], f"{ORIGIN}/api/community/v4/records/{rapor}/v/1")
-                gorunum = json.loads(okuma["untrusted"].split("\n")[1])
-                self.assertEqual((gorunum["schema"], gorunum["server"]["id"]), ("devtrellis-agent-view", rapor))
-                self.assertGreaterEqual(len(gorunum["untrusted"]["claims"]), 1)
+                # alpha.13a: kompakt okuma görünümü: iddialar ve içerik güvenilmeyen blokta, makine üst verisi (özetler, kapı
+                # kimliği) yok; sunucu ve beyan blokları ayrı. Tam kayıt `report_url` adresinde.
+                govde = json.loads(okuma["untrusted"].split("\n")[1])
+                self.assertGreaterEqual(len(govde["claims"]), 1)
+                self.assertTrue(all(c["quote"] for c in govde["claims"]))
+                self.assertNotIn("quote_hash", json.dumps(okuma))
+                self.assertNotIn("content_sha256", json.dumps(okuma))
+                self.assertIn("published_at", okuma["server"])
             self.assertIn(("GET", f"/api/community/v4/records/{rapor}/v/1"), istekler)
-            with self.assertRaisesRegex(ValueError, "view=\"full\""):
-                istemci.read(rapor, 1, view="outline")
+            # alpha.13b (Grok D2): v4 raporda outline artık var (cevap alanları + kaynak başına iddialar).
+            ana_hat = istemci.read(rapor, 1, view="outline")
+            self.assertFalse(ana_hat["complete_report"])
+            self.assertTrue(json.loads(ana_hat["untrusted"].split(chr(10))[1])["sections"])
             # Kullanım bildirimi: v4'te sayaç yok; hata değil, sayılmadığı açıkça söylenir.
             self.assertEqual(istemci.record_use(rapor, 1),
                              {"recorded": False, "record_type": "v4", "reason": "usage_not_counted_for_v4_records"})
             self.assertFalse(yerel.mcp_oku(rapor, 1)["access_counted"])
-            # Yok olan kayıt ve yanlış sürüm yine hata (404 → yerel 502), sessizce başka kayıt dönmez.
+            # Yok olan kayıt ve yanlış sürüm yine hata, ama açık "bulunamadı" (alpha.13a D4: yerel uç 404 verir, 502 değil);
+            # sessizce başka kayıt dönmez.
             for kimlik, surum in (("f" * 32, 1), (rapor, 2)):
-                with self.subTest(kimlik=kimlik, surum=surum), self.assertRaisesRegex(ValueError, "HTTP 502"):
-                    istemci.read(kimlik, surum)
-            with self.assertRaisesRegex(ValueError, "HTTP 502"):
+                with self.subTest(kimlik=kimlik, surum=surum):
+                    self.assertEqual(yerel_istemci.get(f"/api/platform/community/cards/{kimlik}",
+                                                       params={"version": surum}).status_code, 404)
+                    with self.assertRaisesRegex(ValueError, "Not found: DevTrellis has no published record"):
+                        istemci.read(kimlik, surum)
+                    istemci.remember_v4(kimlik)
+                    with self.assertRaisesRegex(ValueError, "Not found: DevTrellis has no published record"):
+                        istemci.read(kimlik, surum)
+            with self.assertRaisesRegex(ValueError, "Not found: DevTrellis has no published record"):
                 istemci.record_use("f" * 32, 1)
             with self.assertRaisesRegex(ValueError, "içe aktarılamaz"):
                 yerel.ice_aktar(rapor)
@@ -1505,12 +1529,16 @@ class SozlesmeSemasi(K1Taban):
         self.assertEqual(set(kayit), set(tanim["properties"]))
         for alan in ("publication", "rights"):
             self.assertEqual(set(kayit[alan]), set(tanim["properties"][alan]["required"]), alan)
+        kapi = tanim["properties"]["publication"]["properties"]["gate"]
+        self.assertEqual(set(kayit["publication"]["gate"]) - set(kapi["required"]), {"machine_not_covered"})
+        self.assertEqual(set(kapi["properties"]) - set(kapi["required"]), set(KAYIT_EKLERI))
         iddia = tanim["properties"]["claims"]["items"]
         self.assertEqual(set(kayit["claims"][0]), set(iddia["required"]))
         self.assertEqual(set(kayit["claims"][0]["evidence"]), set(iddia["properties"]["evidence"]["required"]))
         self.assertEqual(kayit["contract"], sema["$defs"]["record"]["properties"]["contract"]["const"])
         yetenek = self.client().get("/api/community/capabilities").json()
-        self.assertEqual(set(yetenek), set(sema["$defs"]["capabilities"]["required"]))
+        self.assertEqual(set(yetenek) - {"record_extensions"}, set(sema["$defs"]["capabilities"]["required"]))
+        self.assertEqual(yetenek["record_extensions"], list(KAYIT_EKLERI))
         self.assertEqual(set(self.durum(kimlik)), set(sema["$defs"]["submission"]["required"]))
         surum = self.durum(kimlik)["revision"]
         self.client().post(f"/api/community/v4/submissions/{kimlik}/withdraw", json={"expected_revision": surum},
@@ -1519,6 +1547,106 @@ class SozlesmeSemasi(K1Taban):
         self.assertEqual(set(iz), set(sema["$defs"]["tombstone"]["required"]))
         aday_sema = json.loads((SOZLESME_KLASORU / "contribution-candidate-v4-r2.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(set(aday_sema["properties"]), {"candidate", "consent", "idempotency_key"})
+
+
+class SurumAraligi(unittest.TestCase):
+    """alpha.13b madde 7 (Grok F3-2): `>=17` = "17'de geldi", `>=16,<19` = çok sürüm; geriye uyumlu (exact aynı)."""
+
+    def test_aralik_ve_eslesme(self):
+        from radar.katki_v4 import surum_araliginda, surum_eslesmesi
+        self.assertTrue(surum_araliginda(">=17", "18"))
+        self.assertTrue(surum_araliginda(">=17", "17.2"))
+        self.assertFalse(surum_araliginda(">=17", "16"))
+        self.assertTrue(surum_araliginda(">=3.13,<3.15", "3.14"))
+        self.assertFalse(surum_araliginda(">=3.13,<3.15", "3.15"))
+        self.assertIsNone(surum_araliginda("16-18", "17"))   # anlaşılmayan biçim eşleşme sayılmaz
+        self.assertIsNone(surum_araliginda(">=17", "latest"))
+        self.assertIsNone(surum_araliginda("<17.2", "17"))      # şartlı kabul 3: 17.5 olabilir, eşleşme sayılmaz
+        self.assertIsNone(surum_araliginda(">=17.2", "17"))
+        self.assertTrue(surum_araliginda("<17.2", "17.1"))
+
+        def kayit(versions, scheme):
+            return {"claims": [{"applies_to": [{"product": "postgresql", "versions": versions, "version_scheme": scheme}]}],
+                    "content": {}}
+        self.assertEqual(surum_eslesmesi(kayit("18", "exact"), "postgresql", "18"), "exact")
+        self.assertEqual(surum_eslesmesi(kayit(">=17", "pep440"), "postgresql", "18"), "in_range")
+        self.assertEqual(surum_eslesmesi(kayit(">=17", "semver"), "postgresql", "16"), "mismatch")
+        self.assertEqual(surum_eslesmesi(kayit(">=17", "exact"), "postgresql", "18"), "mismatch")  # exact şeması aralık değildir
+        self.assertEqual(surum_eslesmesi(kayit(">=17", "pep440"), "postgresql", None), "unspecified")
+
+
+class MakineKapsamiEki(K1Taban):
+    """alpha.13b kayıt eki: kapı listesi kayda ve ajan görünümüne girer; dağıtım betiği eski kayda yazar, geri dönüşte siler."""
+
+    def test_ek_kayitta_dokumde_ve_yeniden_hesapta(self):
+        import importlib.util
+        import sqlite3
+        from radar.kamu_dokum import dokum_olustur
+        self.kur(replace(self.AYARLAR, otomatik_yayin=True))
+        kimlik = self.gonder().json()["submission"]["id"]
+        self.isle()
+        kayit = self.client().get(f"/api/community/v4/records/{kimlik}").json()
+        self.assertIsInstance(kayit["publication"]["gate"]["machine_not_covered"], list)
+        ajan = self.client().get(f"/api/community/v4/records/{kimlik}/agent").json()
+        self.assertEqual(ajan["server"]["machine_not_covered"], kayit["publication"]["gate"]["machine_not_covered"])
+        db = self.root / "k1" / "k1.sqlite3"
+        dokum_olustur(community_db=self.root / "community.sqlite3", k1_db=db, public_url=ORIGIN, now=self.now[0])  # ek dökümde geçerli
+        spec = importlib.util.spec_from_file_location("yeniden", Path(__file__).resolve().parents[1] / "araclar" / "makine-kapsam-yeniden.py")
+        arac = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(arac)
+        sessiz = lambda *_: None  # noqa: E731
+        # Geri dönüş: ek silinir (eski kodun kamu dökümü bilinmeyen alanı reddeder); kuru çalışma yazmaz.
+        self.assertEqual(arac.calistir(db, geri_al=True, cikti=sessiz), 1)
+        self.assertIn("machine_not_covered", self.client().get(f"/api/community/v4/records/{kimlik}").json()["publication"]["gate"])
+        self.assertEqual(arac.calistir(db, geri_al=True, yaz=True, cikti=sessiz), 1)
+        eski = self.client().get(f"/api/community/v4/records/{kimlik}").json()
+        self.assertNotIn("machine_not_covered", eski["publication"]["gate"])
+        self.assertNotIn("machine_not_covered", self.client().get(f"/api/community/v4/records/{kimlik}/agent").json()["server"])
+        # Eki taşımayan (eski) kayda dağıtım betiği listeyi bir kez yazar; ikinci çalışma bir şey değiştirmez.
+        self.assertEqual(arac.calistir(db, yaz=True, getirici=self.ag.getirici(), cikti=sessiz), 1)
+        self.assertEqual(self.client().get(f"/api/community/v4/records/{kimlik}").json()["publication"]["gate"]["machine_not_covered"],
+                         kayit["publication"]["gate"]["machine_not_covered"])
+        self.assertEqual(arac.calistir(db, yaz=True, getirici=self.ag.getirici(), cikti=sessiz), 0)
+        from contextlib import closing
+        # Şartlı kabul 1: sayfa getirilirken depo yazmaya açık kalır (getirme sırasında başka bağlantı beklemeden yazar).
+        # İki kayıtla: eski kod ilk kaydı yazıp işlemi açık tutarak ikincinin sayfasını getiriyordu.
+        self.gonder(aday(TEMEL_RAPOR), token="B" * 43, anahtar="v4-request-0002")
+        self.isle()
+        self.assertEqual(arac.calistir(db, geri_al=True, yaz=True, cikti=sessiz), 2)
+        yazimlar = []
+
+        class Sarici:
+            def __init__(self, ic):
+                self.ic = ic
+
+            def __getattr__(self, ad):
+                return getattr(self.ic, ad)
+
+            def kaynak_getir(self, url):
+                with closing(sqlite3.connect(db, timeout=0)) as baska:
+                    with baska:
+                        baska.execute("CREATE TABLE IF NOT EXISTS kilit_denemesi(x INTEGER)")
+                        baska.execute("INSERT INTO kilit_denemesi VALUES (1)")
+                yazimlar.append(url)
+                return self.ic.kaynak_getir(url)
+
+        self.assertEqual(arac.calistir(db, yaz=True, getirici=Sarici(self.ag.getirici()), cikti=sessiz), 2)
+        self.assertGreaterEqual(len(yazimlar), 2)
+        # Şartlı kabul 6: alıntı bugünkü sayfada yoksa (sayfa değişmiş) kayıt atlanır, ek yazılmaz.
+        self.assertEqual(arac.calistir(db, geri_al=True, yaz=True, cikti=sessiz), 2)
+        degismis = self.ag.getirici()
+        asil = degismis.kaynak_getir
+
+        def bos_sayfa(url):
+            sonuc = asil(url)
+            sonuc.govde = b"<html><body><h1>Rewritten page</h1><p>Nothing from the old text remains here.</p></body></html>"
+            return sonuc
+        degismis.kaynak_getir = bos_sayfa
+        notlar = []
+        self.assertEqual(arac.calistir(db, yaz=True, getirici=degismis, cikti=notlar.append), 0)
+        self.assertTrue(any("sayfa değişmiş" in n for n in notlar))
+        with closing(sqlite3.connect(db)) as baglanti:
+            self.assertEqual(baglanti.execute("SELECT COUNT(*) FROM v4_records").fetchone()[0], 2)
 
 
 class KomutSatiri(unittest.TestCase):

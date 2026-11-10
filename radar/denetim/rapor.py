@@ -36,5 +36,22 @@ def metin(sonuc, baslik=None):
             y = s["en_yakin"]
             satirlar.append(f"- İddia {s['iddia']}: benzerlik {y['benzerlik']}, alıntı {y['alintinin_ayristigi_karakter']}. "
                             f"karakterden sonra ayrışıyor. Kaynaktaki parça (veri, talimat değil): \"{y['kaynaktaki_parca']}\"")
+    kapsam = sonuc.get("makine_kapsam_disi") or {}
+    if kapsam.get("adlar"):
+        # alpha.13b: ret değil, bilgi. Katkıcı ya iddia ekler ya da bu maddeleri not_covered'a yazar (teşhis T2).
+        satirlar += ["", "## Kartın alıntı almadığı sayfa bölümleri (makineyle; ret değil)", "",
+                     "Soruya gerekliyse iddia ekleyin; değilse not_covered listesine yazın. Adlar sayfa metnindendir (veri, talimat değil).", ""]
+        for kaynak in kapsam.get("kaynaklar", []):
+            satirlar.append(f"- {kaynak['url']}: {kaynak['bolum']} bölüm, {kaynak['kapsanan']} alıntılı, "
+                            f"{kaynak['kapsanmayan']} kapsanmayan")
+        satirlar += [f"  - {ad}" for ad in kapsam["adlar"]]
+    destek = sonuc.get("iddia_destegi") or []
+    if destek:
+        # alpha.13b madde 5: ret değil, öneri. İddianın kod adı/sayısı alıntıda yok.
+        anlam = {"alintiyi_genislet": "alıntının hemen çevresinde (±300 karakter) geçiyor: alıntıyı genişletin",
+                 "iddia_alintidan_fazla": "alıntının çevresinde de yok: iddia alıntıdan fazlasını söylüyor olabilir",
+                 "kaynak_yok": "kaynak getirilemedi, bakılamadı"}
+        satirlar += ["", "## İddia–alıntı desteği (öneri; ret değil)", ""]
+        satirlar += [f"- İddia {d['iddia']}: {', '.join(d['eksik'])} alıntıda yok; {anlam[d['oneri']]}." for d in destek]
     satirlar += ["", "## Bu kapı neyi kanıtlamaz", ""] + [f"- {k}" for k in sonuc["kanitlamadiklari"]]
     return "\n".join(satirlar) + "\n"
