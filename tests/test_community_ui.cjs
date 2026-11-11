@@ -577,6 +577,50 @@ test("K1 v4 kaydı listede yolunu söyler ve kamu kaydına bağlanır; v1 kartı
   }
 });
 
+test("v4 kartında kanıt durumu kapı etiketinin alıntı sayısından; etiket tanınmazsa eski metin; kurulum bağlantısı #install", async () => {
+  for (const language of ["tr", "en"]) {
+    const app = harness({language, cardId: "d".repeat(32)}); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    const v4 = (id, en) => ({...copy(app.fixture.card), id, version: 1, record_type: "v4", kind: "research_report", human_reviewed: false,
+      publication: {path: "machine_gate", human_reviewed: false, label: {tr: "İnsan incelemedi; …", en}},
+      link: "https://community.example/api/community/v4/records/" + id + "/v/1"});
+    const sayili = v4("c".repeat(32), "Not human-reviewed; 1 of 1 sources reachable, quotes found in source for 13 of 13 claims; machine checks passed: schema; 2026-11-11");
+    const agsiz = v4("e".repeat(32), "Not human-reviewed; sources not fetched, quotes not checked for 6 claims; 2026-11-11");
+    const bozuk = v4("f".repeat(32), "quotes found in source for 9 of 3 claims");
+    app.fixture.cardsResponse = {items: [sayili, agsiz, bozuk], total: 3, search: {mode: "ranked", fallback: false}};
+    app.byId("search-query").value = "Widget"; await app.byId("community-search").dispatch("submit");
+    const facts = app.flatten(app.byId("community-list")).filter(item => item.tagName === "DD").map(item => item.textContent);
+    // v4 kartında üç bilgi satırı: soru, kanıt durumu, güncellendi (üretim tarihi satırı yok; tur 3, S7).
+    const evidence = facts.filter((_, index) => index % 3 === 1);
+    assert.deepEqual(evidence, language === "en"
+      ? ["13 of 13 quotes found in the sources (machine check)", "Unknown", "Unknown"]
+      : ["13/13 alıntı kaynakta bulundu (makine denetimi)", "Bilinmiyor", "Bilinmiyor"]);
+  }
+  assert.match(html, /devtrellis#install"/); assert.doesNotMatch(html, /#installation/);
+  assert.match(source, /devtrellis#install"/); assert.doesNotMatch(source, /#installation/);
+});
+
+test("v4 kartında üretim tarihi satırı gösterilmez; eski biçim raporda satır ve 'kaydedilmemiş' metni kalır", async () => {
+  for (const language of ["tr", "en"]) {
+    const app = harness({language, cardId: "d".repeat(32)}); await app.ready(); await app.byId("community-tab-research").dispatch("click");
+    const id = "c".repeat(32);
+    const v4 = {...copy(app.fixture.card), id, version: 1, record_type: "v4", kind: "research_report", human_reviewed: false,
+      publication: {path: "machine_gate", human_reviewed: false, label: {tr: "İnsan incelemedi; …", en: "Not human-reviewed; …"}},
+      link: "https://community.example/api/community/v4/records/" + id + "/v/1"};
+    const eski = copy(app.fixture.card); delete eski.packet.provenance;
+    app.fixture.cardsResponse = {items: [v4, eski], total: 2, search: {mode: "ranked", fallback: false}};
+    app.byId("search-query").value = "Widget"; await app.byId("community-search").dispatch("submit");
+    const cards = app.flatten(app.byId("community-list")).filter(item => item.tagName === "ARTICLE");
+    assert.equal(cards.length, 2);
+    const labels = card => app.flatten(card).filter(item => item.tagName === "DT").map(item => item.textContent);
+    const generation = language === "en" ? "Research generated on" : "Araştırmanın üretim tarihi";
+    const notRecorded = language === "en" ? "Generation date not recorded" : "Üretim tarihi kaydedilmemiş";
+    assert.equal(labels(cards[0]).includes(generation), false);
+    assert.doesNotMatch(cards[0].textContent, new RegExp(notRecorded));
+    assert.equal(labels(cards[1]).includes(generation), true);
+    assert.match(cards[1].textContent, new RegExp(notRecorded));
+  }
+});
+
 test("arama sunucu hatası başka kipe tekrar gönderilmez; bozuk eşleşme meta verisi güvene dönüştürülmez", async () => {
   const app = harness(); await app.ready(); await app.byId("community-tab-research").dispatch("click");
   app.fixture.cardsStatus = 503; app.fixture.cardsResponse = {detail: "Temporary service error"};

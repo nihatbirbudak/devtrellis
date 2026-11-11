@@ -23,6 +23,8 @@ def ana(argumanlar=None):
     ayristirici.add_argument("--yayindakiler", help="yayındaki kayıtlar listesi (JSON liste ya da {'kayitlar': [...]})")
     ayristirici.add_argument("--ag-yok", action="store_true", help="ağa çıkma; ağ gerektiren denetimler 'denenemedi' olur")
     ayristirici.add_argument("--tam", action="store_true", help="ağsız denetimlerde ret olsa da kaynakları getir")
+    ayristirici.add_argument("--okuma-eki", action="store_true",
+                             help="alpha.15 okuma eki kurallarını da çalıştır (sunucuda ayar `reading_extensions`; varsayılan kapalı)")
     ayristirici.add_argument("--cikti", help="JSON sonucun yazılacağı dosya")
     ayristirici.add_argument("--metin-cikti", help="okunur özetin yazılacağı dosya")
     ayristirici.add_argument("--baslik", help="okunur özetin başlığı")
@@ -37,7 +39,7 @@ def ana(argumanlar=None):
     except (OSError, ValueError) as hata:
         print(f"Dosya okunamadı ya da geçerli JSON değil: {type(hata).__name__}", file=sys.stderr)
         return 3
-    sonuc = denetle(paket, yayindakiler=yayindakiler, ag=not secim.ag_yok, tam=secim.tam)
+    sonuc = denetle(paket, yayindakiler=yayindakiler, ag=not secim.ag_yok, tam=secim.tam, okuma_eki=secim.okuma_eki)
     okunur = metin(sonuc, secim.baslik)
     if secim.cikti:
         with open(secim.cikti, "w", encoding="utf-8", newline="\n") as dosya:

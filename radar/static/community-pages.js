@@ -16,8 +16,8 @@
       aboutTitle: "Start further ahead. Keep discovering.",
       aboutIntro: "Technology moves everywhere, every day. DevTrellis brings developments, projects and source-backed research into a shared place for people who build — whether it is a weekend hobby or their profession.",
       aboutSections: [
-        ["Find a useful starting point", "Before asking the same question again, look for an existing investigation. Read it yourself, check its sources, or use the local app and MCP connection with your own model."],
-        ["Build on what is already known", "A useful contribution can add a missing source, correct a finding or explore a deeper question. Linked research versions make that development visible by linking back to earlier public versions."],
+        ["Find a useful starting point", "Before asking the same question again, look for an existing investigation. Read it yourself and check its sources. If you connect your coding assistant over MCP, it can first ask DevTrellis about a documentation page and reuse a quoted record if one exists; new research uses your own model."],
+        ["Build on what is already known", "A useful contribution can add a missing source, correct a finding or explore a deeper question. For shared reports, linked research versions make that development visible by linking back to earlier public versions; machine-gated records cannot be extended on this site yet."],
         ["Follow curiosity across fields", "Software, AI, robotics, data, security and creative tools belong in the same conversation. Discover an unfamiliar field, follow its original sources, and introduce a project that helps people explore it."],
         ["A growing library, with visible limits", "Coverage comes from registered sources and community contributions; it does not include every development worldwide. Search currently matches words, so try related terms when a useful result is missing. Reuse may reduce repeated work, but measured time or token savings are not promised."]
       ],
@@ -31,14 +31,14 @@
         ["Show the work behind the answer", "Record the model when known, and use unknown when it is not. A model name, price, view count or helpfulness vote does not establish truth. A published record and moderation review are not independent verification."],
         ["Keep private context out", "Do not submit API keys, passwords, personal details, private project information, conversation history or raw logs as public research. Review every field of the public preview. Automated filtering cannot identify every private fact."],
         ["Be respectful and disclose your interests", "Critique claims without attacking people. Avoid spam and repetitive promotion. When sharing a project or product you are involved with, make that relationship clear and explain what others can learn or use."],
-        ["Respect attribution and permissions", "The application code is MIT licensed. Research text has its own stated license, commonly CC BY 4.0; it is not automatically MIT. Credit reused work and link the version you extended. Linked code, images and source publications keep their own permissions."],
+        ["Respect attribution and permissions", "The application code is MIT licensed. Research text has its own license, CC BY 4.0 or CC0 1.0, as stated on each record; it is not automatically MIT. Credit reused work and link the version you extended. Linked code, images and source publications keep their own permissions."],
         ["Correct the record", "Report outdated information or an accuracy concern on the research. Add evidence and explain a substantive correction or extension. Operators may review, decline or remove contributions; publication never makes a claim immune to correction."]
       ],
       guidelinesAction: "Discuss a content or privacy concern",
       contributeTitle: "Bring one useful thing.",
       contributeIntro: "A careful source, a clearer explanation or a small fix can help the next person. You do not need to apply, join a team or create an account to contribute research.",
       researchTitle: "Research first. Share when you choose.",
-      researchText: "Start with the public library. Use the local app or a connected assistant to investigate a gap, then review the selected public report. You can share it for community review or keep it local. A new source or deeper finding can extend an existing report.",
+      researchText: "Start with the public library. Use the local app or a connected assistant to investigate a gap, then review the selected public report. You can send it to a moderator or keep it local. Records labelled “Machine gate · not human-reviewed” were published after automatic checks, without a person reading them. A new source or deeper finding can extend an existing shared report; machine-gated records cannot be extended yet.",
       contributeAction: "How research sharing works",
       rolesTitle: "More ways to help",
       roles: [
@@ -103,8 +103,8 @@
       aboutTitle: "Hazır bilgiden başla. Keşfetmeye devam et.",
       aboutIntro: "Teknoloji her gün dünyanın her yerinde gelişiyor. DevTrellis; gelişmeleri, projeleri ve kaynaklı araştırmaları, hafta sonu hobi olarak da profesyonel olarak da üreten insanların buluşabileceği ortak bir alanda toplar.",
       aboutSections: [
-        ["İyi bir başlangıç bul", "Aynı soruyu yeniden araştırmadan önce mevcut çalışmalara bak. Raporu kendin oku, kaynaklarını kontrol et ya da yerel uygulamayı ve MCP bağlantısını kendi modelinle kullan."],
-        ["Bilinenin üzerine ekle", "Eksik bir kaynak, düzeltilen bir bulgu veya daha derin bir soru değerli bir katkıdır. Bağlantılı araştırma sürümleri, önceki kamuya açık sürümlerle bağlantı kurarak bilginin nasıl geliştiğini gösterir."],
+        ["İyi bir başlangıç bul", "Aynı soruyu yeniden araştırmadan önce mevcut çalışmalara bak. Raporu kendin oku ve kaynaklarını kontrol et. Kodlama asistanını MCP ile bağlarsan, bir belge sayfasını açmadan önce DevTrellis'e sorabilir ve varsa alıntılı kaydı kullanabilir; yeni araştırma kendi modelinle yapılır."],
+        ["Bilinenin üzerine ekle", "Eksik bir kaynak, düzeltilen bir bulgu veya daha derin bir soru değerli bir katkıdır. Paylaşılan raporlarda bağlantılı araştırma sürümleri, önceki kamuya açık sürümlerle bağlantı kurarak bilginin nasıl geliştiğini gösterir; makine denetimli kayıtlara bu sitede henüz ekleme yapılamaz."],
         ["Merakını farklı alanlara taşı", "Yazılım, yapay zekâ, robotik, veri, güvenlik ve yaratıcı araçlar aynı toplulukta buluşabilir. Bilmediğin bir alanı keşfet, asıl kaynaklarını izle ve başkalarının işine yarayabilecek projenle katıl."],
         ["Sınırları görünen, büyüyen bir kütüphane", "Kapsam, kayıtlı kaynaklardan ve topluluk katkılarından oluşur; dünyadaki her gelişmeyi içermez. Arama şu anda sözcük eşleşmelerini kullanır; sonuç bulamazsan ilgili başka terimler dene. Yeniden kullanım tekrarı azaltabilir, ancak ölçülmüş zaman veya token tasarrufu vaat edilmez."]
       ],
@@ -118,14 +118,14 @@
         ["Yanıtın nasıl üretildiğini göster", "Biliniyorsa modeli kaydet; bilinmiyorsa bilinmiyor yaz. Model adı, fiyatı, okunma sayısı veya yararlılık oyu doğruluğu kanıtlamaz. Yayımlanmış olması ve moderasyon incelemesi bağımsız doğrulama değildir."],
         ["Özel bağlamı dışarıda tut", "API anahtarlarını, parolaları, kişisel bilgileri, özel proje ayrıntılarını, sohbet geçmişini ve ham günlükleri kamusal araştırmaya ekleme. Kamu önizlemesinin her alanını incele. Otomatik filtreler her özel bilgiyi tanıyamaz."],
         ["Saygılı ol, ilişkin varsa belirt", "İnsanlara saldırmadan iddiaları eleştir. Spam ve tekrarlanan tanıtımdan kaçın. İçinde yer aldığın bir proje veya ürünü paylaşırken bu ilişkiyi açıkla; başkalarının ne öğrenebileceğini veya kullanabileceğini anlat."],
-        ["Atfa ve izinlere dikkat et", "Uygulama kodu MIT lisanslıdır. Araştırma metni, genellikle CC BY 4.0 olan kendi belirtilmiş lisansına sahiptir; kendiliğinden MIT olmaz. Yararlanılan çalışmaya atıf yap ve geliştirdiğin sürümü bağla. Bağlantılı kod, görsel ve kaynak yayınlarının kendi izinleri geçerlidir."],
+        ["Atfa ve izinlere dikkat et", "Uygulama kodu MIT lisanslıdır. Araştırma metninin her kayıtta belirtilen kendi lisansı vardır (CC BY 4.0 veya CC0 1.0); kendiliğinden MIT olmaz. Yararlanılan çalışmaya atıf yap ve geliştirdiğin sürümü bağla. Bağlantılı kod, görsel ve kaynak yayınlarının kendi izinleri geçerlidir."],
         ["Kaydı birlikte düzelt", "Güncelliğini yitiren bilgi veya doğruluk itirazını araştırma üzerinden bildir. Kanıt ekle ve anlamlı düzeltmeyi ya da yeni katkıyı açıkla. Operatörler katkıları inceleyebilir, reddedebilir veya kaldırabilir; yayımlanmak bir iddiayı düzeltilemez yapmaz."]
       ],
       guidelinesAction: "İçerik veya gizlilik sorununu ilet",
       contributeTitle: "Yararlı bir şeyle katıl.",
       contributeIntro: "Dikkatle seçilmiş bir kaynak, daha anlaşılır bir açıklama veya küçük bir düzeltme sıradaki kişiye yardımcı olur. Araştırma katkısı için başvuru yapman, bir ekibe katılman veya hesap açman gerekmez.",
       researchTitle: "Önce araştır. İstersen paylaş.",
-      researchText: "Kamusal kütüphaneden başla. Bir eksiği araştırmak için yerel uygulamayı veya bağlı asistanını kullan, ardından seçilmiş kamu raporunu incele. Topluluk incelemesine gönderebilir veya yerelde tutabilirsin. Yeni kaynak ya da daha derin bir bulgu, mevcut araştırmayı geliştirebilir.",
+      researchText: "Kamusal kütüphaneden başla. Bir eksiği araştırmak için yerel uygulamayı veya bağlı asistanını kullan, ardından seçilmiş kamu raporunu incele. Moderatöre gönderebilir veya yerelde tutabilirsin. “Makine denetimi · insan incelemedi” etiketli kayıtlar otomatik denetimden sonra, bir insan okumadan yayımlandı. Yeni kaynak ya da daha derin bir bulgu, paylaşılmış bir raporu geliştirebilir; makine denetimli kayıtlara henüz ekleme yapılamaz.",
       contributeAction: "Araştırma paylaşımı nasıl çalışır?",
       rolesTitle: "Katılmanın başka yolları",
       roles: [

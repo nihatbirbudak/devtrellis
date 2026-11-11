@@ -39,6 +39,38 @@
       "type": "string",
       "format": "date-time"
     },
+    "source_snapshots": {
+      "$comment": "alpha.15 record extension 'source_snapshots': optional; one row per source page the gate fetched, keyed by the K0 address_key: when the gate fetched it and the SHA-256 of the gate's normalized visible text (the text the quotes were matched in; extractor version in claims[].evidence.visible_text_version). A trace of the page version, not freshness. Absent on older records.",
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "properties": {
+          "address_key": {"$ref": "#/$defs/hex64"},
+          "fetched_at": {"$ref": "#/$defs/datetime_z"},
+          "visible_text_sha256": {"$ref": "#/$defs/hex64"}
+        },
+        "required": ["address_key", "fetched_at", "visible_text_sha256"],
+        "additionalProperties": false
+      }
+    },
+    "absence_checks": {
+      "$comment": "alpha.15 record extension 'absence_notes': optional; present when content.not_in_sources is. Per item (0-based index into content.not_in_sources): how many terms of the item in double quotes or backticks the gate searched (unquoted names are not searched) (it also searched 5-word parts of the item's wording); the address keys of the pages the item says were searched (checked_keys, resolved by the server from the contributor's source numbers at publication, so a later change of the source order cannot move them); the address keys of those pages where a term or wording part was found (found_in_keys, a gate warning); the ids of this record's claims whose quote contains one (found_in_claims, a gate warning). Not finding anything does not prove absence.",
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {"type": "integer", "minimum": 0},
+          "terms": {"type": "integer", "minimum": 0},
+          "checked_keys": {"type": "array", "items": {"$ref": "#/$defs/hex64"}},
+          "found_in_keys": {"type": "array", "items": {"$ref": "#/$defs/hex64"}},
+          "found_in_claims": {"type": "array", "items": {"$ref": "#/$defs/id32"}}
+        },
+        "required": ["item", "terms", "checked_keys", "found_in_keys", "found_in_claims"],
+        "additionalProperties": false
+      }
+    },
     "record": {
       "type": "object",
       "properties": {
@@ -69,7 +101,7 @@
           "const": "en"
         },
         "content": {
-          "$comment": "Candidate content fields copied verbatim when present: title, summary, short_answer, answers, recommendations, not_covered, applies_to, sources, generated_at. These free-text fields are not tied to any source (see publication.gate.fields_not_tied_to_sources).",
+          "$comment": "Candidate content fields copied verbatim when present: title, summary, short_answer, answers, recommendations, not_covered, applies_to, sources, generated_at, and (alpha.15 record extensions absence_notes / answer_links) not_in_sources, not_researched. These free-text fields are not tied to any source (see publication.gate.fields_not_tied_to_sources). Shapes follow contribution-candidate-v4-r2.schema.json.",
           "type": "object",
           "propertyNames": {
             "enum": [
@@ -81,8 +113,36 @@
               "not_covered",
               "applies_to",
               "sources",
-              "generated_at"
+              "generated_at",
+              "not_in_sources",
+              "not_researched"
             ]
+          },
+          "properties": {
+            "answers": {
+              "$comment": "alpha.15 answer_links: items are strings (older form) or {q, claims} / {q, inferred_from} with 1-based claim numbers of this record.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {"type": "string"},
+                  {"type": "object", "required": ["q", "claims"], "additionalProperties": false,
+                   "properties": {"q": {"type": "string"}, "claims": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 10}}},
+                  {"type": "object", "required": ["q", "inferred_from"], "additionalProperties": false,
+                   "properties": {"q": {"type": "string"}, "inferred_from": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 10}}}
+                ]
+              }
+            },
+            "not_in_sources": {
+              "$comment": "alpha.15 absence_notes: contributor's statement that the listed sources (1-based reading-order numbers: content.sources first, then claim URLs missing from it) do not state item. Not verified by DevTrellis. The numbers are the contributor's, valid for the source order at publication; readers use publication.gate.absence_checks[].checked_keys (address keys resolved by the server) instead, because the order can change later.",
+              "type": "array",
+              "items": {"type": "object", "required": ["item", "checked"], "additionalProperties": false,
+                        "properties": {"item": {"type": "string"}, "checked": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 10}}}
+            },
+            "not_researched": {
+              "$comment": "alpha.15 absence_notes: topics the contributor did not look into.",
+              "type": "array",
+              "items": {"type": "string"}
+            }
           }
         },
         "claims": {
@@ -339,6 +399,12 @@
                     "minLength": 1,
                     "maxLength": 80
                   }
+                },
+                "source_snapshots": {
+                  "$ref": "#/$defs/source_snapshots"
+                },
+                "absence_checks": {
+                  "$ref": "#/$defs/absence_checks"
                 }
               },
               "required": [
@@ -420,6 +486,9 @@
           "type": "string",
           "pattern": "^https?://",
           "$comment": "{origin}/api/community/v4/records/{id}/v/{version}"
+        },
+        "lineage": {
+          "$ref": "#/$defs/lineage"
         }
       },
       "required": [
@@ -437,6 +506,70 @@
         "publication",
         "corrections",
         "link"
+      ],
+      "additionalProperties": false
+    },
+    "lineage": {
+      "$comment": "alpha.15 (14a) record extension 'lineage' (capabilities.record_extensions): present only on a version built by an extension (record_extension submission). versions = the chain of this version's ancestors and itself, oldest first. Claims are only ever appended, so the claims a version added are the next `claims` entries in record order. change_summary and provenance are the contributor's declarations (untrusted text); path and human_reviewed are server facts for that version.",
+      "type": "object",
+      "properties": {
+        "versions": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "published_at": {
+                "$ref": "#/$defs/datetime_z"
+              },
+              "path": {
+                "enum": [
+                  "machine_gate",
+                  "moderator"
+                ]
+              },
+              "human_reviewed": {
+                "type": "boolean"
+              },
+              "claims": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "based_on": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "seen_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "change_summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "provenance": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "version",
+              "published_at",
+              "path",
+              "human_reviewed",
+              "claims",
+              "provenance"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "versions"
       ],
       "additionalProperties": false
     },
@@ -544,13 +677,21 @@
           "$comment": "GET /api/community/topics (devtrellis-topics v1)."
         },
         "record_extensions": {
-          "$comment": "alpha.13b: optional record extensions this server writes; a strict reader accepts their fields only when listed here. Known: machine_not_covered (publication.gate and agent_view.server).",
+          "$comment": "alpha.13b: optional record extensions this server writes; a strict reader accepts their fields only when listed here. Known: machine_not_covered (publication.gate and agent_view.server); alpha.15: source_snapshots (publication.gate and agent_view.server), absence_notes (content.not_in_sources, content.not_researched; publication.gate.absence_checks and agent_view.server.absence_checks), answer_links (content.answers items may be objects). alpha.15 (14a): lineage (top-level record.lineage; agent_view.server.extended and agent_view.declared.provenance_by_version).",
           "type": "array",
           "items": {
             "enum": [
-              "machine_not_covered"
+              "machine_not_covered",
+              "source_snapshots",
+              "absence_notes",
+              "answer_links",
+              "lineage"
             ]
           }
+        },
+        "extensions": {
+          "$comment": "alpha.15 (14a): present (true) only when the server accepts record_extension submissions (settings key 'extensions'). Absent: the extension path is off; records already extended may still be served (then record_extensions lists 'lineage').",
+          "const": true
         }
       },
       "required": [
@@ -619,7 +760,11 @@
               "enum": [
                 "auto_publish_off",
                 "publishing_stopped",
-                "auto_publish_daily_cap"
+                "auto_publish_daily_cap",
+                "extension_coverage_removal",
+                "extension_conflict",
+                "extension_daily_cap",
+                "instruction_like_content"
               ]
             },
             {
@@ -717,6 +862,54 @@
         },
         "updated_at": {
           "$ref": "#/$defs/datetime_z"
+        },
+        "extension": {
+          "$comment": "alpha.15 (14a): only for a record_extension submission. record_id = the extended record; seen_version = the version the contributor previewed against; version = the record version this submission published (null until published); current = that version is the record's visible version.",
+          "type": "object",
+          "properties": {
+            "record_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/id32"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "seen_version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "current": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "record_id",
+            "seen_version",
+            "version",
+            "current"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -782,6 +975,67 @@
                 "minLength": 1,
                 "maxLength": 80
               }
+            },
+            "source_snapshots": {
+              "$ref": "#/$defs/source_snapshots"
+            },
+            "absence_checks": {
+              "$ref": "#/$defs/absence_checks"
+            },
+            "extended": {
+              "$comment": "alpha.15 (14a), only when the record carries lineage: per version the claim numbers it added (1-based, record order; [] when none), path, publication time and human review. With lineage (acceptance round 1, Ö3), server.human_reviewed is true only when every version is, and declared.provenance merges all versions' declarations (origin mixed when they differ); per-version values are here and in declared.provenance_by_version. Server facts only; the change summary stays in record.lineage.",
+              "type": "object",
+              "properties": {
+                "from_version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "versions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "added_claims": {
+                        "type": "array",
+                        "maxItems": 2,
+                        "items": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "path": {
+                        "enum": [
+                          "machine_gate",
+                          "moderator"
+                        ]
+                      },
+                      "published_at": {
+                        "$ref": "#/$defs/datetime_z"
+                      },
+                      "human_reviewed": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "added_claims",
+                      "path",
+                      "published_at",
+                      "human_reviewed"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "from_version",
+                "versions"
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -793,6 +1047,29 @@
             "own_text_license",
             "claims"
           ],
+          "properties": {
+            "provenance_by_version": {
+              "$comment": "alpha.15 (14a), only when the record carries lineage: each version's declared provenance (contributor declaration).",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "provenance": {
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "version",
+                  "provenance"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
           "additionalProperties": false
         },
         "untrusted": {

@@ -25,6 +25,12 @@ NEDENLER = {
     "sema.kaynak_listede_yok": ("uyari", "Bir iddianın kaynak adresi kaynak listesinde yazmıyor."),
     "sema.yinelenen_iddia": ("uyari", "Aynı alıntı ve aynı kaynakla iki iddia var."),
     "sema.kisa_cevap_uzun": ("uyari", "Kısa cevap 80 sözcükten uzun."),
+    # alpha.15 (14r2) okuma eki
+    "sema.cevap_bagi": ("kaldi", "Bir cevap maddesinin iddia bağı geçersiz (var olmayan iddia numarası, yinelenen numara ya da biçim)."),
+    "sema.kaynak_no": ("kaldi", "Bir not_in_sources maddesinin kaynak numarası geçersiz (pakette olmayan kaynak ya da biçim)."),
+    "sema.kisa_cevap_terim": ("uyari", "Kısa cevaptaki bir sayı, sürüm ya da kod adı hiçbir alıntıda (ya da başlık, kapsam, kaynak adresinde) geçmiyor."),
+    "sema.cevap_bagi_bicimi": ("uyari", "Düz metin cevap maddesi '-> claims' gibi bir bağ yazısı taşıyor; bağ için nesne biçimi kullanılmalı."),
+    "sema.cevap_bagi_terim": ("uyari","Bağlı bir cevap maddesinin sayı ya da kod adı bağlı iddiaların alıntılarında geçmiyor."),
     "sema.koken_bicimi": ("kaldi", "Köken (provenance) alanının biçimi bozuk."),
     # 2. Kaynağın herkese açık olması
     "acik.gecersiz_karakter": ("kaldi", "Adreste boşluk, denetim karakteri, ters bölü ya da ASCII dışı karakter var."),
@@ -99,6 +105,9 @@ NEDENLER = {
     "yonerge.supheli_komut": ("uyari", "Kuşkulu komut kalıbı (iex, Invoke-Expression, chmod +x … &&)."),
     "yonerge.ajana_buyruk": ("kaldi", "Metin yapay zekâ ajanına hitap edip ona komut veriyor ya da kullanıcıya sormadan iş yaptırıyor; ret."),
     "yonerge.kullaniciya_sormadan": ("uyari", "'Kullanıcıya sormadan / söylemeden' türü ifade."),
+    # alpha.15 güvenlik: geniş tarama (yalnız sunucu ayarı hold_instruction_like açıkken çalışır; uyarı, bekletme sınıfında)
+    "yonerge.dogrulama_komutu": ("uyari", "Okura komut çalıştırma buyruğu ('doğrulamak için şu komutu çalıştırın', 'run `…`')."),
+    "yonerge.kurulum_on_kosulu": ("uyari", "Okura paket kurdurma buyruğu ya da ön koşulu ('önce `pip install …` gerekli')."),
     # 7. Kurulum komutlarındaki paket adları
     "paket.bulunamadi": ("kaldi", "Kurulum komutundaki paket resmî kayıtta yok."),
     "paket.gecersiz_ad": ("kaldi", "Kurulum komutundaki paket adı geçerli bir ad değil."),
@@ -121,7 +130,27 @@ NEDENLER = {
     "saglayici.asama_yok": ("kaldi", "Model kullanıldığı söylenmiş ama model aşaması yazılmamış."),
     # 9. Yinelenen yayın
     "yinelenen.uzanti_oner": ("uyari", "Yayındaki bir kayda çok benziyor; yeni kayıt yerine uzantı önerilir."),
+    "yinelenen.benzer_kayit": ("uyari", "Uzantı yayındaki başka bir kayda da benziyor; eklediği iddialar orada zaten olabilir (bilgi)."),
     "yinelenen.liste_yok": ("denenemedi", "Yayındaki kayıtlar listesi verilmedi; karşılaştırma yapılmadı."),
+    # 10. Uzantı kuralları (alpha.15, dilim 14a; yalnız `record_extension`)
+    "uzanti.bicim": ("kaldi", "Uzantı paketinin biçimi sözleşmeye uymuyor (alanlar, extends, claims, not_covered_remove, rights)."),
+    "uzanti.bos": ("kaldi", "Uzantı hiç yeni iddia taşımıyor."),
+    "uzanti.ust_yok": ("kaldi", "Uzatılmak istenen kayıt yayında değil (hiç yayımlanmadı, geri çekildi ya da kaldırıldı)."),
+    "uzanti.gorulen_surum_yok": ("kaldi", "Katkıcının gördüğü sürüm kaydın bugünkü sürümünün geçmişinde yok; güncel sürümle yeniden önizlenmeli."),
+    "uzanti.tur": ("kaldi", "Bu alan bu kayıt türüne eklenemez (kaynak kartına kaynak ya da cevaplanan soru eklenemez)."),
+    "uzanti.kart_adresi": ("kaldi", "Kaynak kartına eklenen iddia kartın tek kaynak adresinde değil."),
+    "uzanti.lisans": ("kaldi", "Uzantının lisansı üst kaydınkiyle aynı değil."),
+    "uzanti.ust_iddia_bagi": ("kaldi", "Uzantının cevap bağı kaydın var olan bir iddiasını gösteriyor; uzantı yalnız kendi yeni iddialarına bağ kurabilir."),
+    "uzanti.okuma_eki_kapali": ("kaldi", "Üst kayıt ya da uzantı okuma eki alanları taşıyor ama sunucuda okuma eki kapalı."),
+    "uzanti.yinelenen_iddia": ("kaldi", "Yeni iddia kayıttaki bir iddiayla aynı ya da çok benzer (başkası zaten eklemiş olabilir)."),
+    "uzanti.kapsam_silme": ("uyari", "Kaldırılan bir not_covered maddesi yeni iddialarca karşılanmıyor görünüyor; moderasyona gider."),
+    "uzanti.celiski": ("uyari", "Yeni iddia aynı kaynaktaki bir üst iddiayla çelişiyor görünüyor; moderasyona gider."),
+    "uzanti.ust_alinti_kaydi": ("denenemedi", "Üst kaydın bir alıntısı sayfada artık aynen bulunmuyor; uzantı şimdi yayımlanamaz, yeniden denenecek."),
+    # 11. Kaynaklarda yok notları (alpha.15; yalnız uyarı)
+    "yokluk.terim_sayfada": ("uyari", "Bir not_in_sources maddesinin terimi ya da cümlesi, maddenin aranmış dediği sayfada geçiyor; yokluk beyanı yanlış olabilir."),
+    "yokluk.alintida": ("uyari", "Bir not_in_sources maddesinin terimi ya da cümlesi kaydın kendi alıntılarında geçiyor; yokluk beyanı kayıtla çelişiyor olabilir."),
+    "yokluk.ag_kapali": ("denenemedi", "Ağ kapalı; not_in_sources maddelerinin terimleri sayfada aranmadı."),
+    "yokluk.kaynak_yok": ("denenemedi", "Maddenin andığı kaynak getirilemedi; terimleri aranmadı."),
     # Genel
     "genel.onceki_ret": ("denenemedi", "Paket ağsız denetimlerde zaten reddedildiği için ağ isteği atılmadı."),
     "genel.ic_hata": ("denenemedi", "Denetim beklenmeyen bir iç hatayla durdu."),

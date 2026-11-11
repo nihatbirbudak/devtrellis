@@ -8,7 +8,8 @@
     "candidate": {
       "oneOf": [
         {"$ref": "#/$defs/source_card"},
-        {"$ref": "#/$defs/report"}
+        {"$ref": "#/$defs/report"},
+        {"$ref": "#/$defs/record_extension"}
       ]
     },
     "consent": {
@@ -80,6 +81,36 @@
       "required": ["origin", "stages"],
       "additionalProperties": false
     },
+    "numbers": {
+      "$comment": "alpha.15: 1-based numbers, unique, at most 10. Claim numbers follow the claims array order. Source numbers follow the reading order: the `sources` URLs first (duplicates dropped), then claim URLs missing from `sources` in first-claim order; a source card has one source, 1. The gate rejects numbers outside the package (sema.cevap_bagi, sema.kaynak_no).",
+      "type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 10, "uniqueItems": true
+    },
+    "answer_item": {
+      "$comment": "alpha.15 answer_links: a plain question (older form, not linked), {q, claims} = the quotes of these claims answer it, or {q, inferred_from} = answered only by inference (from these claims, or none). The gate checks only that linked claims exist and warns when a number or code name in q appears in none of the linked quotes.",
+      "anyOf": [
+        {"type": "string", "minLength": 1, "maxLength": 120},
+        {"type": "object", "properties": {"q": {"type": "string", "minLength": 1, "maxLength": 120},
+                                          "claims": {"allOf": [{"$ref": "#/$defs/numbers"}, {"minItems": 1}]}},
+         "required": ["q", "claims"], "additionalProperties": false},
+        {"type": "object", "properties": {"q": {"type": "string", "minLength": 1, "maxLength": 120},
+                                          "inferred_from": {"$ref": "#/$defs/numbers"}},
+         "required": ["q", "inferred_from"], "additionalProperties": false}
+      ]
+    },
+    "not_in_sources_card": {
+      "$comment": "alpha.15 absence_notes: the contributor searched the listed cited pages and they do not state `item`. Contributor's statement; DevTrellis does not verify absence (the gate only searches the item's terms in double quotes or backticks and 5-word parts of its wording in those pages and in the record's quotes, and warns when one appears; unquoted names are not searched).",
+      "type": "array", "maxItems": 3,
+      "items": {"type": "object", "properties": {"item": {"type": "string", "minLength": 1, "maxLength": 80},
+                                                 "checked": {"allOf": [{"$ref": "#/$defs/numbers"}, {"minItems": 1}]}},
+                "required": ["item", "checked"], "additionalProperties": false}
+    },
+    "not_in_sources_report": {
+      "$comment": "Same as not_in_sources_card with report limits (10 items, 240 characters).",
+      "type": "array", "maxItems": 10,
+      "items": {"type": "object", "properties": {"item": {"type": "string", "minLength": 1, "maxLength": 240},
+                                                 "checked": {"allOf": [{"$ref": "#/$defs/numbers"}, {"minItems": 1}]}},
+                "required": ["item", "checked"], "additionalProperties": false}
+    },
     "rights": {
       "$comment": "Explicit license choice for the contributor's own text only. Quotes are covered by the source-linked short quote basis (<=300 characters); there is no separate rights gate.",
       "type": "object",
@@ -101,6 +132,9 @@
           "$comment": "All claims of a source card share one source_url."
         },
         "not_covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}, "maxItems": 3},
+        "not_in_sources": {"$ref": "#/$defs/not_in_sources_card"},
+        "not_researched": {"$comment": "alpha.15 absence_notes: topics the contributor did not look into.",
+                           "type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80}, "maxItems": 3},
         "provenance": {"$ref": "#/$defs/provenance"},
         "rights": {"$ref": "#/$defs/rights"}
       },
@@ -118,12 +152,15 @@
         "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
         "short_answer": {"type": "string", "minLength": 1, "maxLength": 1200},
         "answers": {
-          "$comment": "Optional: 3-5 questions the report answers (search aid, engineering report A2). Free text, not tied to sources.",
-          "type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 120}, "minItems": 3, "maxItems": 5
+          "$comment": "Optional: 3-5 questions the report answers (search aid, engineering report A2). Not tied to sources; since alpha.15 an item may be linked to claim numbers ($defs.answer_item).",
+          "type": "array", "items": {"$ref": "#/$defs/answer_item"}, "minItems": 3, "maxItems": 5
         },
         "claims": {"type": "array", "items": {"$ref": "#/$defs/claim"}, "minItems": 1, "maxItems": 60},
         "recommendations": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 400}, "maxItems": 20},
         "not_covered": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 10},
+        "not_in_sources": {"$ref": "#/$defs/not_in_sources_report"},
+        "not_researched": {"$comment": "alpha.15 absence_notes: topics the contributor did not look into.",
+                           "type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 240}, "maxItems": 10},
         "applies_to": {"anyOf": [{"type": "string", "minLength": 1, "maxLength": 400}, {"$ref": "#/$defs/applies_to"}]},
         "sources": {
           "type": "array",
@@ -141,6 +178,114 @@
         "rights": {"$ref": "#/$defs/rights"}
       },
       "required": ["kind", "schema_version", "language", "title", "claims", "provenance", "rights"],
+      "additionalProperties": false
+    },
+    "record_extension": {
+      "$comment": "alpha.15 (14a) extension package (accepted only when capabilities.extensions is true; otherwise 422 extensions_off). Adds claims (and for reports sources and answered questions) to a published record; it cannot change or remove the record's claims, title, summary, short answer, recommendations or scope. The server merges it at gate time with the record's CURRENT version and gates the merged package; consent.preview_sha256 is the hash of this extension package. Numbers refer to the version you saw (extends.version): not_covered_remove = indexes (0-based) into that version's not_covered; claim numbers in answers_added links count that version's claims first, then this package's claims. rights.own_text_license must equal the record's. A source card takes claims from its single source only.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "record_extension"
+        },
+        "schema_version": {
+          "const": 4
+        },
+        "language": {
+          "const": "en"
+        },
+        "extends": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "change_summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "change_summary"
+          ],
+          "additionalProperties": false
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "sources_added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "url": {
+                "$ref": "#/$defs/https_url"
+              }
+            },
+            "required": [
+              "title",
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 30
+        },
+        "answers_added": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/answer_item"
+          }
+        },
+        "not_covered_remove": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "not_covered_add": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "rights": {
+          "$ref": "#/$defs/rights"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "language",
+        "extends",
+        "claims",
+        "provenance",
+        "rights"
+      ],
       "additionalProperties": false
     }
   }

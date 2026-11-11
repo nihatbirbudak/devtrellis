@@ -5,6 +5,7 @@ kartı, araştırma raporu ve konu özeti aynı kapıdan geçer; alıntı eşle�
 Otomatik yayın ayarla açılır ve varsayılan kapalıdır; kapalıyken kapıdan geçen kayıt moderasyon kuyruğuna gider.
 """
 
+import copy
 import hashlib
 import json
 import re
@@ -12,8 +13,10 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 from pathlib import Path
 
+from radar import okuma_eki as okuma_eki_modulu
 from radar.denetim import metin as denetim_metni
-from radar.denetim.kapi import KANITLAMADIKLARI
+from radar.denetim import uzanti as uzanti_kurallari
+from radar.denetim.kapi import KANITLAMADIKLARI, KANITLAMADIKLARI_OKUMA_EKI, KANITLAMADIKLARI_UZANTI
 
 SOZLESME = "k1-v4-r2"
 KAYIT_SEMASI = "devtrellis-record"
@@ -30,7 +33,7 @@ ALINTI_EN_COK = 300
 LISANSLAR = ("CC0-1.0", "CC-BY-4.0")
 TURLER = ("source_card", "research_report", "topic_summary")
 ICERIK_ALANLARI = ("title", "summary", "short_answer", "answers", "recommendations", "not_covered", "applies_to",
-                   "sources", "generated_at")
+                   "sources", "generated_at", "not_in_sources", "not_researched")
 _OZET = re.compile(r"[0-9a-f]{64}")
 
 
@@ -74,6 +77,21 @@ class K1Ayarlari:
     denetim_agi: bool = True               # kapı kaynakları getirir; kapalıyken hüküm en iyi ihtimal `yayimlanamaz`
     isleme_araligi_saniye: int = 30        # sunucudaki arka plan işçisinin sırayı yoklama aralığı
     ozel_metin_saklama_gun: int = 30       # yayımlanmadan sonlanan gönderimin özel aday metni bu süre sonra silinir
+    # alpha.15 (14r2) okuma eki: yokluk notları, cevap bağları, kaynak anlıkları ve terim uyarıları. Varsayılan kapalı
+    # (düzeltme turu 1, yönetici kararı 1): kapalıyken yeni alanlı gönderim kabul edilmez, kapı v0.2.3 kurallarıyla çalışır
+    # ve her kayıt alpha.14 kodunun okuyabildiği biçimdedir; geri dönüş araçsız güvenlidir. `reading_extensions: true` açar.
+    okuma_eki: bool = False
+    # alpha.15 (dilim 14a) uzantı yolu: yayındaki bir kayda yeni iddia ekleyen `record_extension` gönderimi. Varsayılan kapalı
+    # (yönetici kararı 1): kapalıyken uzantı adayı kabul edilmez, yan tablo yazılmaz, yetenekler uzantıyı ilan etmez ve her
+    # kayıt alpha.14 kodunun okuyabildiği biçimdedir. `extensions: true` açar.
+    uzanti: bool = False
+    uzanti_sira_kayit: int = 3             # bir kayda denetim sırasında bekleyen en çok uzantı (aşılınca 429 parent_busy)
+    uzanti_gun_kayit: int = 5              # bir kayda son 24 saatte otomatik yayımlanan en çok uzantı sürümü (aşılınca moderasyon)
+    # alpha.15 güvenlik (izolasyon incelemesi Y1): yönerge benzeri içerik (rol taklidi, ajana hitap, çalıştır/kur buyruğu,
+    # yeni ya da denetlenemeyen paket kurulumu; sınıf `radar/denetim/bekletme.py`) otomatik yayımlanmaz, insan kuyruğuna düşer;
+    # kapı geniş yönerge taramasını da çalıştırır. Varsayılan kapalı: kapı sonucu, kayıt ve yayın kararı önceki sürümün aynısı.
+    # `hold_instruction_like: true` açar (sahibinin kararı).
+    yonerge_bekletme: bool = False
 
 
 # Ayar dosyasındaki ad → (alan, en az, en çok); boolean alanlarda sınır yok.
@@ -83,6 +101,9 @@ _AYAR_ADLARI = {
     "gate_network": ("denetim_agi", None, None),
     "worker_interval_seconds": ("isleme_araligi_saniye", 5, 3600),
     "private_retention_days": ("ozel_metin_saklama_gun", 1, 3650),
+    "reading_extensions": ("okuma_eki", None, None),
+    "extensions": ("uzanti", None, None),
+    "hold_instruction_like": ("yonerge_bekletme", None, None),
 }
 _SINIR_ADLARI = {
     "per_identity_per_minute": ("kisi_dakika", 1, 60),
@@ -91,6 +112,8 @@ _SINIR_ADLARI = {
     "auto_publish_per_day": ("otomatik_yayin_gun", 0, 100000),
     "queue_max": ("bekleyen_en_cok", 1, 100000),
     "review_queue_max": ("moderasyon_en_cok", 1, 100000),
+    "extension_queue_per_record": ("uzanti_sira_kayit", 1, 100),
+    "extension_per_record_per_day": ("uzanti_gun_kayit", 0, 1000),
 }
 _DENEME_ADLARI = {
     "max_attempts": ("deneme_en_cok", 1, 20),
@@ -160,10 +183,27 @@ def zaman_metni(saniye):
     return datetime.fromtimestamp(saniye, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def aday_on_denetimi(aday):
-    """Kapıdan önce yalnız sunucunun ek kuralları: tür ve hak seçimi. Biçimin geri kalanını kapının şeması denetler."""
-    if not isinstance(aday, dict) or aday.get("kind") not in TURLER:
+OKUMA_EKI_KAPALI = ("Bu sunucuda okuma eki kapalı: not_in_sources, not_researched ve iddiaya bağlı answers maddesi "
+                    "({\"q\", \"claims\"} / {\"q\", \"inferred_from\"}) kabul edilmez. Bu alanlar olmadan (yokluk notlarını "
+                    "not_covered'a, soruları düz metin olarak yazıp) yeniden önizleyin ve gönderin.")
+
+
+UZANTI_TURU = uzanti_kurallari.UZANTI_TURU
+UZANTI_KAPALI = ("Bu sunucuda uzantı yolu kapalı: kind record_extension (yayındaki bir kayda yeni iddia ekleyen fark paketi) "
+                 "kabul edilmez. Eklemek istediğiniz iddiaları yeni bir kayıt olarak gönderebilir ya da sunucu uzantıyı "
+                 "açınca (yeteneklerde extensions: true) yeniden deneyebilirsiniz.")
+
+
+def aday_on_denetimi(aday, okuma_eki=False, uzanti=False):
+    """Kapıdan önce yalnız sunucunun ek kuralları: tür, hak seçimi ve (okuma eki kapalıyken) yeni alanların açık reddi.
+    Biçimin geri kalanını kapının şeması denetler. Uzantı (14a) yalnız `uzanti` açıkken kabul edilir."""
+    if isinstance(aday, dict) and aday.get("kind") == UZANTI_TURU:
+        if not uzanti:
+            raise KatkiHatasi(UZANTI_KAPALI, code="extensions_off")
+    elif not isinstance(aday, dict) or aday.get("kind") not in TURLER:
         raise KatkiHatasi("Aday kind source_card, research_report ya da topic_summary olmalı.", code="invalid_candidate")
+    if not okuma_eki and okuma_eki_modulu.okuma_ekli_aday_mi(aday):
+        raise KatkiHatasi(OKUMA_EKI_KAPALI, code="reading_extensions_off")
     hak = aday.get("rights")
     # Karar 4: rıza ayrı alanda (Paylaş seçimi); hak alanında yalnız katkıcının kendi metni için açık lisans seçimi.
     if not isinstance(hak, dict) or set(hak) != {"own_text_license"} or hak["own_text_license"] not in LISANSLAR:
@@ -226,7 +266,18 @@ def etiket(sonuc, yol):
 
 # alpha.13b kayıt eki (yönetici onayı, 9 Kasım 2026): kapının makineyle kapsam listesi isteğe bağlı alan olarak kayda
 # ve ajan görünümüne girer. Katı tüketici eki yeteneklerden (`record_extensions`) bilerek tanır.
-KAYIT_EKLERI = ("machine_not_covered",)
+# alpha.15 (14r2) okuma ekleri, hepsi isteğe bağlı ve eklemeli (sözleşme adı `k1-v4-r2` aynı):
+# - `source_snapshots`: `publication.gate.source_snapshots` / `server.source_snapshots`, kaynak başına getirme zamanı ve görünür
+#   metin özeti (adres anahtarıyla);
+# - `absence_notes`: içerikte `not_in_sources` ve `not_researched`; `publication.gate.absence_checks` / `server.absence_checks`
+#   kapının araması: madde sırası, aranan terim sayısı, maddenin aranmış dediği kaynakların adres anahtarları
+#   (`checked_keys`), terimin ya da cümle parçasının bulunduğu kaynakların anahtarları (`found_in_keys`) ve kaydın kendi
+#   alıntılarından bulunduğu iddiaların kimlikleri (`found_in_claims`). Numara değil anahtar: kaynak sırası sonradan
+#   değişse de (14a `sources_added`) bağ aynı sayfayı gösterir (düzeltme turu 1, yönetici kararı 2);
+# - `answer_links`: `content.answers` maddesi düz metin ya da `{"q", "claims"}` / `{"q", "inferred_from"}` nesnesi olabilir.
+# Üçü yalnız okuma eki açıkken (`K1Ayarlari.okuma_eki`) ilan edilir ve yazılır.
+OKUMA_EKI_EKLERI = ("source_snapshots", "absence_notes", "answer_links")
+KAYIT_EKLERI = ("machine_not_covered", *OKUMA_EKI_EKLERI)
 
 
 def makine_kapsami(sonuc):
@@ -238,10 +289,185 @@ def makine_kapsami(sonuc):
     return {"machine_not_covered": adlar[:12]}
 
 
-def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
-    """Kapıdan `yayimlanir` almış adaydan kamu kaydı. Sunucu alanları istemciden gelmez; hepsi burada üretilir."""
+_ZAMAN_Z = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
+
+def kaynak_anligi_eki(sonuc):
+    """alpha.15: kapı sonucundaki kaynak anlıkları → `{"source_snapshots": [{address_key, fetched_at, visible_text_sha256}]}`.
+    Adres yerine adres anahtarı yazılır (ajan görünümünün sunucu bloğunda katkıcı metni olmasın); eski sonuçta boş."""
+    anliklar = sonuc.get("kaynak_anliklari") if isinstance(sonuc, dict) else None
+    if not isinstance(anliklar, list) or not anliklar:
+        return {}
+    satirlar, gorulen = [], set()
+    for anlik in anliklar:
+        if not isinstance(anlik, dict):
+            continue
+        anahtar = _adres_anahtari(anlik.get("url"))
+        zaman, ozet = anlik.get("getirilme_zamani"), anlik.get("gorunur_metin_sha256")
+        if (anahtar and anahtar not in gorulen and isinstance(zaman, str) and _ZAMAN_Z.fullmatch(zaman)
+                and isinstance(ozet, str) and _OZET.fullmatch(ozet)):
+            gorulen.add(anahtar)
+            satirlar.append({"address_key": anahtar, "fetched_at": zaman, "visible_text_sha256": ozet})
+    return {"source_snapshots": satirlar} if satirlar else {}
+
+
+def _anahtarlar(adresler):
+    return list(dict.fromkeys(a for a in map(_adres_anahtari, adresler if isinstance(adresler, list) else []) if a))
+
+
+def yokluk_denetimi_eki(aday, sonuc, iddia_kimlikleri):
+    """alpha.15: `not_in_sources` taşıyan adayda kapının araması → `{"absence_checks": [...]}`; yoksa boş. Kaynaklar adres
+    anahtarıyla, alıntı eşleşmeleri iddia kimliğiyle yazılır (yönetici kararı 2: değişebilen sıra numarası kayda girmez)."""
+    if not isinstance(aday.get("not_in_sources"), list) or not aday["not_in_sources"]:
+        return {}
+    satirlar = sonuc.get("yokluk_denetimi") if isinstance(sonuc, dict) else None
+    temiz = []
+    for s in satirlar or []:
+        if not (isinstance(s, dict) and type(s.get("item")) is int and type(s.get("terms")) is int):
+            continue
+        temiz.append({"item": s["item"], "terms": s["terms"], "checked_keys": _anahtarlar(s.get("checked_urls")),
+                      "found_in_keys": _anahtarlar(s.get("found_urls")),
+                      "found_in_claims": [iddia_kimlikleri[n] for n in s.get("found_in_claims") or []
+                                          if type(n) is int and 0 <= n < len(iddia_kimlikleri)]})
+    return {"absence_checks": temiz}
+
+
+# ---------------------------------------------------------------------- uzantı yolu (alpha.15, dilim 14a)
+# Tasarım `isler/uzanti-yolu-20261111/tasarim.md` §2b–§2f. Uzantı yalnız ekler: birleşik aday üst kaydın kamu kaydından kurulur
+# (özel aday metni kullanılmaz), üst iddialar aynen ve aynı sırada kalır, yeni iddialar sona eklenir. Birleştirme kapı anında
+# üstün güncel sürümüyle yapılır (otomatik yeniden taban); katkıcının numaraları gördüğü sürüme göredir ve burada çevrilir.
+UZANTI_EKLERI = ("lineage",)
+TUM_KAYIT_EKLERI = (*KAYIT_EKLERI, *UZANTI_EKLERI)
+
+
+def kayittan_aday(kayit):
+    """Yayımlı kamu kaydından kapının beklediği aday biçimi (içerik + iddialar + köken + hak)."""
+    aday = {"kind": kayit["kind"], "schema_version": 4, "language": kayit["language"],
+            **copy.deepcopy(kayit["content"]), "claims": []}
+    for iddia in kayit["claims"]:
+        yeni = {"text": iddia["text"], "quote": iddia["evidence"]["quote"], "source_url": iddia["evidence"]["source_url"],
+                "checked_on": iddia["evidence"]["checked_on"]}
+        for alan in ("claim_type", "applies_to"):
+            if iddia.get(alan) is not None:
+                yeni[alan] = copy.deepcopy(iddia[alan])
+        aday["claims"].append(yeni)
+    aday["provenance"] = copy.deepcopy(kayit["provenance"])
+    aday["rights"] = {"own_text_license": kayit["rights"]["own_text_license"]}
+    return aday
+
+
+def _bag_cevir(oge, gorulen_sayi, guncel_sayi):
+    """`answers_added` bağ numaraları katkıcının gördüğü sürüme göredir: 1..P o sürümün iddiaları, P+k uzantının k'inci
+    yeni iddiası. Güncel sürümde (C iddia; ilk P'si aynı) P+k → C+k."""
+    if not isinstance(oge, dict):
+        return copy.deepcopy(oge)
+    yeni = copy.deepcopy(oge)
+    for alan in okuma_eki_modulu.CEVAP_BAG_ALANLARI:
+        if isinstance(yeni.get(alan), list):
+            yeni[alan] = [n if type(n) is not int or n <= gorulen_sayi else guncel_sayi + (n - gorulen_sayi)
+                          for n in yeni[alan]]
+    return yeni
+
+
+def uzanti_birlestir(ust, gorulen, ek):
+    """(birleşik aday, bilgi). `ust` üst kaydın güncel sürümü, `gorulen` katkıcının gördüğü sürüm (güncelin atası; iddiaları
+    güncelin ilk iddialarıdır), `ek` fark paketi (biçimi `uzanti_kurallari.on_denetim`'den geçmiş).
+
+    - iddialar: üstünküler aynen, sonra yenileri;
+    - `sources_added` raporun `sources` listesinin sonuna (aynı adres bir kez);
+    - `answers_added` `answers` sonuna, bağ numaraları güncel sürüme çevrilerek;
+    - `not_covered_remove` gördüğü sürümün sırasıdır; madde metniyle güncel listeden düşer (başkası zaten kaldırdıysa yok
+      sayılır); `not_covered_add` sona eklenir;
+    - üstteki `not_in_sources[].checked` kaynak numaraları kaynak sırası değiştiyse aynı adresi gösterecek biçimde yeniden
+      numaralanır (14r2 yönetici kararı 2: bağ sayfaya bağlıdır, sıraya değil)."""
+    aday = kayittan_aday(ust)
+    ust_sira = okuma_eki_modulu.paket_kaynak_sirasi(aday)
+    gorulen_sayi, guncel_sayi = len(gorulen["claims"]), len(ust["claims"])
+    aday["claims"] = aday["claims"] + copy.deepcopy(ek["claims"])
+    if ek.get("sources_added"):
+        kaynaklar = list(aday.get("sources") or []) if isinstance(aday.get("sources"), list) else []
+        adresler = {k.get("url") for k in kaynaklar if isinstance(k, dict)}
+        for kaynak in ek["sources_added"]:
+            adres = kaynak.get("url") if isinstance(kaynak, dict) else None
+            if adres is None or adres not in adresler:
+                kaynaklar.append(copy.deepcopy(kaynak))
+                adresler.add(adres)
+        aday["sources"] = kaynaklar
+    if ek.get("answers_added"):
+        onceki = list(aday.get("answers") or []) if isinstance(aday.get("answers"), list) else []
+        aday["answers"] = onceki + [_bag_cevir(oge, gorulen_sayi, guncel_sayi) for oge in ek["answers_added"]]
+    kaldirilan = []
+    if ek.get("not_covered_remove") or ek.get("not_covered_add"):
+        liste = list(aday.get("not_covered") or [])
+        gorulen_liste = (gorulen.get("content") or {}).get("not_covered") or []
+        for sira in sorted(set(ek.get("not_covered_remove") or [])):
+            metin = gorulen_liste[sira]
+            if metin in liste:
+                liste.remove(metin)
+                kaldirilan.append(metin)
+        aday["not_covered"] = liste + copy.deepcopy(ek.get("not_covered_add") or [])
+    yeni_sira = okuma_eki_modulu.paket_kaynak_sirasi(aday)
+    maddeler = aday.get("not_in_sources") if isinstance(aday.get("not_in_sources"), list) else []
+    for madde in maddeler:
+        if isinstance(madde, dict) and isinstance(madde.get("checked"), list):
+            madde["checked"] = [yeni_sira.index(ust_sira[n - 1]) + 1 if type(n) is int and 1 <= n <= len(ust_sira)
+                                and ust_sira[n - 1] in yeni_sira else n for n in madde["checked"]]
+    bilgi = {"ust_surum": ust["version"], "gorulen_surum": gorulen["version"], "ust_iddia": guncel_sayi,
+             "gorulen_iddia": gorulen_sayi, "yeni_iddia": len(ek["claims"]), "kaldirilan_not_covered": kaldirilan}
+    return aday, bilgi
+
+
+def uzanti_hazirla(ek, ust, gorulen, *, okuma_eki=False):
+    """Kapının `uzanti` bağlamı: birleştirilebiliyorsa birleşik aday, değilse ön hatalar (kapı yalnız 10. denetimle reddeder)."""
+    baglam = {"ek": ek, "ust": ust, "gorulen": gorulen, "birlesik": None, "on_hatalar": [], "bilgi": {}}
+    hatalar = uzanti_kurallari.on_denetim(ek, ust, gorulen, adres_anahtari=_adres_anahtari)
+    if hatalar:
+        baglam["on_hatalar"] = hatalar
+        return baglam
+    birlesik, bilgi = uzanti_birlestir(ust, gorulen, ek)
+    if not okuma_eki and okuma_eki_modulu.okuma_ekli_aday_mi(birlesik):
+        baglam["on_hatalar"] = [("uzanti.okuma_eki_kapali", "Üst kayıt ya da uzantı okuma eki alanları (not_in_sources, "
+                                 "not_researched ya da iddiaya bağlı answers) taşıyor; sunucuda okuma eki kapalıyken bu kayıt "
+                                 "uzatılamaz. Bağsız sorularla yeniden önizleyin ya da okuma eki açılınca deneyin.")]
+        return baglam
+    baglam["birlesik"], baglam["bilgi"] = birlesik, bilgi
+    return baglam
+
+
+def soy_eki(ust, ek, *, surum, yol, yayin_saniye):
+    """Kaydın `lineage` eki: sürüm zinciri (güncel sürümün ataları ve kendisi). İddialar yalnız sona eklendiği için her sürümün
+    eklediği iddialar `claims` sayısından çıkar. Değişiklik özeti ve köken katkıcının beyanıdır."""
+    yayin = ust["publication"]
+    surumler = copy.deepcopy((ust.get("lineage") or {}).get("versions")) or [
+        {"version": ust["version"], "published_at": yayin["published_at"], "path": yayin["path"],
+         "human_reviewed": yayin["human_reviewed"], "claims": len(ust["claims"]), "provenance": copy.deepcopy(ust["provenance"])}]
+    surumler.append({"version": surum, "published_at": zaman_metni(yayin_saniye), "path": yol,
+                     "human_reviewed": yol == "moderator", "claims": len(ek["claims"]), "based_on": ust["version"],
+                     "seen_version": ek["extends"]["version"], "change_summary": ek["extends"]["change_summary"],
+                     "provenance": copy.deepcopy(ek["provenance"])})
+    return {"versions": surumler}
+
+
+def uzantili_kayit_mi(kayit):
+    """Kayıt uzantı eki (`lineage`) taşıyor mu."""
+    return isinstance(kayit, dict) and "lineage" in kayit
+
+
+def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin, okuma_eki=False, ust=None, ek=None):
+    """Kapıdan `yayimlanir` almış adaydan kamu kaydı. Sunucu alanları istemciden gelmez; hepsi burada üretilir.
+
+    `okuma_eki=False` (varsayılan): kayıt alpha.14 biçimindedir; kaynak anlığı ve terim araması yazılmaz, okuma ekli aday
+    yayımlanmaz (düzeltme turu 1, yönetici kararı 1).
+
+    Uzantı (14a): `aday` birleşik aday, `ust` üst kaydın güncel sürümü, `ek` fark paketi. Üst iddiaların kimliği ve metni aynen
+    kalır (yalnız alıntının yeniden doğrulandığı zaman tazelenir), yeni iddialar `sha256(id:sürüm:sıra)` alır; `lineage` yazılır."""
     if sonuc["hukum"] != "yayimlanir" or yol not in ("machine_gate", "moderator"):
         raise ValueError("Yalnız kapıdan geçen kayıt yayımlanır.")
+    if not okuma_eki and okuma_eki_modulu.okuma_ekli_aday_mi(aday):
+        raise ValueError("Okuma eki kapalıyken okuma ekli aday yayımlanmaz.")
+    if ust is not None and [(i["text"], i["quote"], i["source_url"]) for i in aday["claims"][:len(ust["claims"])]] != [
+            (i["text"], i["evidence"]["quote"], i["evidence"]["source_url"]) for i in ust["claims"]]:
+        raise ValueError("Uzantı üst kaydın iddialarını değiştiremez.")
     satirlar, gorunur_surum = _alinti_satirlari(sonuc)
     iddialar = []
     for sira, iddia in enumerate(aday["claims"]):
@@ -249,7 +475,8 @@ def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
         if not aynen:
             raise ValueError("Kapıdan geçen kayıtta her alıntı aynen bulunmuş olmalı.")
         iddialar.append({
-            "id": hashlib.sha256(f"{kayit_id}:{surum}:{sira}".encode("ascii")).hexdigest()[:32],
+            "id": (ust["claims"][sira]["id"] if ust is not None and sira < len(ust["claims"])
+                   else hashlib.sha256(f"{kayit_id}:{surum}:{sira}".encode("ascii")).hexdigest()[:32]),
             "text": iddia["text"],
             "claim_type": iddia.get("claim_type"),
             "applies_to": iddia.get("applies_to"),
@@ -270,7 +497,7 @@ def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
             "claim_review": {"state": "not_reviewed", "reviewed_at": None},
             "evidence_state": "current",
         })
-    return {
+    kayit = {
         "schema": KAYIT_SEMASI,
         "schema_version": 4,
         "contract": SOZLESME,
@@ -292,12 +519,17 @@ def kayit_olustur(aday, sonuc, *, kayit_id, surum, yol, yayin_saniye, origin):
             "gate": {"version": sonuc["denetim_surumu"], "ran_at": sonuc["calisma_zamani"],
                      "input_sha256": sonuc["girdi"]["paket_sha256"], "checks_passed": sonuc["gecilen_denetimler"],
                      "warnings": sonuc["uyarilar"], "fields_not_tied_to_sources": sonuc["kaynaga_baglanmayan_alanlar"],
-                     **makine_kapsami(sonuc)},
+                     **makine_kapsami(sonuc),
+                     **(kaynak_anligi_eki(sonuc) if okuma_eki else {}),
+                     **(yokluk_denetimi_eki(aday, sonuc, [i["id"] for i in iddialar]) if okuma_eki else {})},
             "label": etiket(sonuc, yol),
         },
         "corrections": {"open": 0, "latest_public_version": None, "public_note": None},
         "link": f"{origin}/api/community/v4/records/{kayit_id}/v/{surum}",
     }
+    if ust is not None:
+        kayit["lineage"] = soy_eki(ust, ek, surum=surum, yol=yol, yayin_saniye=yayin_saniye)
+    return kayit
 
 
 def kaldirma_izi(kayit_id, surum, neden, saniye):
@@ -306,16 +538,75 @@ def kaldirma_izi(kayit_id, surum, neden, saniye):
             "state": neden, "removed_at": zaman_metni(saniye)}
 
 
-def yetenekler(otomatik_yayin_ayari):
-    """İstemcinin ön görüşmesi. Adresle bulma her tür için (K1 ikinci dilim); kaynak kontrol ucu bu dilimde yok."""
-    return {"schema": YETENEK_SEMASI, "schema_version": 1, "contract": SOZLESME, "record_schema_version": 4,
-            "kinds": list(TURLER), "submissions": True, "auto_publish": otomatik_yayin_ayari,
-            "quote_rule": ALINTI_KURALI, "quote_basis": ALINTI_DAYANAGI, "own_text_licenses": list(LISANSLAR),
-            "lookup": True, "coverage": True, "topics": True, "source_checks": False, "record_extensions": list(KAYIT_EKLERI),
-            "does_not_prove_tr": KANITLAMADIKLARI}
+def yetenekler(otomatik_yayin_ayari, okuma_eki=False, okuma_ekli_kayit_var=False, uzanti=False, uzantili_kayit_var=False):
+    """İstemcinin ön görüşmesi. Adresle bulma her tür için (K1 ikinci dilim); kaynak kontrol ucu bu dilimde yok. Okuma eki
+    kapalıyken (varsayılan) `record_extensions` ve `does_not_prove_tr` alpha.14'teki gibidir.
+
+    Düzeltme turu 2 (kabul Y2): `record_extensions` "kayıtlarda bulunabilecek ekler" demektir (katı okur kayıttaki eki buna
+    göre kabul eder). Kip bir süre açık kalıp kapatıldıysa yayımlanmış okuma ekli kayıtlar sunulmaya devam eder; depoda böyle
+    bir görünür kayıt varken (`okuma_ekli_kayit_var`) ekler ilan edilmeye devam eder. Yeni alanın gönderimde kabul edilip
+    edilmediği bu listeden değil gönderim yanıtından (`422 reading_extensions_off`) anlaşılır. Depoda okuma ekli kayıt yoksa
+    kapalı kipin yanıtı alpha.14 ile bayt bayt aynıdır.
+
+    Uzantı yolu (14a): açıkken `extensions: true` ve `lineage` eki ilan edilir; kapalıyken depoda `lineage` taşıyan görünür
+    kayıt varsa (`uzantili_kayit_var`) yalnız `lineage` eki ilan edilir (o kayıtlar sunulmaya devam eder), `extensions` yazılmaz."""
+    ilan = okuma_eki or okuma_ekli_kayit_var
+    uzanti_ilan = uzanti or uzantili_kayit_var
+    govde = {"schema": YETENEK_SEMASI, "schema_version": 1, "contract": SOZLESME, "record_schema_version": 4,
+             "kinds": list(TURLER), "submissions": True, "auto_publish": otomatik_yayin_ayari,
+             "quote_rule": ALINTI_KURALI, "quote_basis": ALINTI_DAYANAGI, "own_text_licenses": list(LISANSLAR),
+             "lookup": True, "coverage": True, "topics": True, "source_checks": False,
+             "record_extensions": (list(KAYIT_EKLERI) if ilan else ["machine_not_covered"])
+             + (list(UZANTI_EKLERI) if uzanti_ilan else []),
+             "does_not_prove_tr": (KANITLAMADIKLARI_OKUMA_EKI if ilan else KANITLAMADIKLARI)
+             + ([KANITLAMADIKLARI_UZANTI] if uzanti_ilan else [])}
+    if uzanti:
+        govde["extensions"] = True
+    return govde
 
 
 AJAN_SEMASI = "devtrellis-agent-view"
+
+
+def insan_incelemesi(kayit):
+    """Kaydın görünümlerde sunulan insan incelemesi. Düzeltme turu 1 (kabul Ö3): uzantıyla kurulmuş kayıtta bütün sürümlerin
+    VE'si; yalnız son sürüm moderatörden geçti diye eski sürümlerin iddiaları "insan inceledi" diye sunulmaz. Kayıttaki
+    `publication.human_reviewed` son yayını anlatmaya devam eder (kayıt gövdesi değişmez)."""
+    if uzantili_kayit_mi(kayit):
+        return all(surum.get("human_reviewed") is True for surum in kayit["lineage"]["versions"])
+    return kayit["publication"]["human_reviewed"]
+
+
+def birlesik_koken(kayit):
+    """Görünümlerde sunulan köken beyanı. Düzeltme turu 1 (kabul Ö3): uzantıyla kurulmuş kayıtta bütün sürümlerin beyanının
+    birleşimi (köken aynıysa o, farklıysa `mixed`; aşamalar sırayla, yinelenmeden, şema sınırı 20). Kayıttaki `provenance` ilk
+    sürümünkidir (tasarım §2b); eski köprüler (alpha.13/14) yalnız `declared.provenance` okuduğu için uzantının modelini ancak
+    böyle görür. Sürüm başına beyan `declared.provenance_by_version`'da."""
+    if not uzantili_kayit_mi(kayit):
+        return kayit["provenance"]
+    beyanlar = [s.get("provenance") for s in kayit["lineage"]["versions"] if isinstance(s.get("provenance"), dict)]
+    kokenler = list(dict.fromkeys(b.get("origin") for b in beyanlar))
+    asamalar = []
+    for beyan in beyanlar:
+        for asama in beyan.get("stages") or []:
+            if asama not in asamalar:
+                asamalar.append(copy.deepcopy(asama))
+    return {"origin": kokenler[0] if len(kokenler) == 1 else "mixed", "stages": asamalar[:20]}
+
+
+def _genisleme_gorunumu(kayit):
+    """Uzantıyla kurulmuş kayıtta sunucu bloğuna yalnız makine alanları: hangi sürüm hangi iddiaları (1'den, kayıt sırası)
+    ekledi, yol ve zaman. Değişiklik özeti katkıcı metnidir; sunucu bloğuna girmez (kayıtta `lineage`)."""
+    if not uzantili_kayit_mi(kayit):
+        return {}
+    satirlar, bas = [], 1
+    for surum in kayit["lineage"]["versions"]:
+        sayi = surum["claims"]
+        satirlar.append({"version": surum["version"], "added_claims": [bas, bas + sayi - 1] if sayi else [],
+                         "path": surum["path"], "published_at": surum["published_at"],
+                         "human_reviewed": surum["human_reviewed"]})
+        bas += sayi
+    return {"extended": {"from_version": satirlar[0]["version"], "versions": satirlar}}
 
 
 def ajan_gorunumu(kayit):
@@ -333,10 +624,12 @@ def ajan_gorunumu(kayit):
         "server": {
             "id": kayit["id"], "kind": kayit["kind"], "version": kayit["version"], "language": kayit["language"],
             "content_sha256": kanonik_ozet(guvenilmeyen), "published_at": yayin["published_at"], "path": yayin["path"],
-            "human_reviewed": yayin["human_reviewed"], "gate_version": yayin["gate"]["version"],
+            "human_reviewed": insan_incelemesi(kayit), "gate_version": yayin["gate"]["version"],
             "gate_ran_at": yayin["gate"]["ran_at"], "checks_passed": yayin["gate"]["checks_passed"],
             "warnings": yayin["gate"]["warnings"], "fields_not_tied_to_sources": yayin["gate"]["fields_not_tied_to_sources"],
-            **({"machine_not_covered": yayin["gate"]["machine_not_covered"]} if "machine_not_covered" in yayin["gate"] else {}),
+            **{ek: yayin["gate"][ek] for ek in ("machine_not_covered", "source_snapshots", "absence_checks")
+               if ek in yayin["gate"]},
+            **_genisleme_gorunumu(kayit),
             "label": yayin["label"], "quote_rights": kayit["rights"]["quotes"], "corrections": kayit["corrections"],
             "link": kayit["link"],
             "quote_matches": [{"claim_id": i["id"], "state": i["quote_match"]["state"],
@@ -345,10 +638,12 @@ def ajan_gorunumu(kayit):
                                "normalization_version": i["evidence"]["normalization_version"]} for i in kayit["claims"]],
         },
         "declared": {
-            "provenance": kayit["provenance"], "generated_at": icerik.get("generated_at"),
+            "provenance": birlesik_koken(kayit), "generated_at": icerik.get("generated_at"),
             "own_text_license": kayit["rights"]["own_text_license"],
             "claims": [{"claim_id": i["id"], "checked_on": i["evidence"]["checked_on"], "claim_type": i["claim_type"],
                         "applies_to": i["applies_to"]} for i in kayit["claims"]],
+            **({"provenance_by_version": [{"version": s["version"], "provenance": s["provenance"]}
+                                          for s in kayit["lineage"]["versions"]]} if uzantili_kayit_mi(kayit) else {}),
         },
         "untrusted": guvenilmeyen,
     }
@@ -726,8 +1021,24 @@ def arama_karti(kayit):
                                                  for i in iddialar))
     if icerik.get("recommendations"):
         bolumler.append("## Recommendations\n" + "\n".join(f"- {satir}" for satir in icerik["recommendations"]))
-    if icerik.get("not_covered"):
-        bolumler.append("## Limits\n" + "\n".join(f"- {satir}" for satir in icerik["not_covered"]))
+    sinirlar = [f"- {satir}" for satir in icerik.get("not_covered") or []]
+    # alpha.15 yokluk notları eski görünümde de kaybolmasın (alpha.13 köprüsü ve arayüz bu gövdeyi okur); katkıcının beyanıdır.
+    # Aranan sayfalar sunucunun yayımda çözdüğü adres anahtarlarından (yönetici kararı 2; sıra kaysa da aynı sayfa).
+    adres_of = {i["evidence"].get("address_key"): i["evidence"]["source_url"] for i in iddialar}
+    for kaynak in icerik.get("sources") or []:
+        if isinstance(kaynak, dict) and isinstance(kaynak.get("url"), str):
+            adres_of.setdefault(_adres_anahtari(kaynak["url"]), kaynak["url"])
+    denetim_satirlari = {s.get("item"): s for s in yayin["gate"].get("absence_checks") or [] if isinstance(s, dict)}
+    for konum, madde in enumerate(icerik.get("not_in_sources") or []):
+        if isinstance(madde, dict) and isinstance(madde.get("item"), str):
+            anahtarlar = (denetim_satirlari.get(konum) or {}).get("checked_keys") or []
+            adresler = [adres_of[k] for k in anahtarlar if adres_of.get(k)]
+            sinirlar.append(f"- Not stated in the cited pages (contributor checked {', '.join(adresler) or 'the cited pages'}; "
+                            f"not verified): {madde['item']}")
+    sinirlar += [f"- Not researched (contributor): {satir}" for satir in icerik.get("not_researched") or []
+                 if isinstance(satir, str)]
+    if sinirlar:
+        bolumler.append("## Limits\n" + "\n".join(sinirlar))
     govde = "\n\n".join(bolumler)
     if len(govde) > _GOVDE_SINIRI:
         govde = govde[:_GOVDE_SINIRI].rsplit("\n", 1)[0]
@@ -750,10 +1061,12 @@ def arama_karti(kayit):
             "engagement": {"web_views": 0, "mcp_reads": 0, "helpful": 0, "used_in_research": 0, "needs_update": 0,
                            "disputed": 0},
             "submission_type": "anonymous",
-            "record_type": "v4", "kind": kayit["kind"], "human_reviewed": yayin["human_reviewed"],
-            "publication": {"path": yayin["path"], "human_reviewed": yayin["human_reviewed"], "label": yayin["label"],
+            "record_type": "v4", "kind": kayit["kind"], "human_reviewed": insan_incelemesi(kayit),
+            "publication": {"path": yayin["path"], "human_reviewed": insan_incelemesi(kayit), "label": yayin["label"],
                             "policy_version": yayin["policy_version"], "gate_version": yayin["gate"]["version"]},
-            "answers": list(icerik.get("answers") or []), "link": kayit["link"]}
+            # alpha.15 cevap bağı: v1 kart biçiminde (arama dizini, eski köprü, arayüz) `answers` hep soru metni listesidir.
+            "answers": [soru for soru in map(okuma_eki_modulu.cevap_sorusu, icerik.get("answers") or []) if soru],
+            "link": kayit["link"]}
 
 
 def arama_belgesi(kart):

@@ -427,6 +427,16 @@
       : "Cevap yeterliliği bilgisi yok; araştırmanın kapsamını ve kaynaklarını kontrol et.")));
     return section;
   }
+  // v4 kaydının kanıt durumu: kapının kendi etiketindeki alıntı sayısı (sunucu metni, katkıcı metni değil). Etiket bu biçimde
+  // değilse (ağsız kapı, eski kayıt) null döner ve kart eski metni gösterir.
+  function gateQuoteCount(card) {
+    const label = card?.publication?.label?.en;
+    const match = typeof label === "string" ? /quotes found in source for (\d{1,3}) of (\d{1,3}) claims/.exec(label) : null;
+    if (!match) return null;
+    const found = Number(match[1]), total = Number(match[2]);
+    return total > 0 && found <= total ? {found, total} : null;
+  }
+
   function contributionCard(card, showSearchMatch = false) {
     const packet = card.packet;
     const article = node("article", "card");
@@ -454,9 +464,11 @@
       const facts = node("dl", "card-research-facts");
       const evidence = packet.provenance?.modified ? "Denetlenmemiş" :
         ({verified: "Kaynak eşleşmesi kaydedilmiş", unverified: "Denetlenmemiş", insufficient: "Yetersiz dayanak", unknown: "Bilinmiyor"}[packet.provenance?.evidence_status] || "Bilinmiyor");
+      const quotes = v4 ? gateQuoteCount(card) : null;
       for (const [label, value] of [[t("Araştırma sorusu"), packet.provenance?.question || packet.title],
-        [t("Kartın kanıt durumu"), t(evidence)],
-        [t("Araştırmanın üretim tarihi"), packet.provenance?.generated_at ? dateLabel(packet.provenance.generated_at) : t("Üretim tarihi kaydedilmemiş")],
+        [t("Kartın kanıt durumu"), quotes ? t("{found}/{total} alıntı kaynakta bulundu (makine denetimi)", quotes) : t(evidence)],
+        // v4 kartı üretim tarihini taşımaz (kayıtta `content.generated_at` olsa da); "kaydedilmemiş" demek yanlış olur, satır yok.
+        ...(v4 ? [] : [[t("Araştırmanın üretim tarihi"), packet.provenance?.generated_at ? dateLabel(packet.provenance.generated_at) : t("Üretim tarihi kaydedilmemiş")]]),
         [t("Güncellendi"), dateLabel(packet.updated_at)]]) {
         const row = node("div"); row.append(node("dt", "", label), node("dd", "", value)); facts.append(row);
       }
@@ -638,7 +650,7 @@
     const address = new URL("http://127.0.0.1:8781/");
     if (card) address.searchParams.set("community_card", card.id);
     const actions = node("div", "dialog-actions");
-    actions.append(link(t("Çalışan yerel uygulamamı aç"), address.href, "button"), link(t("Kurulum adımlarını aç"), "https://github.com/nihatbirbudak/devtrellis#installation", "button secondary"), button(t("Kapat"), () => dialog.close(), "button secondary"));
+    actions.append(link(t("Çalışan yerel uygulamamı aç"), address.href, "button"), link(t("Kurulum adımlarını aç"), "https://github.com/nihatbirbudak/devtrellis#install", "button secondary"), button(t("Kapat"), () => dialog.close(), "button secondary"));
     body.append(node("p", "field-help", t("Varsayılan yerel adres: 127.0.0.1:8781. Uygulama açılmıyorsa önce kurulum adımlarını tamamla ve programı çalıştır.")));
     dialog.append(header, body, actions);
     dialog.addEventListener("close", () => dialog.remove());

@@ -4,7 +4,7 @@
 
 The community is a separate process and database. Its main flow is **find existing research, reuse useful findings, then optionally contribute new research anonymously**. Public search, reading and reuse need no account or model call. Research happens in the personal application or the user's AI tool, with their own provider access. Only an explicitly approved contribution is sent to the community for moderation.
 
-The service does not store model credentials, generate research or review submissions automatically. It supports **one application process** with SQLite and a small moderated pilot. An operator-created moderator account manages the normal review queue; reader and anonymous contributor accounts are not required. Invited accounts and manual file exchange remain optional paths.
+The service does not store model credentials or generate research. A machine gate checks K1 v4 submissions (quotes found in the cited pages, secrets, agent-directed text, package names); with automatic publication on, passing records go live without a person and are labelled "not human-reviewed" (see [docs/community-k1.md](docs/community-k1.md)). It supports **one application process** with SQLite and a small moderated pilot. An operator-created moderator account manages the normal review queue; reader and anonymous contributor accounts are not required. Invited accounts and manual file exchange remain optional paths.
 
 ## Public pages and private requests
 
@@ -31,7 +31,7 @@ Schema-3 research contributions preserve parent report identifiers, exact public
 
 ## Reader and contributor flow
 
-1. Search published research from the personal application or the [local MCP tools](MCP.md). Search terms go to the community, so use a short query without private information. Query words are normalized and matched together regardless of order; this is text search, not semantic matching.
+1. Search published research from the personal application or the [local MCP tools](MCP.md). Search terms go to the community, so use a short query without private information. Query words are normalized; when the server supports it, results are ranked by how many query words they contain, field weights and bm25 (an older server requires every word). This is text search, not semantic matching.
 2. Read the report's sources, dates, model and limitations. Import a suitable report without calling a model. A published report is not a guarantee of truth or current evidence; investigate gaps when necessary. Reuse can reduce repeated work, but does not guarantee token savings.
 3. Complete new research locally. Choose the optional community action, review the exact text, sources, model information, destination and **CC BY 4.0** permission used by the direct UI, then explicitly confirm. There is no account or manual JSON transfer in this path. An external report sent through MCP preserves the author's chosen CC BY 4.0 or CC0 1.0 permission in its exact preview; submit only your own report or text you have permission to share.
 4. The local application submits that preview to `https://devtrellis.org`. It starts as private `pending` content. A moderator can publish or reject it; the local application can read its status and withdraw it.

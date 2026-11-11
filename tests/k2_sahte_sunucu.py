@@ -92,7 +92,7 @@ def synthetic_agent_view(url, claims, *, record_id=None, version=1, language="en
                    "label": {"tr": "İnsan incelemedi.", "en": "Not reviewed by a person; quotes matched by machine."},
                    "rights": {"own_text_license": "CC0-1.0", "quotes": {"basis": "short_quote", "max_chars": 300}},
                    "corrections": {"open": 0, "latest_public_version": None, "public_note": None},
-                   "link": f"https://devtrellis.example/api/community/v4/records/{record_id}/v/{version}",
+                   "link": f"https://devtrellis.org/api/community/v4/records/{record_id}/v/{version}",
                    "quote_matches": [{"claim_id": row["id"], "state": "exact", "quote_verified_at": checked_on + "T12:59:00Z",
                                       "quote_hash": _marker("quote", row["quote"]), "address_key": key,
                                       "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1"} for row in rows]},
