@@ -48,9 +48,16 @@ jobs:
         run: node --test tests/*.cjs
 
   mcp:
-    name: Optional MCP protocol
-    runs-on: ubuntu-latest
+    name: Optional MCP protocol / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     env:
       PYTHONUTF8: '1'
       PYTHONDONTWRITEBYTECODE: '1'
@@ -66,4 +73,14 @@ jobs:
       - name: Check SDK and protocol
         run: |
           python -m pip check
-          python -m unittest tests.test_community_mcp tests.test_mcp_yerel tests.test_kaynak_hafizasi_kopru
+          # SDK'ya bağlı testler bu işte atlanamaz. Modül listesi: sabit dört modül + find_spec("mcp") koşulu olan her test dosyası.
+          python - <<'PY'
+          import pathlib, sys, unittest
+          fixed = {"tests.test_community_mcp", "tests.test_mcp_yerel", "tests.test_kaynak_hafizasi_kopru", "tests.test_k2_istemci"}
+          found = {f"tests.{p.stem}" for p in pathlib.Path("tests").glob("test_*.py")
+                   if 'find_spec("mcp")' in p.read_text(encoding="utf-8")}
+          names = sorted(fixed | found)
+          result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(names))
+          print("modules:", " ".join(names), "| run:", result.testsRun, "| skipped:", len(result.skipped))
+          sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
+          PY
