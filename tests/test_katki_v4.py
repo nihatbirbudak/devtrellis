@@ -869,11 +869,14 @@ class AdresleBulma(K1Taban):
             self.assertTrue(all(c["applies_to"] is None for c in gorunum["declared"]["claims"]))
             bakis = kopru.SourceLookup(client=None)
             bakis.fetch = lambda key, params, y=yanit: (y.status_code, kopru.validate_lookup(y.status_code, y.json(), key))
-            sonuc = bakis.one(1, url, "en", {"product": None, "version": None}, None, True, "card")
+            cevap = bakis.lookup(url, check_server=True)
+            sonuc, kayit = cevap["results"][0], cevap["records"][0]
             self.assertEqual(sonuc["result"], "found", sonuc)
-            blok = json.loads(sonuc["card"]["untrusted"].split("\n")[1])
-            self.assertGreaterEqual(len(blok["claims"]), 1)
-            self.assertNotIn("applies_to", sonuc["card"]["declared"])  # boş kapsam yazılmaz (alpha.13a kompakt biçim)
+            self.assertEqual(kayit["record"], rapor + "@1")
+            # alpha.14r1: kaydın bütün görünümü; iki adreste de bütün iddialar (adres süzgeci yok).
+            blok = json.loads(kayit["untrusted"].split("\n")[1])
+            self.assertEqual(len(blok["claims"]), len(gorunum["untrusted"]["claims"]))
+            self.assertNotIn("applies_to", kayit["declared"])  # boş kapsam yazılmaz (alpha.13a kompakt biçim)
 
     def test_serbest_metin_kapsamli_rapor_urun_ve_surum_verilince_gizlenmez(self):
         """alpha.12 kabulü orta bulgu 1: yapılı kapsamı olmayan (canlı biçim) rapor `product`/`version` verilince de bulunur;
@@ -896,7 +899,7 @@ class AdresleBulma(K1Taban):
         yanit = self.bak(product=kopru.product_slug("GitHub"))
         bakis = kopru.SourceLookup(client=None)
         bakis.fetch = lambda key, params, y=yanit: (y.status_code, kopru.validate_lookup(y.status_code, y.json(), key))
-        sonuc = bakis.one(1, KAYNAK_1, "en", {"product": "github", "version": None}, None, True, "card")
+        sonuc = bakis.lookup(KAYNAK_1, expected_product="github", check_server=True)["results"][0]
         self.assertEqual((sonuc["result"], sonuc["version_match"], sonuc["answer_eligible"]), ("found", "unspecified", True))
 
     def test_k2_read_research_ve_kullanim_v4_kaydinda_502_vermez(self):

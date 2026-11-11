@@ -258,6 +258,19 @@ class FakeHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return None
             return self.send(200, body, etag)
+        record = re.fullmatch(r"/api/platform/community/v4-records/([A-Za-z0-9_-]{1,128})", parts.path)
+        if record:
+            # alpha.14r1: yerel uygulamanın v4 okuma ucu (read_research ve arama kartı); ajan görünümü kütüphanedeki karttan.
+            version = parse_qs(parts.query).get("version", [None])[0]
+            for card in library.cards.values():
+                server = card.get("server") or {}
+                if (card.get("schema") == "devtrellis-agent-view" and server.get("id") == record.group(1)
+                        and (version is None or str(server.get("version")) == version)):
+                    return self.send(200, {"id": server["id"], "version": server["version"], "record_type": "v4",
+                                           "kind": server.get("kind"), "human_reviewed": server.get("human_reviewed"),
+                                           "publication": {"path": server.get("path")}, "report_url": server.get("link"),
+                                           "agent_view": card})
+            return self.send(404, {"detail": "Unknown record"})
         match = re.fullmatch(r"/api/platform/community/sources/([0-9a-f]{64})", parts.path)
         if match:
             query = parse_qs(parts.query)
