@@ -1,0 +1,798 @@
+{
+ "claims": [
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "dcf0c57b77ed6fe5b2a609593050e7e63fd735430cc9c6269ea7b4f168958114",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The free-threaded build of Python is now supported and no longer experimental. This is the start of phase II where free-threaded Python is officially supported but still optional.",
+    "quote_hash": "921b81eccdb13831005b994247fbfff376c288f07da2d1e7e0100a0cf803ddf2",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/whatsnew/3.14.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "24a33487fdf5dca5b9de18559a42ca9d",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "In Python 3.14 the free-threaded build is supported and no longer experimental; this starts phase II, where it is officially supported but still optional."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "dcf0c57b77ed6fe5b2a609593050e7e63fd735430cc9c6269ea7b4f168958114",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Any decision to transition to phase III, with free-threading as the default or sole build of Python is still undecided, and dependent on many factors both within CPython itself and the community.",
+    "quote_hash": "c34dcfee1418eff013dc5652031d4ca05cba0a358970f59b0e842f6e38d85fbe",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/whatsnew/3.14.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "adcc7c2f551dd86e4add1f622c0eec40",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Whether to move to phase III, with free-threading as the default or only build, is still undecided."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "dcf0c57b77ed6fe5b2a609593050e7e63fd735430cc9c6269ea7b4f168958114",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The performance penalty on single-threaded code in free-threaded mode is now roughly 5-10%, depending on the platform and C compiler used.",
+    "quote_hash": "5ff08cca02e14625c64502cbeac666cb864073d397f39f255271298d0683ff74",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/whatsnew/3.14.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "d15f35bedc6c28545c5afdafce957de0",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "What's New in 3.14 puts the single-threaded performance penalty of free-threaded mode at roughly 5-10%, depending on platform and C compiler."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "1f908e032f9f5a441061f4b18ad1549c798ecacefca1dc3e6fad3dffe9fb9eae",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Phase II would make the free-threaded build officially supported but still optional, and phase III would make the free-threaded build the default.",
+    "quote_hash": "4647fea26bee000d91d27bcc4f62a9896914a0ba9f0448889f09dd001a6550a0",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://peps.python.org/pep-0779/",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "603f65080ae42cd1c7efae12e66f671e",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "PEP 779 defines three phases: phase I experimental, phase II officially supported but optional, phase III free-threaded build as the default."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "1f908e032f9f5a441061f4b18ad1549c798ecacefca1dc3e6fad3dffe9fb9eae",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "It’s not a simple drop-in solution – some code will have to be redesigned to make the most of the new capability, as well as avoid performance pitfalls",
+    "quote_hash": "b2da2cbd2b9fda6c2499f5dec7d9d78f207c23eaab459ab4184351e7b5f3ef7e",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://peps.python.org/pep-0779/",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "ec0fa1996b93ea8f6c5b5489c90f869d",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "PEP 779 says free-threading is not a simple drop-in solution: some code must be redesigned to benefit and to avoid performance pitfalls."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "1f908e032f9f5a441061f4b18ad1549c798ecacefca1dc3e6fad3dffe9fb9eae",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "free-threaded Python currently sees about 15-20% higher memory use (geometric mean, as measured by pyperformance).",
+    "quote_hash": "d2562d80be8a873728aa3192eab185b542888c4dc2045b54a592cf31e4a85374",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://peps.python.org/pep-0779/",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "fc4f3f7d31a4b2bd8f41ed253f277447",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "PEP 779 reported about 15-20% higher memory use for free-threaded Python (geometric mean, pyperformance) at the time it was written."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Free-threaded execution allows for full utilization of the available processing power by running threads in parallel on available CPU cores.",
+    "quote_hash": "d9f267d8174d27dfb2a1679791a15008c169670075de527b7b71ec3ae2e9f5a2",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "dc7273529e8ae6ec4acb903f148cb9b5",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Free-threaded execution can run threads in parallel on available CPU cores."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "While not all software will benefit from this automatically, programs designed with threading in mind will run faster on multi-core hardware.",
+    "quote_hash": "299be4c6c5203b798c7eb0a4860c0dd5ded7f739fbf72ea77ac4dfc8662e6345",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "d7331e270e1a47cab91750ccd70c09a3",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Not all software benefits automatically; programs designed with threading in mind will run faster on multi-core hardware."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Some third-party packages, in particular ones with an extension module, may not be ready for use in a free-threaded build, and will re-enable the GIL.",
+    "quote_hash": "0ca4b8677bf73d38ea0cea8ac26be85be663169652014e5da5bee10b542f3478",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "728b1ea2bba3dd5f7f8e3e0c3a4743c1",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Some third-party packages, especially those with extension modules, may not be ready for the free-threaded build and will re-enable the GIL."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Starting with Python 3.13, the official macOS and Windows installers optionally support installing free-threaded Python binaries.",
+    "quote_hash": "d6750512920a006d647e770144697e9d8b7a87f58ad371601efbb4d918fad549",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "f6457b992e8ad199cf2e66a08351c7bb",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Since Python 3.13, the official macOS and Windows installers offer free-threaded binaries as an optional install."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "When building CPython from source, the --disable-gil configure option should be used to build a free-threaded Python interpreter.",
+    "quote_hash": "5441e61b1902656f5cf143a06dc3e4138c7eeb59b882291b414b9a4bb1802741",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "b691402d51c416cd915e08789d318927",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "When building CPython from source, the --disable-gil configure option builds a free-threaded interpreter."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "To check if the current interpreter supports free-threading, python -VV and sys.version contain “free-threading build”.",
+    "quote_hash": "7d11a0a1ce081415aedb1499082c859a62eac0a9660453e7cfbc9bb950f66930",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "d35c938d64197d35f3da411cd2138583",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "A free-threading interpreter shows 'free-threading build' in python -VV output and in sys.version."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The new sys._is_gil_enabled() function can be used to check whether the GIL is actually disabled in the running process.",
+    "quote_hash": "ef829a7bdae1083ccc13e69da74393e2262d502e6f86d87482e33a15aafd4bff",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "9972a4b253e820669bc73ed89c34ae79",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "sys._is_gil_enabled() checks whether the GIL is actually disabled in the running process."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The sysconfig.get_config_var(\"Py_GIL_DISABLED\") configuration variable can be used to determine whether the build supports free threading. If the variable is set to 1, then the build supports free threading. This is the recommended mechanism for decisions related to the build configuration.",
+    "quote_hash": "7be513d678cecc42d19a864090367e7fbe96facc212e73fdff49e24c37e486d8",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "f6c7dce8857ba11c48cb867c0d8111a0",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "sysconfig.get_config_var(\"Py_GIL_DISABLED\") equal to 1 means the build supports free threading; this is the recommended check for build-configuration decisions."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Free-threaded builds of CPython support optionally running with the GIL enabled at runtime using the environment variable PYTHON_GIL or the command-line option -X gil.",
+    "quote_hash": "157e2bbc9721c681db726662d69e46764a8e8ef4ecc0b6421e28167766ecb924",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "a4df1864d0bd05b715422d95f3b364c0",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Free-threaded builds can optionally run with the GIL enabled at runtime, controlled by the PYTHON_GIL environment variable or the -X gil option."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The GIL may also automatically be enabled when importing a C-API extension module that is not explicitly marked as supporting free threading. A warning will be printed in this case.",
+    "quote_hash": "c358d676ec1ae63cd73a6263c5289754cf1e5a875e6abf53fb72b8bcc71fd05d",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "1f57211ca363224e97926a65fabaad97",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Importing a C-API extension module not marked as supporting free threading may automatically enable the GIL, and a warning is printed."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "It’s recommended to use the threading.Lock or other synchronization primitives instead of relying on the internal locks of built-in types, when possible.",
+    "quote_hash": "834e279fa8df750b2ab27b257bfc1ccb4010752119d32b88a7bf224c4597ad0d",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "bd5e08c943318367ba122c06d178c2fa",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Built-in types use internal locks, but the docs recommend threading.Lock or other synchronization primitives instead of relying on them."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "On the pyperformance benchmark suite, the average overhead ranges from about 1% on macOS aarch64 to 8% on x86-64 Linux systems.",
+    "quote_hash": "056e4030deefb30e35d98a48fa551b1697c6aa47b7917a340ea868d71e85614e",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "a9f66bb3677c35553698161f2c8a1144",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "The free-threading HOWTO puts the average pyperformance overhead at about 1% on macOS aarch64 to 8% on x86-64 Linux, depending on workload and hardware."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "a3dec3960dbfa939285736d529886293ebc891e83f759c10e396e3e36ce8848a",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The free-threaded build will typically use more memory compared to the default build.",
+    "quote_hash": "df61a6f42a2149618a3e111733d1e6de7f11068252c31785cc1ac461812a9295",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-python.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "847b5e2ab63d3b2b35a2e7c6849bcae9",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "The free-threaded build typically uses more memory than the default build."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "3399f20da5c29eaa04db8391a7db01c8cb064e86b2c2cd2d3f1c9fcd820588d9",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "-X gil=0,1 forces the GIL to be disabled or enabled, respectively. Setting to 0 is only available in builds configured with --disable-gil.",
+    "quote_hash": "70940468ce91d2bd34c38aa42e3a932e15cf633a491a803445cc18c79302466d",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/using/cmdline.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "1522d194640e1a3cbc2ba367a4a105bc",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "-X gil=0 forces the GIL off and -X gil=1 forces it on; 0 is only available in builds configured with --disable-gil."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "3399f20da5c29eaa04db8391a7db01c8cb064e86b2c2cd2d3f1c9fcd820588d9",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "If this variable is set to 1, the global interpreter lock (GIL) will be forced on. Setting it to 0 forces the GIL off (needs Python configured with the --disable-gil build option). See also the -X gil command-line option, which takes precedence over this variable",
+    "quote_hash": "091ca208b68276604bc65348d5652ebcb3c26000174ab08ba73c34352d55ee52",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/using/cmdline.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "93f8d2a0c9de3e3b99b9ccedd41be655",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "PYTHON_GIL=1 forces the GIL on and PYTHON_GIL=0 forces it off (needs a --disable-gil build); -X gil takes precedence over the variable."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "739e94798a825ef7717bf44eed8042186009e24545565ac82ea927ccf80565ff",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Extension modules need to explicitly indicate that they support running with the GIL disabled; otherwise importing the extension will raise a warning and enable the GIL at runtime.",
+    "quote_hash": "0870424959d0ab733dd771d7f228f5664cb5bc3edad9b1db63bdf6d17b939cc6",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-extensions.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "fc1685be33028e90fef4fc447fb1d45e",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Extension modules must explicitly declare support for running without the GIL; otherwise importing them raises a warning and enables the GIL at runtime."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "739e94798a825ef7717bf44eed8042186009e24545565ac82ea927ccf80565ff",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "Extensions that use multi-phase initialization (i.e., PyModuleDef_Init()) should add a Py_mod_gil slot in the module definition.",
+    "quote_hash": "15f5797c91965e5bc0f004d94e6f0a88571f123d70462d8443ee4311b89fe26e",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-extensions.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "18adfa80cbe03f9653a974765f140034",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "Extensions using multi-phase initialization declare free-threading support by adding a Py_mod_gil slot to the module definition."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "739e94798a825ef7717bf44eed8042186009e24545565ac82ea927ccf80565ff",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "C API extensions need to be built specifically for the free-threaded build. The wheels, shared libraries, and binaries are indicated by a t suffix.",
+    "quote_hash": "c43582c0f3aba4221f90b2d82a3950ea44ebf220052daa4183304ac55edc551f",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-extensions.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "f7952554ddee8fa46cc3e238faf228c0",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "C API extensions must be built specifically for the free-threaded build; its wheels, libraries and binaries carry a t suffix."
+  },
+  {
+   "applies_to": null,
+   "claim_review": {
+    "reviewed_at": null,
+    "state": "not_reviewed"
+   },
+   "claim_type": null,
+   "evidence": {
+    "address_key": "739e94798a825ef7717bf44eed8042186009e24545565ac82ea927ccf80565ff",
+    "checked_on": "2026-11-11",
+    "normalization_version": "gorunur-metin-bosluk-tirnak-tire-v1",
+    "quote": "The free-threaded build does not currently support the Limited C API or the stable ABI.",
+    "quote_hash": "2114a283803562d83d9ad647fbbb3dfc2ba5ca6b259df2b8289890d46c16e81c",
+    "section_hash": null,
+    "section_id": null,
+    "source_url": "https://docs.python.org/3.14/howto/free-threading-extensions.html",
+    "supporting_context_hash": null,
+    "visible_text_version": "gorunur-metin-bosluk-tirnak-tire-v3"
+   },
+   "evidence_state": "current",
+   "id": "90cdcf9ad05368d2144ef34b2f2a2c10",
+   "quote_match": {
+    "quote_verified_at": "2026-11-11T05:55:19Z",
+    "state": "exact"
+   },
+   "text": "The free-threaded build does not currently support the Limited C API or the stable ABI."
+  }
+ ],
+ "content": {
+  "answers": [
+   "Is free-threaded Python officially supported in 3.14, and is the default build GIL-free?",
+   "How do I check if Python is a free-threaded build and if the GIL is really disabled?",
+   "How do I force the GIL on or off with PYTHON_GIL or -X gil?",
+   "Can a C extension re-enable the GIL in free-threaded Python?",
+   "Will existing multithreaded Python programs get faster without the GIL?"
+  ],
+  "applies_to": "CPython 3.14 documentation (What's New in 3.14, free-threading HOWTOs, command line page) and PEP 779 (status Final), read on 2026-11-11. Not other Python implementations.",
+  "generated_at": "2026-11-11T04:59:06Z",
+  "not_covered": [
+   "The cited pages give different single-threaded overhead figures (What's New: roughly 5-10%; free-threading HOWTO: about 1% to 8% average); both are quoted, neither was measured here.",
+   "PEP 779's performance and memory numbers describe the state when the PEP was written, before 3.14's final release.",
+   "No local benchmark was run; nothing here covers PyPy, GraalPy or other Python implementations.",
+   "Which specific third-party packages support free threading was not checked."
+  ],
+  "recommendations": [
+   "Recommendation / inference: do not assume upgrading to 3.14 removes the GIL: install or build the free-threaded interpreter explicitly (installer option or --disable-gil).",
+   "Recommendation / inference: check both the build (sysconfig.get_config_var(\"Py_GIL_DISABLED\") == 1 or 'free-threading build' in sys.version) and the running process (sys._is_gil_enabled()) after all imports.",
+   "Recommendation / inference: use PYTHON_GIL=0 or -X gil=0 only on a free-threaded build to force the GIL off while testing; remember that -X gil overrides PYTHON_GIL.",
+   "Recommendation / inference: check that every C extension you import declares free-threading support and ships t-suffixed wheels; watch for the GIL re-enable warning.",
+   "Recommendation / inference: measure the same representative workload with one and several threads and verify output correctness; expect single-threaded slowdown and higher memory use.",
+   "Recommendation / inference: protect shared application state with threading.Lock or other explicit synchronization instead of relying on built-in types' internal locks."
+  ],
+  "short_answer": "In 3.14 the free-threaded build is officially supported but still optional (PEP 779, phase II); the default build keeps the GIL. A free-threaded build shows 'free-threading build' in python -VV and sys.version, and sysconfig.get_config_var(\"Py_GIL_DISABLED\") is 1; sys._is_gil_enabled() tells whether the GIL is actually off. PYTHON_GIL=0/1 or -X gil=0/1 force it off/on (0 needs a --disable-gil build). Unmarked C extensions re-enable the GIL with a warning. Speedups are not automatic, and single-threaded code is slower.",
+  "sources": [
+   {
+    "title": "What's new in Python 3.14",
+    "url": "https://docs.python.org/3.14/whatsnew/3.14.html"
+   },
+   {
+    "title": "Python support for free threading (3.14 HOWTO)",
+    "url": "https://docs.python.org/3.14/howto/free-threading-python.html"
+   },
+   {
+    "title": "C API Extension Support for Free Threading (3.14 HOWTO)",
+    "url": "https://docs.python.org/3.14/howto/free-threading-extensions.html"
+   },
+   {
+    "title": "Command line and environment (Python 3.14)",
+    "url": "https://docs.python.org/3.14/using/cmdline.html"
+   },
+   {
+    "title": "PEP 779 – Criteria for supported status for free-threaded Python",
+    "url": "https://peps.python.org/pep-0779/"
+   }
+  ],
+  "summary": "Source-quoted guide to CPython 3.14's free-threaded (no-GIL) build: its officially supported but optional status under PEP 779, how to tell a free-threaded build and whether the GIL is really off, how PYTHON_GIL and -X gil force the GIL on or off, how C extensions can re-enable the GIL, and what the docs say about performance and memory costs. This record rewrites an earlier DevTrellis record; its sources were re-read and quoted on 2026-11-11.",
+  "title": "Python 3.14 free-threading: supported but optional build, checking GIL state, PYTHON_GIL and -X gil, extensions and speedups"
+ },
+ "contract": "k1-v4-r2",
+ "corrections": {
+  "latest_public_version": null,
+  "open": 0,
+  "public_note": null
+ },
+ "id": "63f46988f31740c9963f3be899053f39",
+ "kind": "research_report",
+ "language": "en",
+ "link": "https://devtrellis.org/api/community/v4/records/63f46988f31740c9963f3be899053f39/v/1",
+ "provenance": {
+  "origin": "model_assisted",
+  "stages": [
+   {
+    "access_type": "non_trial",
+    "basis": "contributor_declaration",
+    "model": "claude-opus-5-5",
+    "provider": "claude",
+    "terms_url": null
+   }
+  ]
+ },
+ "publication": {
+  "gate": {
+   "checks_passed": [
+    "sema",
+    "kaynak_acikligi",
+    "kibar_getirme",
+    "alinti_eslesmesi",
+    "gizli_bilgi",
+    "yonerge_kokusu",
+    "paket_adlari",
+    "saglayici_kurali",
+    "yinelenen_yayin"
+   ],
+   "fields_not_tied_to_sources": [
+    "title",
+    "summary",
+    "short_answer",
+    "recommendations",
+    "not_covered",
+    "answers"
+   ],
+   "input_sha256": "957dbab08c072fd4fe527a2e23b913f751c816e0f2bc5434de0c92f2ead26092",
+   "machine_not_covered": [],
+   "ran_at": "2026-11-11T05:55:19Z",
+   "version": "denetim-kapisi-v0.2.3",
+   "warnings": []
+  },
+  "human_reviewed": false,
+  "label": {
+   "en": "Not human-reviewed; 5 of 5 sources reachable, quotes found in source for 25 of 25 claims; machine checks passed: schema, source access, polite fetch, quote match, secrets (known patterns), agent directives, package names, provider rule (declared), duplicate check; whether quotes support the claims was not checked; title, summary, short answer, recommendations, not-covered notes and answered questions are not tied to any source; 2026-11-11",
+   "tr": "İnsan incelemedi; 5 kaynağın 5'i erişilebilirdi, 25 iddianın 25'inde alıntı kaynakta bulundu; geçilen makine denetimleri: şema, kaynak açıklığı, kibar getirme, alıntı eşleşmesi, gizli bilgi (bilinen kalıplar), ajan yönergesi, paket adları, sağlayıcı kuralı (beyan), yinelenen yayın; alıntının iddiayı desteklediği denetlenmedi; başlık, özet, kısa cevap, öneriler, kapsam dışı notlar ve cevaplanan sorular hiçbir kaynağa bağlanmadı; 2026-11-11"
+  },
+  "path": "machine_gate",
+  "policy_version": "k1-publication-gates-v1",
+  "published_at": "2026-11-11T05:55:27Z",
+  "state": "published"
+ },
+ "rights": {
+  "own_text_license": "CC0-1.0",
+  "quotes": {
+   "basis": "source_linked_short_quote",
+   "max_chars": 300
+  }
+ },
+ "schema": "devtrellis-record",
+ "schema_version": 4,
+ "version": 1
+}

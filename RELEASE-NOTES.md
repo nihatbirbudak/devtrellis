@@ -1,3 +1,57 @@
+# DevTrellis 0.1.0-alpha.14 — bridge reading package (14r1); independently accepted 11 November 2026; server unchanged
+
+Only the MCP bridge (`mcp_topluluk.py`) changes; the server, the publication gate and the record schema do not. **The server is
+not redeployed: the live service stays 0.1.0-alpha.13 (its health reports that version) and this bridge works with it.** The
+bridge does not compare its own version with the server's. Measured reason (comparison set, 11 November 2026): the records held
+the answers, but the bridge showed each record split by address and without its answer fields, and agents re-opened the pages.
+An independent acceptance passed it after two rounds of fixes; both rounds are included below.
+
+- **One record, shown once and whole.** `lookup_source` groups the asked URLs by record. Each record appears once with every
+  claim (no address filter any more: claims quoted from pages that were not asked are shown too), `short_answer`, `answers`,
+  recommendations (marked as the contributor's inference), `not_in_record` and the source list with the asked URLs marked.
+  `view="full"` returns the same view (not the raw record; the full record is at its link). `search_research` (clear v4 hit)
+  and `read_research` (v4) use the same view.
+- **One trust line instead of five scattered fields.** `checked:` is built only from the record: how many quotes the machine
+  gate found verbatim, when, in how many cited pages; "Not human-reviewed"; what was not checked (whether each quote supports
+  its claim, page changes since the oldest check, contributor-written fields). A `when to open a page:` line states when a page
+  is still needed. The gate label is no longer cut at 60 characters.
+- **Text only for the three reading tools.** `lookup_source`, `search_research` and `read_research` now return one text block
+  and no `structuredContent` or output schema. The acceptance found that Claude Code (desktop 2.1.308, CLI 2.1.310) gives the
+  model only the structured content when it is present and drops the text, so the line format, the trust line and the size
+  limit did not reach the agent. Machine-read fields are named in the text (`network`, `answer_eligible`, `version_match`,
+  `already_delivered`, `record <id>@<version>`, `cite:`). Answers without the line format (older reports, weak or empty search,
+  outline and section) are compact JSON text, which is what Claude Code showed before. **Breaking for clients that read
+  `structuredContent` of these three tools** (none known in this repository; the comparison-set harness must be adapted).
+  Verified: no structured content is sent (MCP SDK client test), and in a live Claude Code session (CLI 2.1.310, headless,
+  Sonnet, 11 November 2026; the release-copy bridge against the deployed alpha.13 server) the model received the line text of
+  `lookup_source`, `search_research` and `read_research` unchanged: it repeated each answer character for character (largest
+  10,555 characters) and a repeated read answered `already_delivered true`. Not verified: how other MCP clients show the text.
+  The write tools are unchanged.
+- **Contributor free text stays marked.** Inside the untrusted block every field is one line, claim texts and quotes are JSON
+  strings (record text cannot end the block or imitate the claim line). Outside the block, the contributor's declared scope and
+  model names are JSON strings, so a hostile record cannot place plain "Human-reviewed" text beside the trust line.
+- **Delivery memory counts whole records.** `already_delivered true` comes only after the whole record was shown in this
+  session, once per whole showing; a record cut by the size limit (or an older card not shown) comes back whole next time.
+- **One request per record.** When the fresh coverage snapshot ties several asked URLs to the same single record, the bridge
+  sends one lookup request for them.
+- **Size limit.** One reading answer stays under 28,000 characters. A record that would exceed it first leaves out the
+  contributor's recommendations, then claims from the end, and says so with counts and the call that returns the rest
+  (`view="outline"`/`"section"` when the record does not fit one answer even alone).
+- **One-call guidance.** The server instructions and tool descriptions are shorter and say that one `lookup_source` call
+  with all page URLs is enough; `search_research` is for when there is no URL or the lookup found nothing useful.
+
+Measured on the 14 frozen records (no network, fake local app, text the client receives): a lookup with all of a record's URLs
+is 6.2–11.8 KB per record, 106.9 KB in total. Compared with what a Claude Code agent actually received from the alpha.13
+bridge (its structured content, 139.6 KB) that is 23% less; this is the figure for real use in Claude Code. Compared with the
+alpha.13 text content (155.3 KB, which the comparison-set harness showed its agents) it is 31% less. The comparison set's question Q3 (`view="full"`, four URLs) drops from
+117 KB to 10.4 KB. A lookup with a single URL of a multi-source report grows, because the whole record is shown.
+
+Agent effect, measured small (comparison set, 11 November 2026: 6 questions with a record, 2 runs each, Sonnet agents, one Opus
+judge; the bridge was called from a script with its text output, not through a live MCP client; the cold baseline was not re-run):
+on questions Q2–Q6 agents opened 0.18 pages per run (alpha.13 first run: 2.8), and the median ratio of warm to cold work fell from
+1.07 to 0.47 over Q1–Q6. The sample is small and page opening is a yes/no decision per run; read these as indicative, not as a
+general saving.
+
 # DevTrellis 0.1.0-alpha.13 — answer-ready records (alpha.13b) on top of the delivery fixes (alpha.13a); independently accepted 10 November 2026
 
 alpha.13a and alpha.13b ship together as one release. It passed an independent acceptance (Claude-side review; its two conditions, the coverage backfill's write transaction and the `written_with` filter, are fixed in this entry). It has not been deployed yet.
