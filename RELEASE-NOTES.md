@@ -46,11 +46,12 @@ bridge (its structured content, 139.6 KB) that is 23% less; this is the figure f
 alpha.13 text content (155.3 KB, which the comparison-set harness showed its agents) it is 31% less. The comparison set's question Q3 (`view="full"`, four URLs) drops from
 117 KB to 10.4 KB. A lookup with a single URL of a multi-source report grows, because the whole record is shown.
 
-Agent effect, measured small (comparison set, 11 November 2026: 6 questions with a record, 2 runs each, Sonnet agents, one Opus
-judge; the bridge was called from a script with its text output, not through a live MCP client; the cold baseline was not re-run):
-on questions Q2–Q6 agents opened 0.18 pages per run (alpha.13 first run: 2.8), and the median ratio of warm to cold work fell from
-1.07 to 0.47 over Q1–Q6. The sample is small and page opening is a yes/no decision per run; read these as indicative, not as a
-general saving.
+Agent effect, measured small (comparison set, 11 November 2026: Sonnet agents, 2 runs per question, one Opus judge; the bridge
+was called from a script with its text output, not through a live MCP client; the cold baseline was not re-run). On questions
+Q2–Q6, with the same machine-gate records, agents opened 1.5 pages per run with the alpha.13 bridge and 0.18 with this one; the
+median ratio of warm to cold work went from 0.78 to 0.47. (Against the first alpha.13 run, before those records were moved to the
+machine-gate format: 2.8 pages per run, median 1.12.) The sample is small and page opening is a yes/no decision per run; read
+these as indicative, not as a general saving.
 
 # DevTrellis 0.1.0-alpha.13 — answer-ready records (alpha.13b) on top of the delivery fixes (alpha.13a); independently accepted 10 November 2026
 
