@@ -437,6 +437,7 @@ const BRAND = "DevTrellis";
     "Araştırma sorusu": "Research question",
     "İncelenen iddia": "Claim under review",
     "Kartın kanıt durumu": "Card evidence status",
+    "{found}/{total} alıntı kaynakta bulundu (makine denetimi)": "{found} of {total} quotes found in the sources (machine check)",
     "Kaynak eşleşmesi kaydedilmiş": "Source matches recorded",
     "Denetlenmemiş": "Not checked",
     "Yetersiz dayanak": "Insufficient evidence",
@@ -620,7 +621,7 @@ const BRAND = "DevTrellis";
     "Okumak için hesap, kurulum veya yapay zekâ gerekmez. Kendi araştırmanı yerelde tutabilir ya da önizleyip paylaşabilirsin. Paylaştığın çalışma, başkasının aynı işe yeniden başlamasına gerek bırakmayabilir.": "No account, installation or AI is needed to read. Keep your research locally or preview and share it. Your contribution may save someone else from starting the same work again.",
     "Araştırmaları oku": "Read research",
     "Kendi araştırmamı başlat": "Start my own research",
-    "Tam metni açmak için araştırmanın başlığına veya Araştırmayı oku düğmesine tıkla. Kaynak ve GitHub bağlantıları doğrudan asıl yayına gider.": "Click a research title or Read research to open the full text. Source and GitHub links take you directly to the original publication."
+    "Araştırmanın başlığı veya Araştırmayı oku düğmesi kaydı açar. Paylaşılan rapor okunur sayfada açılır; makine denetimli kayıt, okunur sayfası henüz olmadığı için alıntıları ve kaynaklarıyla ham veri (JSON) olarak açılır. Kaynak ve GitHub bağlantıları doğrudan asıl yayına gider.": "A research title or Read research opens the record. A shared report opens as a readable page; a machine-gated record opens as record data (JSON) with its quotes and sources, because it has no readable page yet. Source and GitHub links take you directly to the original publication.",
   });
   Object.assign(EN, {
     "İnceleme oturumu açılamadı. Sayfayı yenileyip tekrar dene.": "The review session could not be opened. Reload the page and retry.",

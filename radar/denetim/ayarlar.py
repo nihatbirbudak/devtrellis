@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SURUM = "denetim-kapisi-v0.2.3"
+# v0.2.4 (alpha.15, 14r2): okuma eki — cevap bağı ve yokluk notu biçimi, kısa cevap terim uyarısı, kaynaklarda yok notu
+# terim araması, kaynak başına getirme zamanı ve görünür metin özeti. Okuma eki kapalıyken (varsayılan; sunucu ayarı
+# `reading_extensions`) kapı v0.2.3 kurallarını aynen çalıştırır ve sonucuna o sürümü yazar (düzeltme turu 1, karar 1).
+SURUM = "denetim-kapisi-v0.2.4"
+SURUM_OKUMA_EKSIZ = "denetim-kapisi-v0.2.3"
 
 # K1 taslağının sabitlediği istek varyantı (§2). Aynı başlıklar kullanılınca
 # kapının gördüğü temsil K0 kaynak izlemenin gördüğüyle aynı olur.

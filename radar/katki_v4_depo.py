@@ -22,10 +22,13 @@ from radar.arastirma_arama import arama_gruplari
 from radar.arastirma_siralama import (FIELD_WEIGHTS, INDEX_FIELDS, INDEX_VERSION, aday_kapsami, alan_agirligi,
                                       belge_terimleri, eslesme_bilgisi)
 from radar.gelistirici_alani import arama_metni
-from radar.katki_v4 import (K1Ayarlari, KatkiHatasi, aday_on_denetimi, arama_belgesi, arama_metni_v1,
+from radar.denetim.bekletme import BEKLETME_NEDENI, yonerge_benzeri_uyarilar
+from radar.denetim.uzanti import kapsam_silme_ya_da_celiski
+from radar.katki_v4 import (UZANTI_TURU, K1Ayarlari, KatkiHatasi, aday_on_denetimi, arama_belgesi, arama_metni_v1,
                             bakis_govdesi, kapi_ozeti, kaldirma_izi, kapsam_govdesi, kayit_adresleri, kayit_olustur,
-                            konu_govdesi, riza_denetimi, zaman_metni)
+                            konu_govdesi, riza_denetimi, uzanti_hazirla, uzantili_kayit_mi, zaman_metni)
 from radar.katki_v4 import arama_karti as v4_arama_karti
+from radar.okuma_eki import okuma_ekli_aday_mi, okuma_ekli_kayit_mi
 
 UYGULAMA_KIMLIGI = 0x44543441   # "DT4A"
 SURUM = 1
@@ -44,6 +47,16 @@ TUR_SIRASI = "CASE r.kind WHEN 'source_card' THEN 0 WHEN 'research_report' THEN 
 # Yayımlanmadan sonlanan gönderimler: özel aday metni saklama süresi dolunca silinir (yayındaki kaydın metni zaten kamuda).
 OZEL_SONLANAN = ("rejected", "unverifiable", "review_rejected", "withdrawn", "removed")
 GUNLUK = logging.getLogger("devtrellis.k1")
+# alpha.15 (dilim 14a) uzantı yolu. "Tek görünür sürüm": bir kaydın yalnız güncel sürümü `visible=1`; yerini bırakmış sürüm
+# `visible=0`, `removal=NULL`, `removed_at` = yerini bıraktığı an (gövdesi saklanır, sürüm adresiyle okunur). Uzantı gönderimi ile
+# kayıt sürümü bağı yan tabloda; tablo yalnız uzantı kipi açıkken ilk uzantı gönderiminde kurulur (kapalı kipte depo şeması
+# değişmez; `user_version` 1 kalır, eski kod fazladan tabloyu görmezden gelir).
+UZANTI_TABLOSU = ("CREATE TABLE IF NOT EXISTS v4_extensions ("
+                  "submission_id TEXT PRIMARY KEY REFERENCES v4_submissions(id), record_id TEXT NOT NULL, "
+                  "seen_version INTEGER NOT NULL, version INTEGER, based_on INTEGER, published_at INTEGER)")
+UZANTI_DIZINI = "CREATE INDEX IF NOT EXISTS v4_extensions_record ON v4_extensions(record_id, version)"
+UZANTI_ACIK_DEGIL = ("Bu sunucuda uzantı yolu kapalı: bu uzantı gönderimi şimdi yayımlanamaz. Reddedin ya da uzantı açılınca "
+                     "yayımlayın.")
 
 
 def k1_deposu_dogrula(connection):
@@ -63,7 +76,8 @@ def ozel_metni_temizle(connection, *, sinir_saniye=None):
         f"UPDATE v4_submissions SET candidate='{{}}',candidate_purged=1 WHERE candidate_purged=0 AND status IN ({yer})" + kosul,
         (*OZEL_SONLANAN, *degerler)).rowcount
     kosul = "" if sinir_saniye is None else " AND removed_at<=?"
-    silinen += connection.execute("UPDATE v4_records SET record='{}' WHERE visible=0 AND record<>'{}'" + kosul,
+    # 14a: koşul `visible=0` değil `removal IS NOT NULL`; yerini bırakmış (güncel olmayan) sürümün gövdesi kamuda kalır.
+    silinen += connection.execute("UPDATE v4_records SET record='{}' WHERE removal IS NOT NULL AND record<>'{}'" + kosul,
                                   degerler).rowcount
     return silinen
 
@@ -72,7 +86,7 @@ def ozel_metin_kaldi_mi(connection):
     yer = ",".join("?" * len(OZEL_SONLANAN))
     return bool(connection.execute(f"SELECT 1 FROM v4_submissions WHERE candidate_purged=0 AND status IN ({yer}) LIMIT 1",
                                    OZEL_SONLANAN).fetchone() or
-                connection.execute("SELECT 1 FROM v4_records WHERE visible=0 AND record<>'{}' LIMIT 1").fetchone())
+                connection.execute("SELECT 1 FROM v4_records WHERE removal IS NOT NULL AND record<>'{}' LIMIT 1").fetchone())
 
 
 def _token_izi(token):
@@ -106,6 +120,11 @@ def durduran(aktor):
     if not isinstance(aktor, str) or aktor.startswith("moderator"):
         return "moderator"
     return "cli" if aktor == "cli" else aktor
+
+
+def _genis(ayarlar):
+    """Kapıya geniş yönerge taraması bayrağı yalnız ayar açıkken gider (kapalıyken çağrı önceki sürümün aynısı)."""
+    return {"yonerge_genis": True} if ayarlar.yonerge_bekletme else {}
 
 
 class KatkiDeposu:
@@ -371,10 +390,45 @@ class KatkiDeposu:
         return kapi_ozeti(json.loads(row["gate_result"]), tam=tam) if row["gate_result"] else None
 
     def _yayin(self, connection, kimlik):
-        return connection.execute("SELECT version,visible,removal FROM v4_records WHERE id=? ORDER BY version DESC LIMIT 1",
-                                  (kimlik,)).fetchone()
+        # 14a: önce görünür (güncel) sürüm; geri çekilmiş bir uç sürüm güncel sürümü gizlemesin.
+        return connection.execute("SELECT version,visible,removal FROM v4_records WHERE id=? "
+                                  "ORDER BY visible DESC,version DESC LIMIT 1", (kimlik,)).fetchone()
+
+    @staticmethod
+    def _uzanti_tablosu_var(connection):
+        return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='v4_extensions'").fetchone() is not None
+
+    def _uzanti_satiri(self, connection, kimlik):
+        if not self._uzanti_tablosu_var(connection):
+            return None
+        return connection.execute("SELECT * FROM v4_extensions WHERE submission_id=?", (kimlik,)).fetchone()
+
+    def _uzanti_gorunumu(self, connection, row, tam_kapi):
+        """Uzantı gönderiminin özel görünümü: kayıt kimliği, gördüğü sürüm, yayımlandıysa sürümü ve güncel olup olmadığı."""
+        uz = self._uzanti_satiri(connection, row["id"])
+        kayit = (connection.execute("SELECT visible,removal FROM v4_records WHERE id=? AND version=?",
+                                    (uz["record_id"], uz["version"])).fetchone() if uz and uz["version"] else None)
+        yayinda = kayit is not None and kayit["removal"] is None
+        govde = self._temel_gorunum(row, tam_kapi)
+        govde["published_version"] = uz["version"] if yayinda else None
+        govde["link"] = f"{self.origin}/api/community/v4/records/{uz['record_id']}/v/{uz['version']}" if yayinda else None
+        govde["extension"] = {"record_id": uz["record_id"] if uz else None, "seen_version": uz["seen_version"] if uz else None,
+                              "version": uz["version"] if uz else None, "current": bool(kayit and kayit["visible"])}
+        return govde
+
+    def _temel_gorunum(self, row, tam_kapi):
+        return {"id": row["id"], "kind": row["kind"], "status": row["status"], "revision": row["revision"],
+                "attempts": row["attempts"],
+                "next_attempt_at": zaman_metni(row["next_attempt_at"]) if row["status"] == "retry_wait" else None,
+                "hold_reason": row["hold_reason"] if row["status"] == "pending_review" else None,
+                "note": row["note"] or None,
+                "gate": self._gate(row, tam=tam_kapi),
+                "published_version": None, "link": None,
+                "created_at": zaman_metni(row["created_at"]), "updated_at": zaman_metni(row["updated_at"])}
 
     def gorunum(self, connection, row, *, tam_kapi=True):
+        if row["kind"] == UZANTI_TURU:
+            return self._uzanti_gorunumu(connection, row, tam_kapi)
         yayin = self._yayin(connection, row["id"])
         return {"id": row["id"], "kind": row["kind"], "status": row["status"], "revision": row["revision"],
                 "attempts": row["attempts"],
@@ -401,7 +455,8 @@ class KatkiDeposu:
         istek = payload["idempotency_key"]
         if not isinstance(istek, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", istek):
             raise KatkiHatasi("idempotency_key 8–128 harf, sayı, tire ya da alt çizgi olmalı.", code="invalid_request")
-        aday = aday_on_denetimi(payload["candidate"])
+        aday = aday_on_denetimi(payload["candidate"], okuma_eki=ayarlar.okuma_eki, uzanti=ayarlar.uzanti)
+        uzanti_mi = aday["kind"] == UZANTI_TURU
         ozet = riza_denetimi(payload["consent"], aday)
         istek_izi = hashlib.sha256(istek.encode("ascii")).hexdigest()
         with self.baglanti() as connection:
@@ -411,7 +466,13 @@ class KatkiDeposu:
                     raise KatkiHatasi("Bu yönetim anahtarı başka bir gönderime bağlı.", 409, code="capability_in_use")
                 return {"submission": self.gorunum(connection, onceki), "duplicate": True}
         # Ağsız kapı (şema, gizli bilgi, yönerge, sağlayıcı, kısa alıntı, adres biçimi): ret hemen ve saklamadan döner.
-        on_sonuc = on_denetim(aday, ag=False, yayindakiler=None)
+        if uzanti_mi:
+            # 14a: ağsız kapı üstün güncel sürümüyle kurulan birleşik pakette (rıza özeti fark paketinindir).
+            baglam = self.uzanti_baglami(aday, okuma_eki=ayarlar.okuma_eki)
+            on_sonuc = on_denetim(baglam["birlesik"] or aday, ag=False, yayindakiler=None, okuma_eki=ayarlar.okuma_eki,
+                                  uzanti=baglam, **_genis(ayarlar))
+        else:
+            on_sonuc = on_denetim(aday, ag=False, yayindakiler=None, okuma_eki=ayarlar.okuma_eki, **_genis(ayarlar))
         if on_sonuc["hukum"] == "reddedilir":
             raise KatkiHatasi("Katkı makine denetiminden geçmedi; nedenleri düzeltip yeniden önizleyin.", 422,
                               code="gate_rejected", gate=kapi_ozeti(on_sonuc, tam=True))
@@ -428,12 +489,26 @@ class KatkiDeposu:
                 # Yalnız yeni gönderim durur (429); okuma, moderasyon ve durum uçları etkilenmez (K1 kabulü bulgu 8).
                 raise KatkiHatasi("Denetim ya da moderasyon sırası dolu; daha sonra yeniden deneyin.", 429, code="queue_full",
                                   retry_after=3600)
+            if uzanti_mi:
+                connection.execute(UZANTI_TABLOSU)
+                connection.execute(UZANTI_DIZINI)
+                # Düzeltme turu 1 (kabul Ö4): yalnız `queued` sayılır. `retry_wait` sayılınca 503 veren bir sayfadan alıntı
+                # yapan üç uzantı kaydı saatlerce kilitliyordu; `retry_wait` yığını `sonucu_yaz`'da ayrıca sınırlanır.
+                bekleyen = connection.execute(
+                    "SELECT COUNT(*) FROM v4_extensions e JOIN v4_submissions s ON s.id=e.submission_id "
+                    "WHERE e.record_id=? AND s.status='queued'", (aday["extends"]["id"],)).fetchone()[0]
+                if bekleyen >= ayarlar.uzanti_sira_kayit:
+                    raise KatkiHatasi("Bu kayda bekleyen uzantı sınırı dolu; öncekiler denetlenince yeniden deneyin.", 429,
+                                      code="parent_busy", retry_after=600)
             kimlik = uuid.uuid4().hex
             connection.execute(
                 "INSERT INTO v4_submissions(id,capability_hash,request_key_hash,kind,candidate,candidate_sha256,"
                 "consent_choice,consent_at,status,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,'share',?,'queued',1,?,?)",
                 (kimlik, iz, istek_izi, aday["kind"], json.dumps(aday, ensure_ascii=False, sort_keys=True), ozet,
                  simdi, simdi, simdi))
+            if uzanti_mi:
+                connection.execute("INSERT INTO v4_extensions(submission_id,record_id,seen_version) VALUES(?,?,?)",
+                                   (kimlik, aday["extends"]["id"], aday["extends"]["version"]))
             self._olay(connection, kimlik, "contributor", "submitted", simdi=simdi)
             row = connection.execute("SELECT * FROM v4_submissions WHERE id=?", (kimlik,)).fetchone()
             return {"submission": self.gorunum(connection, row), "duplicate": False}
@@ -461,11 +536,17 @@ class KatkiDeposu:
             row = self._sahip_satiri(connection, kimlik, iz)
             if row["revision"] != beklenen:
                 raise KatkiHatasi("Gönderim değişti; güncel durumu yeniden açın.", 409, code="revision_conflict")
-            if row["status"] not in ("withdrawn", "removed"):
-                if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='withdrawn' WHERE id=? AND visible=1",
-                                      (simdi, kimlik)).rowcount:
+            if row["status"] not in ("withdrawn", "removed") and row["kind"] == UZANTI_TURU:
+                # 14a: uzantı katkıcısı yalnız kendi sürümünü, o sürüm güncelse geri çeker; önceki sürüm yeniden güncel olur.
+                self._uzanti_surumunu_indir(connection, kimlik, "withdrawn", simdi)
+            elif row["status"] not in ("withdrawn", "removed"):
+                # 14a: kaydın bütün sürümleri (yerini bırakmışlar dahil) iner; kapalı kipte `visible=1` ile aynı satır kümesi.
+                if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='withdrawn' WHERE id=? "
+                                      "AND removal IS NULL", (simdi, kimlik)).rowcount:
                     self._arama_satirini_sil(connection, kimlik)
                     self._revizyon_artir(connection)
+                self._uzantilari_indir(connection, kimlik, "parent_withdrawn", simdi)
+            if row["status"] not in ("withdrawn", "removed"):
                 connection.execute("UPDATE v4_submissions SET status='withdrawn',revision=revision+1,lease_id=NULL,"
                                    "lease_until=NULL,next_attempt_at=NULL,updated_at=? WHERE id=?", (simdi, kimlik))
                 self._olay(connection, kimlik, "contributor", "withdrawn", simdi=simdi)
@@ -510,20 +591,41 @@ class KatkiDeposu:
         return self.durum(ayarlar)
 
     # ------------------------------------------------------------------ işçi
+    def uzanti_baglami(self, ek, *, okuma_eki=False, connection=None):
+        """Kapının `uzanti` bağlamı: üstün güncel (görünür) sürümü ve katkıcının gördüğü sürüm (güncel ya da yerini bırakmış;
+        geri çekilmiş/kaldırılmış değil) okunur, birleşik aday kurulur."""
+        bag = ek.get("extends") if isinstance(ek, dict) else None
+        ust = gorulen = None
+        if isinstance(bag, dict) and isinstance(bag.get("id"), str) and type(bag.get("version")) is int:
+            def oku(connection):
+                satir = connection.execute("SELECT record FROM v4_records WHERE id=? AND visible=1", (bag["id"],)).fetchone()
+                gor = connection.execute("SELECT record FROM v4_records WHERE id=? AND version=? AND removal IS NULL "
+                                         "AND record<>'{}'", (bag["id"], bag["version"])).fetchone()
+                return (json.loads(satir["record"]) if satir else None), (json.loads(gor["record"]) if gor else None)
+            if connection is not None:
+                ust, gorulen = oku(connection)
+            else:
+                with self.baglanti() as baglanti:
+                    ust, gorulen = oku(baglanti)
+        return uzanti_hazirla(ek, ust, gorulen, okuma_eki=okuma_eki)
+
     def siradakini_al(self, ayarlar=None):
         """Zamanı gelmiş bir kaydı kirayla alır; aynı kayıt iki işçide aynı anda denetlenmez.
 
         Deneme sayısı işe başlarken yazılır (K1 kabulü bulgu 14): kapı çalışırken süreç ölürse kira düşünce kayıt yeniden
         alınır, ama sayı artmış olur; üst sınıra varan kayıt yeniden denenmez, `unverifiable` olur.
         """
-        en_cok = (ayarlar or K1Ayarlari()).deneme_en_cok
+        ayarlar = ayarlar or K1Ayarlari()
+        en_cok = ayarlar.deneme_en_cok
+        # 14a: uzantı kipi kapalıyken uzantı gönderimi işlenmez, sırada bekler (kalıcı ret yok; kip açılınca işlenir).
+        uzanti_suzgeci = "" if ayarlar.uzanti else f" AND kind<>'{UZANTI_TURU}'"
         simdi = int(self.clock())
         kira = secrets.token_hex(16)
         with self.baglanti(write=True) as connection:
             while True:
                 row = connection.execute(
                     "SELECT id,candidate,attempts FROM v4_submissions WHERE (status='queued' OR (status='retry_wait' AND "
-                    "next_attempt_at<=?)) AND (lease_until IS NULL OR lease_until<=?) "
+                    "next_attempt_at<=?)) AND (lease_until IS NULL OR lease_until<=?)" + uzanti_suzgeci + " "
                     "ORDER BY COALESCE(next_attempt_at,created_at),created_at LIMIT 1", (simdi, simdi)).fetchone()
                 if row is None:
                     return None
@@ -560,7 +662,14 @@ class KatkiDeposu:
                     break
                 kimlik, kira, aday = alinan
                 try:
-                    sonuc = denetci(aday, yayindakiler=self.yayindakiler(), ag=ayarlar.denetim_agi)
+                    if isinstance(aday, dict) and aday.get("kind") == UZANTI_TURU:
+                        # 14a: birleştirme kapı anında, üstün o anki güncel sürümüyle (otomatik yeniden taban).
+                        baglam = self.uzanti_baglami(aday, okuma_eki=ayarlar.okuma_eki)
+                        sonuc = denetci(baglam["birlesik"] or aday, yayindakiler=self.yayindakiler(), ag=ayarlar.denetim_agi,
+                                        okuma_eki=ayarlar.okuma_eki, uzanti=baglam, **_genis(ayarlar))
+                    else:
+                        sonuc = denetci(aday, yayindakiler=self.yayindakiler(), ag=ayarlar.denetim_agi,
+                                        okuma_eki=ayarlar.okuma_eki, **_genis(ayarlar))
                 except Exception as exc:
                     # Günlüğe yalnız hata türü yazılır; aday metni ve hata iletisi özel içerik taşıyabilir.
                     GUNLUK.error("K1 kapısı bir gönderimde beklenmeyen hatayla durdu (%s); yeniden denenecek.",
@@ -598,6 +707,15 @@ class KatkiDeposu:
                 hukum = sonuc["hukum"]
                 kayit_sonucu = json.dumps(sonuc, ensure_ascii=False, sort_keys=True)
             deneme = row["attempts"]   # işe başlarken artırıldı (siradakini_al)
+            uzanti_mi = row["kind"] == UZANTI_TURU
+            if uzanti_mi and hukum == "yayimlanir" and self._ust_surum(connection, sonuc) != sonuc["uzanti"]["taban_surum"]:
+                # 14a iyimser denetim: kapı çalışırken üst kayıt değişti (moderatör yayımladı ya da uç geri çekildi). Gönderim
+                # yeniden sıraya döner; bu tur deneme hakkından düşülmez.
+                connection.execute("UPDATE v4_submissions SET status='queued',attempts=?,gate_result=?,lease_id=NULL,"
+                                   "lease_until=NULL,next_attempt_at=NULL,revision=revision+1,updated_at=? WHERE id=?",
+                                   (max(0, deneme - 1), kayit_sonucu, simdi, kimlik))
+                self._olay(connection, kimlik, "gate", "requeued", "parent_changed", simdi=simdi)
+                return {"id": kimlik, "status": "queued", "verdict": hukum, "hold_reason": None, "requeued": True}
             alanlar = {"attempts": deneme, "gate_result": kayit_sonucu if kayit_sonucu else row["gate_result"],
                        "lease_id": None, "lease_until": None, "next_attempt_at": None, "hold_reason": None}
             if hukum == "reddedilir":
@@ -605,20 +723,44 @@ class KatkiDeposu:
             elif hukum == "yayimlanamaz":
                 if deneme >= ayarlar.deneme_en_cok:
                     alanlar["status"] = "unverifiable"
+                elif uzanti_mi and self._bekleyen_uzanti_denemesi(connection, kimlik) >= ayarlar.uzanti_sira_kayit:
+                    # Düzeltme turu 1 (kabul Ö4): bir kayıtta yeniden deneme bekleyen uzantı yığını en çok
+                    # `extension_queue_per_record`; fazlası beklemeden `unverifiable` olur (katkıcı sonra yeniden gönderir).
+                    alanlar["status"] = "unverifiable"
+                    self._olay(connection, kimlik, "gate", "retry_skipped", "extension_retry_full", simdi=simdi)
                 else:
                     alanlar["status"] = "retry_wait"
                     alanlar["next_attempt_at"] = simdi + self._bekleme(deneme, ayarlar)
             else:
-                alanlar["status"], alanlar["hold_reason"] = self._yayin_karari(connection, ayarlar, simdi)
+                alanlar["status"], alanlar["hold_reason"] = self._yayin_karari(connection, ayarlar, simdi,
+                                                                               sonuc=sonuc if uzanti_mi else None,
+                                                                               kapi_sonucu=sonuc)
             atama = ",".join(f"{ad}=?" for ad in alanlar)
             connection.execute(f"UPDATE v4_submissions SET {atama},revision=revision+1,updated_at=? WHERE id=?",
                                (*alanlar.values(), simdi, kimlik))
-            if alanlar["status"] == "published":
-                self._yayinla(connection, kimlik, json.loads(row["candidate"]), sonuc, "machine_gate", simdi)
+            if alanlar["status"] == "published" and uzanti_mi:
+                self._uzanti_yayinla(connection, kimlik, json.loads(row["candidate"]), sonuc, "machine_gate", simdi,
+                                     ayarlar=ayarlar)
+            elif alanlar["status"] == "published":
+                self._yayinla(connection, kimlik, json.loads(row["candidate"]), sonuc, "machine_gate", simdi,
+                              okuma_eki=ayarlar.okuma_eki)
+            if uzanti_mi and sonuc and (sonuc.get("uzanti") or {}).get("ust_alinti_kaydi"):
+                # Tazelik kuyruğunun ilk girdisi: üst kaydın alıntısı sayfada artık yok (tasarım §2c).
+                self._olay(connection, kimlik, "gate", "parent_drift", (sonuc.get("uzanti") or {}).get("ust_id") or "",
+                           simdi=simdi)
             self._olay(connection, kimlik, "gate", alanlar["status"], alanlar["hold_reason"] or "", simdi=simdi)
             return {"id": kimlik, "status": alanlar["status"], "verdict": hukum, "hold_reason": alanlar["hold_reason"]}
 
-    def _yayin_karari(self, connection, ayarlar, simdi):
+    def _yayin_karari(self, connection, ayarlar, simdi, *, sonuc=None, kapi_sonucu=None):
+        if sonuc is not None:
+            # 14a: kaldırılan kapsam notu karşılanmıyor ya da çelişki kuşkusu → moderasyon (KD-057: şüpheliler bekler).
+            neden = kapsam_silme_ya_da_celiski(sonuc)
+            if neden:
+                return "pending_review", neden
+        if ayarlar.yonerge_bekletme and yonerge_benzeri_uyarilar(kapi_sonucu):
+            # alpha.15 güvenlik (ayar `hold_instruction_like`, varsayılan kapalı): yönerge benzeri uyarı taşıyan gönderim
+            # otomatik yayımlanmaz; katkıcı durumu `hold_reason: instruction_like_content` ve kapı uyarılarıyla görür.
+            return "pending_review", BEKLETME_NEDENI
         if not ayarlar.otomatik_yayin:
             return "pending_review", "auto_publish_off"
         if ayarlar.yayin_durduruldu or connection.execute(
@@ -628,11 +770,107 @@ class KatkiDeposu:
                                  (simdi - 86400,)).fetchone()[0]
         if gun >= ayarlar.otomatik_yayin_gun:
             return "pending_review", "auto_publish_daily_cap"
+        if sonuc is not None and connection.execute(
+                "SELECT COUNT(*) FROM v4_records WHERE id=? AND version>1 AND path='machine_gate' AND published_at>?",
+                (sonuc["uzanti"]["ust_id"], simdi - 86400)).fetchone()[0] >= ayarlar.uzanti_gun_kayit:
+            return "pending_review", "extension_daily_cap"
         return "published", None
 
-    def _yayinla(self, connection, kimlik, aday, sonuc, yol, simdi):
+    def _bekleyen_uzanti_denemesi(self, connection, kimlik):
+        """Bu uzantının üst kaydında (kendisi hariç) `retry_wait` durumundaki uzantı gönderimi sayısı."""
+        uz = self._uzanti_satiri(connection, kimlik)
+        if uz is None:
+            return 0
+        return connection.execute(
+            "SELECT COUNT(*) FROM v4_extensions e JOIN v4_submissions s ON s.id=e.submission_id "
+            "WHERE e.record_id=? AND s.status='retry_wait' AND s.id<>?", (uz["record_id"], kimlik)).fetchone()[0]
+
+    @staticmethod
+    def _ust_surum(connection, sonuc):
+        """Uzantının üst kaydının şimdiki güncel (görünür) sürümü; yoksa None."""
+        satir = connection.execute("SELECT version FROM v4_records WHERE id=? AND visible=1",
+                                   ((sonuc.get("uzanti") or {}).get("ust_id"),)).fetchone()
+        return satir["version"] if satir else None
+
+    def _uzanti_yayinla(self, connection, kimlik, ek, sonuc, yol, simdi, *, ayarlar):
+        """Uzantıyı aynı kimlikte yeni sürüm olarak yayımlar: üstün güncel sürümü `visible=0` (removal NULL, yerini bıraktı),
+        yeni sürüm `visible=1`; arama dizini yeni sürümü alır. Çağıran üstün kapıdaki taban sürümle aynı olduğunu denetledi."""
+        baglam = self.uzanti_baglami(ek, okuma_eki=ayarlar.okuma_eki, connection=connection)
+        if baglam["birlesik"] is None or baglam["ust"]["version"] != sonuc["uzanti"]["taban_surum"]:
+            raise ValueError("Uzantı üst kaydın kapıdaki sürümüyle birleştirilemedi.")
+        ust = baglam["ust"]
+        kayit_id = ust["id"]
+        surum = (connection.execute("SELECT MAX(version) FROM v4_records WHERE id=?", (kayit_id,)).fetchone()[0] or 0) + 1
+        kayit = kayit_olustur(baglam["birlesik"], sonuc, kayit_id=kayit_id, surum=surum, yol=yol, yayin_saniye=simdi,
+                              origin=self.origin, okuma_eki=ayarlar.okuma_eki, ust=ust, ek=ek)
+        connection.execute("UPDATE v4_records SET visible=0,removed_at=? WHERE id=? AND version=? AND visible=1",
+                           (simdi, kayit_id, ust["version"]))
+        adresler = kayit_adresleri(kayit)
+        connection.execute("INSERT INTO v4_records(id,version,kind,record,path,visible,published_at,address_key) "
+                           "VALUES(?,?,?,?,?,1,?,?)",
+                           (kayit_id, surum, kayit["kind"], json.dumps(kayit, ensure_ascii=False, sort_keys=True), yol, simdi,
+                            adresler[0] if adresler else None))
+        self._adresleri_yaz(connection, kayit_id, surum, adresler)
+        self._arama_satirini_yaz(connection, kayit, simdi)
+        connection.execute("UPDATE v4_extensions SET version=?,based_on=?,published_at=? WHERE submission_id=?",
+                           (surum, ust["version"], simdi, kimlik))
+        self._revizyon_artir(connection)
+
+    def _uzanti_surumunu_indir(self, connection, kimlik, removal, simdi):
+        """Uzantı gönderiminin sürümünü indirir (katkıcı geri çekmesi `withdrawn`, moderatör `removed`). Yalnız güncel uç
+        sürüm iner; önceki sürüm yeniden güncel olur ve arama dizinine girer. Üstüne yeni sürüm geldiyse 409 `not_current`.
+        Yayımlanmamış (sırada, moderasyonda) uzantıda kayıt değişmez."""
+        uz = self._uzanti_satiri(connection, kimlik)
+        if uz is None or uz["version"] is None:
+            return False
+        satir = connection.execute("SELECT visible,removal FROM v4_records WHERE id=? AND version=?",
+                                   (uz["record_id"], uz["version"])).fetchone()
+        if satir is None or satir["removal"] is not None:
+            return False          # kayıt zaten bütünüyle indi
+        if not satir["visible"]:
+            # Düzeltme turu 1 (kabul K3): ortadaki sürüm tek başına inmez (iddialar yalnız sona eklenir; ortadan çıkarmak
+            # üstteki sürümlerin iddia numaralarını değiştirirdi). İleti kime göre doğru yolu söyler.
+            raise KatkiHatasi(
+                "Bu uzantının üstüne yeni bir sürüm yayımlandı; yalnız güncel sürüm geri çekilir. Kaldırma için moderatöre "
+                "başvurun." if removal == "withdrawn" else
+                "Bu uzantının üstüne yeni bir sürüm yayımlandı; ortadaki sürüm tek başına kaldırılamaz. Üstteki sürümleri "
+                "(sondan başlayarak, kendi gönderim kimlikleriyle) ya da kaydın tamamını (asıl gönderim kimliğiyle) kaldırın.",
+                409, code="not_current")
+        onceki = connection.execute("SELECT record,published_at FROM v4_records WHERE id=? AND version=? AND removal IS NULL",
+                                    (uz["record_id"], uz["based_on"])).fetchone()
+        if onceki is None or onceki["record"] == "{}":
+            # Düzeltme turu 1 (kabul Ö5b): önceki sürüm yok ya da gövdesi silinmiş (eski kodun temizliği). Bu sürüm inerse kayıt
+            # bütünüyle düşerdi; asıl katkıcı hiçbir şey geri çekmedi. Hiçbir satır değişmez.
+            raise KatkiHatasi(
+                "Bu uzantının dayandığı önceki sürüm artık okunamıyor; bu sürüm inerse kaydın tamamı yayından düşer. Geri çekme "
+                "yapılmadı; kaldırma için moderatöre başvurun." if removal == "withdrawn" else
+                "Bu uzantının dayandığı önceki sürüm artık okunamıyor; bu sürüm tek başına kaldırılamaz. Gerekirse kaydın "
+                "tamamını asıl gönderim kimliğiyle kaldırın.", 409, code="previous_version_missing")
+        connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal=? WHERE id=? AND version=?",
+                           (simdi, removal, uz["record_id"], uz["version"]))
+        connection.execute("UPDATE v4_records SET visible=1,removed_at=NULL WHERE id=? AND version=?",
+                           (uz["record_id"], uz["based_on"]))
+        self._arama_satirini_yaz(connection, json.loads(onceki["record"]), onceki["published_at"])
+        self._revizyon_artir(connection)
+        return True
+
+    def _uzantilari_indir(self, connection, kayit_id, not_, simdi):
+        """Asıl kayıt bütünüyle inince (asıl katkıcının geri çekmesi, moderatörün kaldırması) yayımlanmış uzantı gönderimleri
+        `removed` olur (tasarım §2e)."""
+        if not self._uzanti_tablosu_var(connection):
+            return
+        kimlikler = [r["submission_id"] for r in connection.execute(
+            "SELECT e.submission_id FROM v4_extensions e JOIN v4_submissions s ON s.id=e.submission_id "
+            "WHERE e.record_id=? AND s.status='published'", (kayit_id,)).fetchall()]
+        for kimlik in kimlikler:
+            connection.execute("UPDATE v4_submissions SET status='removed',note=?,revision=revision+1,updated_at=? WHERE id=?",
+                               (not_, simdi, kimlik))
+            self._olay(connection, kimlik, "system", "removed", not_, simdi=simdi)
+
+    def _yayinla(self, connection, kimlik, aday, sonuc, yol, simdi, *, okuma_eki=False):
         surum = (connection.execute("SELECT MAX(version) FROM v4_records WHERE id=?", (kimlik,)).fetchone()[0] or 0) + 1
-        kayit = kayit_olustur(aday, sonuc, kayit_id=kimlik, surum=surum, yol=yol, yayin_saniye=simdi, origin=self.origin)
+        kayit = kayit_olustur(aday, sonuc, kayit_id=kimlik, surum=surum, yol=yol, yayin_saniye=simdi, origin=self.origin,
+                              okuma_eki=okuma_eki)
         # Her tür adres dizinine girer (K1 ikinci dilim): iddiaların ve `sources[]` listesinin bütün kanonik adresleri
         # `v4_record_addresses` tablosunda; eski `address_key` sütunu ilk adresle dolar (eski sürüm ve yedek araçları için).
         adresler = kayit_adresleri(kayit)
@@ -677,8 +915,13 @@ class KatkiDeposu:
             gorunum["gate_result"] = json.loads(row["gate_result"]) if row["gate_result"] else None
             return {"submission": gorunum}
 
-    def karar(self, kullanici, kimlik, payload):
-        """Moderasyon kuyruğundaki (kapıdan geçmiş) kayıt için yayımla ya da reddet. Kapının reddini moderatör çeviremez."""
+    def karar(self, kullanici, kimlik, payload, *, ayarlar=None):
+        """Moderasyon kuyruğundaki (kapıdan geçmiş) kayıt için yayımla ya da reddet. Kapının reddini moderatör çeviremez.
+
+        alpha.15: okuma eki kapalıyken (varsayılan) okuma ekli gönderim yayımlanmaz (409 `reading_extensions_off`; kip açıkken
+        kapıdan geçmiş, sonra kip kapanmış olabilir); öteki kayıtlar alpha.14 biçiminde yazılır."""
+        okuma_eki = (ayarlar or K1Ayarlari()).okuma_eki
+        yeniden_sira = False
         _alanlar(payload, {"decision", "expected_revision", "note"}, {"decision", "expected_revision"})
         if payload["decision"] not in ("publish", "reject"):
             raise KatkiHatasi("decision publish ya da reject olmalı.", code="invalid_request")
@@ -694,14 +937,41 @@ class KatkiDeposu:
             if row["status"] != "pending_review":
                 raise KatkiHatasi("Bu gönderim moderasyon kuyruğunda değil.", 409, code="not_in_review")
             durum = "published" if payload["decision"] == "publish" else "review_rejected"
-            connection.execute("UPDATE v4_submissions SET status=?,note=?,hold_reason=NULL,revision=revision+1,updated_at=? "
-                               "WHERE id=?", (durum, not_, simdi, kimlik))
-            if durum == "published":
-                self._yayinla(connection, kimlik, json.loads(row["candidate"]), json.loads(row["gate_result"]),
-                              "moderator", simdi)
-            self._olay(connection, kimlik, f"moderator:{kullanici['id']}", durum, not_, simdi=simdi)
-            return {"submission": self.gorunum(connection, connection.execute(
-                "SELECT * FROM v4_submissions WHERE id=?", (kimlik,)).fetchone())}
+            uzanti_mi = row["kind"] == UZANTI_TURU
+            if durum == "published" and uzanti_mi:
+                if not (ayarlar or K1Ayarlari()).uzanti:
+                    raise KatkiHatasi(UZANTI_ACIK_DEGIL, 409, code="extensions_off")
+                kapi = json.loads(row["gate_result"]) if row["gate_result"] else {}
+                baglam = self.uzanti_baglami(json.loads(row["candidate"]), okuma_eki=okuma_eki, connection=connection)
+                if any(kod == "uzanti.okuma_eki_kapali" for kod, _ in baglam["on_hatalar"]):
+                    # Düzeltme turu 1 (kabul K4): asıl neden okuma ekinin kapalı olması; birleştirme hatası diye sunulmaz.
+                    raise KatkiHatasi("Okuma eki kapalı: bu uzantı ya da üst kaydı not_in_sources, not_researched ya da "
+                                      "iddiaya bağlı answers taşıyor ve bu kipte yayımlanamaz. Reddedin ya da okuma eki "
+                                      "açılınca yayımlayın.", 409, code="reading_extensions_off")
+                if self._ust_surum(connection, kapi) != (kapi.get("uzanti") or {}).get("taban_surum"):
+                    # 14a: kapıdan sonra üst kayıt değişti; uzantı yeniden kapıya gider (otomatik yeniden taban).
+                    connection.execute("UPDATE v4_submissions SET status='queued',hold_reason=NULL,next_attempt_at=NULL,"
+                                       "revision=revision+1,updated_at=? WHERE id=?", (simdi, kimlik))
+                    self._olay(connection, kimlik, f"moderator:{kullanici['id']}", "requeued", "parent_changed", simdi=simdi)
+                    yeniden_sira = True
+            if durum == "published" and not yeniden_sira and not okuma_eki and okuma_ekli_aday_mi(json.loads(row["candidate"])):
+                raise KatkiHatasi("Okuma eki kapalı: bu gönderim not_in_sources, not_researched ya da iddiaya bağlı answers "
+                                  "taşıyor ve bu kipte yayımlanamaz. Reddedin ya da okuma eki açılınca yayımlayın.", 409,
+                                  code="reading_extensions_off")
+            if not yeniden_sira:
+                connection.execute("UPDATE v4_submissions SET status=?,note=?,hold_reason=NULL,revision=revision+1,"
+                                   "updated_at=? WHERE id=?", (durum, not_, simdi, kimlik))
+                if durum == "published" and uzanti_mi:
+                    self._uzanti_yayinla(connection, kimlik, json.loads(row["candidate"]), json.loads(row["gate_result"]),
+                                         "moderator", simdi, ayarlar=ayarlar or K1Ayarlari())
+                elif durum == "published":
+                    self._yayinla(connection, kimlik, json.loads(row["candidate"]), json.loads(row["gate_result"]),
+                                  "moderator", simdi, okuma_eki=okuma_eki)
+                self._olay(connection, kimlik, f"moderator:{kullanici['id']}", durum, not_, simdi=simdi)
+                return {"submission": self.gorunum(connection, connection.execute(
+                    "SELECT * FROM v4_submissions WHERE id=?", (kimlik,)).fetchone())}
+        raise KatkiHatasi("Kapıdan sonra üst kayıt değişti; uzantı güncel sürümle yeniden denetlenecek (gönderim sıraya döndü).",
+                          409, code="parent_changed")
 
     def kaldir(self, kullanici, kimlik, payload):
         """Kaldırma talebi üzerine moderatör kararı: kayıt yayından iner, asgari iz kalır."""
@@ -717,10 +987,16 @@ class KatkiDeposu:
                 raise KatkiHatasi("Gönderim değişti; güncel durumu yeniden açın.", 409, code="revision_conflict")
             if row["status"] != "published":
                 raise KatkiHatasi("Bu gönderimin yayında sürümü yok.", 409, code="not_published")
-            if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='removed' WHERE id=? AND visible=1",
-                                  (simdi, kimlik)).rowcount:
-                self._arama_satirini_sil(connection, kimlik)
-                self._revizyon_artir(connection)
+            if row["kind"] == UZANTI_TURU:
+                # 14a: uzantı gönderimi kimliğiyle yalnız son (güncel) sürüm iner; önceki sürüm yeniden güncel olur.
+                self._uzanti_surumunu_indir(connection, kimlik, "removed", simdi)
+            else:
+                # Asıl gönderim kimliğiyle kaydın bütün sürümleri iner (yerini bırakmışlar dahil; kapalı kipte aynı küme).
+                if connection.execute("UPDATE v4_records SET visible=0,removed_at=?,removal='removed' WHERE id=? "
+                                      "AND removal IS NULL", (simdi, kimlik)).rowcount:
+                    self._arama_satirini_sil(connection, kimlik)
+                    self._revizyon_artir(connection)
+                self._uzantilari_indir(connection, kimlik, "parent_removed", simdi)
             connection.execute("UPDATE v4_submissions SET status='removed',note=?,revision=revision+1,updated_at=? WHERE id=?",
                                (not_, simdi, kimlik))
             self._olay(connection, kimlik, f"moderator:{kullanici['id']}", "removed", not_, simdi=simdi)
@@ -734,14 +1010,24 @@ class KatkiDeposu:
             return 404, None
         with self.baglanti() as connection:
             if surum is None:
-                row = connection.execute("SELECT * FROM v4_records WHERE id=? ORDER BY version DESC LIMIT 1", (kimlik,)).fetchone()
+                row = connection.execute("SELECT * FROM v4_records WHERE id=? ORDER BY visible DESC,version DESC LIMIT 1",
+                                         (kimlik,)).fetchone()
             else:
                 row = connection.execute("SELECT * FROM v4_records WHERE id=? AND version=?", (kimlik, surum)).fetchone()
         if row is None:
             return 404, None
+        if not row["visible"] and row["removal"] is None:
+            # 14a: yerini bırakmış sürüm sürüm adresiyle okunur (gövde aynen); güncel sürüm `guncel_surum` ile bulunur.
+            return (200, json.loads(row["record"])) if row["record"] != "{}" else (404, None)
         if not row["visible"]:
             return 410, kaldirma_izi(kimlik, row["version"], row["removal"], row["removed_at"])
         return 200, json.loads(row["record"])
+
+    def guncel_surum(self, kimlik):
+        """Kaydın görünür (güncel) sürüm numarası; yoksa None."""
+        with self.baglanti() as connection:
+            row = connection.execute("SELECT version FROM v4_records WHERE id=? AND visible=1", (kimlik,)).fetchone()
+        return row["version"] if row else None
 
     def kayitlari_listele(self, *, offset=0, limit=30):
         with self.baglanti() as connection:
@@ -759,7 +1045,7 @@ class KatkiDeposu:
         """Önceden yayımlanmış, sonra inen kayıtların adres başına asgari izleri (en yeni önce; her tür)."""
         return [dict(row) for row in connection.execute(
             "SELECT r.id,r.version,a.address_key,r.removed_at FROM v4_records r JOIN v4_record_addresses a ON a.id=r.id "
-            "AND a.version=r.version WHERE r.visible=0" + kosul + " ORDER BY r.removed_at DESC,r.id,a.position", degerler).fetchall()]
+            "AND a.version=r.version WHERE r.removal IS NOT NULL" + kosul + " ORDER BY r.removed_at DESC,r.id,a.position", degerler).fetchall()]
 
     def bakis(self, address_key, urun, surum):
         with self.baglanti() as connection:
@@ -782,6 +1068,22 @@ class KatkiDeposu:
         with self.baglanti() as connection:
             connection.execute("BEGIN")
             return konu_govdesi(self._revizyon(connection), self._gorunur_kayitlar(connection), int(self.clock()))
+
+    def okuma_ekli_kayit_var(self):
+        """Görünür kayıtlardan biri okuma eki taşıyor mu (yetenek listesi için; düzeltme turu 2, kabul Y2). Metin süzgeci
+        yalnız adayları daraltır; karar kaydın JSON'u ayrıştırılarak `okuma_ekli_kayit_mi` ile verilir."""
+        with self.baglanti() as connection:
+            rows = connection.execute(
+                "SELECT record FROM v4_records WHERE visible=1 AND (record LIKE '%source_snapshots%' OR record LIKE "
+                "'%absence_checks%' OR record LIKE '%not_in_sources%' OR record LIKE '%not_researched%' OR record LIKE "
+                "'%\"q\"%')").fetchall()
+        return any(okuma_ekli_kayit_mi(json.loads(row["record"])) for row in rows)
+
+    def uzantili_kayit_var(self):
+        """Görünür kayıtlardan biri uzantı eki (`lineage`) taşıyor mu (kip kapalıyken yetenek listesi için; 14a)."""
+        with self.baglanti() as connection:
+            rows = connection.execute("SELECT record FROM v4_records WHERE visible=1 AND record LIKE '%\"lineage\"%'").fetchall()
+        return any(uzantili_kayit_mi(json.loads(row["record"])) for row in rows)
 
 
 class _AramaKaynagi:

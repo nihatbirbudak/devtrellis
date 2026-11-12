@@ -46,7 +46,11 @@ def katki_v4_yollarini_ekle(app, depo, ayarlar, session):
     @app.get("/api/community/capabilities")
     def capabilities():
         # Yapılandırmadaki ayar; moderatörün durdurma anahtarı kamuya açık edilmez (K1 kabulü bulgu 11).
-        return yetenekler(ayarlar.otomatik_yayin)
+        # Düzeltme turu 2 (kabul Y2): kip kapalıyken de depoda okuma ekli görünür kayıt varsa ekler ilan edilir.
+        # 14a: uzantı kipi kapalıyken de `lineage` taşıyan görünür kayıt varsa o ek ilan edilir; `extensions` yalnız açıkken.
+        return yetenekler(ayarlar.otomatik_yayin, ayarlar.okuma_eki,
+                          okuma_ekli_kayit_var=not ayarlar.okuma_eki and depo.okuma_ekli_kayit_var(),
+                          uzanti=ayarlar.uzanti, uzantili_kayit_var=not ayarlar.uzanti and depo.uzantili_kayit_var())
 
     @app.head("/api/community/sources/{address_key}")
     @app.get("/api/community/sources/{address_key}")
@@ -102,6 +106,12 @@ def katki_v4_yollarini_ekle(app, depo, ayarlar, session):
         durum, govde = depo.kayit_oku(kimlik, surum)
         if durum == 404:
             return JSONResponse({"detail": "Kayıt bulunamadı.", "code": "not_found"}, status_code=404)
+        if durum == 200 and surum is not None and bicim is None:
+            guncel = depo.guncel_surum(kimlik)
+            if guncel is not None and guncel != govde.get("version"):
+                # 14a: yerini bırakmış sürüm aynen döner (kayıt gövdesi değişmez); güncel sürüm başlıklarda.
+                return JSONResponse(govde, headers={"X-DevTrellis-Superseded-By": str(guncel),
+                                                    "Link": f'<{PREFIX}/records/{kimlik}>; rel="latest-version"'})
         if durum != 200 or bicim is None:
             return JSONResponse(govde, status_code=durum)
         if bicim == "agent":
@@ -144,7 +154,7 @@ def katki_v4_yollarini_ekle(app, depo, ayarlar, session):
     @app.post(PREFIX + "/review/{submission_id}/decision")
     def review_decision(submission_id: str, request: Request, payload: dict = Body(...)):
         user = moderator(request, mutate=True)
-        return sonuc(depo.karar, user, submission_id, payload)
+        return sonuc(depo.karar, user, submission_id, payload, ayarlar=ayarlar)
 
     @app.post(PREFIX + "/records/{record_id}/remove")
     def record_remove(record_id: str, request: Request, payload: dict = Body(...)):

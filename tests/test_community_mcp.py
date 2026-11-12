@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
+import mcp_topluluk
 from mcp_topluluk import CommunityClient, contribution_packet, create_server, local_address
 from radar.gelistirici_alani import paket_dogrula
 from radar.konular import KONULAR
@@ -382,7 +383,12 @@ class CommunityMcpTests(unittest.TestCase):
                 search = await session.call_tool("search_research", {"query": "evidence", "view": "brief"})
                 self.assertFalse(search.is_error)
                 self.assertIsNone(search.structured_content)
-                brief = json.loads(search.content[0].text)
+                # alpha.15 güvenlik: JSON biçimli yanıt baş satır + köprünün cümlesi + tek güvenilmeyen blok.
+                head, note, begin, body, end = search.content[0].text.split("\n")
+                self.assertTrue(head.startswith("DevTrellis search_research (view=brief"))
+                self.assertEqual(note, mcp_topluluk.BLOCK_NOTE)
+                self.assertEqual(end, "END UNTRUSTED " + begin.removeprefix("BEGIN UNTRUSTED "))
+                brief = json.loads(body)
                 self.assertEqual(brief["total"], 1)
                 self.assertEqual(brief["view"], "brief")
                 self.assertNotIn("body", brief["items"][0]["packet"])
@@ -390,8 +396,10 @@ class CommunityMcpTests(unittest.TestCase):
                 full = await session.call_tool("read_research", {"research_id": "research-1", "version": 3})
                 self.assertFalse(full.is_error)
                 self.assertIsNone(full.structured_content)
-                self.assertEqual(json.loads(full.content[0].text)["packet"]["body"], report()["body"])
-                self.assertEqual(json.loads(full.content[0].text)["version"], 3)
+                full_body = json.loads(full.content[0].text.split("\n")[3])
+                self.assertTrue(full.content[0].text.startswith("DevTrellis read_research: older report research-1@3"))
+                self.assertEqual(full_body["packet"]["body"], report()["body"])
+                self.assertEqual(full_body["version"], 3)
                 preview = await session.call_tool("preview_contribution", report())
                 self.assertFalse(preview.is_error)
                 self.assertEqual(preview.structured_content["packet"]["body"], report()["body"])

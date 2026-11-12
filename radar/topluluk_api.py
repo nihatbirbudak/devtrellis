@@ -505,7 +505,10 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     @app.get("/llms.txt")
     def report_llms():
         cards = list(yayindaki_arastirmalar(store))
-        lines = ["# DevTrellis", "", "Public, reviewed research. Read the exact version and sources before citing.", ""]
+        lines = ["# DevTrellis", "",
+                 "Public, source-quoted research. Records published through the machine gate are not human-reviewed: a machine "
+                 "found their quotes in the cited pages and did not check the claims. Read the exact version and sources before "
+                 "citing.", ""]
         lines.extend(f'- [{card["packet"]["title"]}]({origin}{rapor_yolu(card, exact=True)})' for card in cards)
         return PlainTextResponse("\n".join(lines) + "\n")
 
@@ -513,7 +516,7 @@ def uygulama(db_path, *, public_url, local_pilot=False, feed_db_path=None, sourc
     def report_guide(request: Request):
         language = report_language(request)
         tr = language == "tr"
-        return HTMLResponse(f'<!doctype html><html lang="{language}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{"Rapor nasıl okunur" if tr else "How to read a report"} — DevTrellis</title><link rel="stylesheet" href="{asset_url("community-report.css")}"><script src="{asset_url("report-language.js")}" defer></script><main><a href="/">DevTrellis</a><p aria-label="Language"><a href="/report-guide?lang=en" lang="en" hreflang="en" data-report-language="en">English</a> · <a href="/report-guide?lang=tr" lang="tr" hreflang="tr" data-report-language="tr">Türkçe</a></p><h1>{"Rapor nasıl okunur" if tr else "How to read a report"}</h1><p>{"Raporun kapsamını, iddia dayanağını, son kontrol tarihini ve eksik kanıtları ayrı değerlendirin. Model adı veya sayaç doğruluk puanı değildir. Yalnız açıkça seçilip onaylanan kamu kopyaları yayımlanır; kaynakların lisansı rapor lisansından ayrıdır." if tr else "Check the report scope, claim evidence, last checked date and gaps separately. Model names and counters are not accuracy scores. Only explicitly selected and approved public copies are published; source licenses remain separate from the report license."}</p><p><a href="/guidelines">{"Topluluk kuralları" if tr else "Community guidelines"}</a></p></main></html>')
+        return HTMLResponse(f'<!doctype html><html lang="{language}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{"Rapor nasıl okunur" if tr else "How to read a report"} — DevTrellis</title><link rel="stylesheet" href="{asset_url("community-report.css")}"><script src="{asset_url("report-language.js")}" defer></script><main><a href="/">DevTrellis</a><p aria-label="Language"><a href="/report-guide?lang=en" lang="en" hreflang="en" data-report-language="en">English</a> · <a href="/report-guide?lang=tr" lang="tr" hreflang="tr" data-report-language="tr">Türkçe</a></p><h1>{"Rapor nasıl okunur" if tr else "How to read a report"}</h1><p>{"Raporun kapsamını, iddia dayanağını, son kontrol tarihini ve eksik kanıtları ayrı değerlendirin. Model adı veya sayaç doğruluk puanı değildir. Yalnız katkıcının yayımlamayı seçtiği kopyalar kamuya açıktır; makine denetimiyle yayımlanan kayıtlar bir insan tarafından incelenmedi; kayıt bunu açıkça yazar. Kaynakların lisansı rapor lisansından ayrıdır." if tr else "Check the report scope, claim evidence, last checked date and gaps separately. Model names and counters are not accuracy scores. Only copies their contributor chose to publish are public; records published through the machine gate were not reviewed by a person and say so. Source licenses remain separate from the report license."}</p><p><a href="/guidelines">{"Topluluk kuralları" if tr else "Community guidelines"}</a></p></main></html>')
 
     @app.get("/objections/new/{entry_id}/{version}")
     def objection_form(entry_id: str, version: int, request: Request):

@@ -6,7 +6,9 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from .gizlilik import guvenli_ad
+from radar import okuma_eki as okuma_eki_modulu
+
+from .gizlilik import gizli_kalip_bul, guvenli_ad
 from .sonuc import Denetim
 
 TURLER = ("source_card", "research_report", "topic_summary")
@@ -19,10 +21,12 @@ SUNUCU_ALANLARI = {"id", "version", "evidence", "quote_match", "claim_review", "
                    "publication", "source_freshness", "corrections", "link", "source", "address_key", "source_key",
                    "body_hash", "normalization_version", "extractor_version", "schema"}
 
-KART_ALANLARI = {"kind", "schema_version", "language", "claims", "not_covered", "provenance", "rights"}
+# alpha.15 (14r2) okuma eki: `not_in_sources` ve `not_researched` isteğe bağlı (radar/okuma_eki_modulu.py).
+KART_ALANLARI = {"kind", "schema_version", "language", "claims", "not_covered", "provenance", "rights",
+                 "not_in_sources", "not_researched"}
 RAPOR_ALANLARI = {"kind", "schema_version", "language", "title", "summary", "short_answer", "claims",
                   "recommendations", "not_covered", "applies_to", "sources", "provenance", "generated_at", "rights",
-                  "answers"}
+                  "answers", "not_in_sources", "not_researched"}
 IDDIA_ALANLARI = {"text", "quote", "source_url", "checked_on", "claim_type", "applies_to"}
 KART_IDDIA_SINIRI = 20
 ASAMA_ALANLARI = {"provider", "model", "access_type", "basis", "terms_url"}
@@ -135,8 +139,13 @@ def _koken(s, koken, yer):
             s.adres(asama["terms_url"], f"{alt}.terms_url")
 
 
-def denetle(paket, *, bugun=None):
+def denetle(paket, *, bugun=None, okuma_eki=False):
+    """`okuma_eki=False` (varsayılan; sunucu ayarı `reading_extensions` kapalı) v0.2.3 kurallarının aynısıdır: yeni alanlar
+    sözleşmede yok sayılır (`sema.bilinmeyen_alan`), nesne cevap maddesi `sema.tip`, terim uyarıları yok. Açıkken alpha.15
+    okuma eki kuralları da çalışır (düzeltme turu 1, yönetici kararı 1)."""
     bugun = bugun or datetime.now(timezone.utc).date()
+    kart_alanlari = KART_ALANLARI if okuma_eki else KART_ALANLARI - set(okuma_eki_modulu.YOKLUK_ALANLARI)
+    rapor_alanlari = RAPOR_ALANLARI if okuma_eki else RAPOR_ALANLARI - set(okuma_eki_modulu.YOKLUK_ALANLARI)
     d = Denetim(1, "sema", "Şema ve sınırlar",
                 gecti_aciklamasi="Zorunlu alanlar, uzunluklar, adres, tarih ve dil alanı sözleşmeye uyuyor.")
     s = _Sinayici(d)
@@ -149,9 +158,9 @@ def denetle(paket, *, bugun=None):
         return d
     kart = tur == "source_card"
     if kart:
-        s.alanlar(paket, "paket", KART_ALANLARI, ("kind", "schema_version", "language", "claims"))
+        s.alanlar(paket, "paket", kart_alanlari, ("kind", "schema_version", "language", "claims"))
     else:
-        s.alanlar(paket, "paket", RAPOR_ALANLARI, ("kind", "schema_version", "language", "title", "claims"))
+        s.alanlar(paket, "paket", rapor_alanlari, ("kind", "schema_version", "language", "title", "claims"))
     if paket.get("schema_version") != 4 or isinstance(paket.get("schema_version"), bool):
         d.kal("sema.surum")
     if paket.get("language") != "en":
@@ -166,10 +175,11 @@ def denetle(paket, *, bugun=None):
         if "recommendations" in paket:
             for sira, oge in enumerate(s.liste(paket["recommendations"], "paket.recommendations", 0, 20)):
                 s.metin(oge, f"paket.recommendations[{sira}]", 1, 400)
-        if "answers" in paket:
+        if "answers" in paket and not okuma_eki:
             # v0.2.2 (mühendislik raporu A2): raporun cevapladığı 3–5 soru; aramada kullanılır, kaynağa bağlanmaz.
             for sira, oge in enumerate(s.liste(paket["answers"], "paket.answers", 3, 5)):
                 s.metin(oge, f"paket.answers[{sira}]", 1, 120)
+        # Okuma eki açıkken `answers` iddialar okunduktan sonra denetlenir (madde iddia numarasına bağlanabilir).
         if "applies_to" in paket:
             if isinstance(paket["applies_to"], str):
                 s.metin(paket["applies_to"], "paket.applies_to", 1, 400)
@@ -241,4 +251,89 @@ def denetle(paket, *, bugun=None):
     for alan in ("title", "summary", "short_answer"):
         if isinstance(paket.get(alan), str) and _TURKCE.search(paket[alan]):
             d.uyar("sema.dil_kuskusu", f"paket.{alan} Türkçeye özgü harf içeriyor.")
+    if not okuma_eki:
+        return d
+    if not kart and "answers" in paket:
+        _cevaplar(s, paket["answers"], iddialar)
+    _yokluk_notlari(s, paket, kart)
+    if not kart:
+        # alpha.15 (14r2, tasarım engel 3): kısa cevaptaki sayı, sürüm ya da kod adı hiçbir alıntıda (ya da başlık, kapsam,
+        # kaynak adresinde) geçmiyorsa uyarı. Ret değil: K5'te iddia–alıntı desteği ret kuralı yanlış ret üretmişti.
+        eksik = okuma_eki_modulu.paket_kisa_cevap_eksikleri(paket)
+        if eksik:
+            d.uyar("sema.kisa_cevap_terim", f"Kısa cevaptaki {len(eksik)} terim hiçbir alıntıda geçmiyor: "
+                                            + ", ".join(_ad_goster(t) for t in eksik[:8]) + ".")
     return d
+
+
+def _ad_goster(terim):
+    """Uyarı metninde katkıcının terimi yalnız güvenli bir kısa biçimse yazılır (gizli bilgi taşıyabilir)."""
+    gosterilir = re.fullmatch(r"[A-Za-z0-9_./{}+-]{1,60}", terim) and not gizli_kalip_bul(terim)
+    return terim if gosterilir else "[gösterilmeyen terim]"
+
+
+def _numaralar(deger, yer, en_cok, *, en_az):
+    """1..en_cok arası, yinelenmeyen tam sayı listesi; değilse ret (`sema.cevap_bagi` / `sema.kaynak_no` çağırana göre)."""
+    if not isinstance(deger, list) or not en_az <= len(deger) <= okuma_eki_modulu.EN_COK_BAG:
+        return f"{yer} {en_az}–{okuma_eki_modulu.EN_COK_BAG} öğelik bir numara listesi olmalı."
+    if any(type(n) is not int for n in deger):
+        return f"{yer} yalnız tam sayı taşımalı."
+    if len(set(deger)) != len(deger):
+        return f"{yer} aynı numarayı iki kez taşıyor."
+    if any(not 1 <= n <= en_cok for n in deger):
+        return f"{yer} 1–{en_cok} arasında olmalı (pakette {en_cok} öğe var)."
+    return None
+
+
+def _cevaplar(s, cevaplar, iddialar):
+    """alpha.15 cevap bağları (tasarım engel 3): madde düz metin (eski biçim, bağsız), `{"q", "claims"}` ya da
+    `{"q", "inferred_from"}`. Var olmayan iddiaya bağ ret; bağlı maddenin terimi bağlı alıntılarda yoksa uyarı."""
+    d = s.d
+    for sira, oge in enumerate(s.liste(cevaplar, "paket.answers", 3, 5)):
+        yer = f"paket.answers[{sira}]"
+        if isinstance(oge, str) or not isinstance(oge, dict):
+            # v0.2.2 (mühendislik raporu A2): raporun cevapladığı soru; aramada kullanılır, kaynağa bağlanmaz.
+            if s.metin(oge, yer, 1, 120) and okuma_eki_modulu.BAG_TAKLIDI.search(oge):
+                # Düzeltme turu 1 (kabul K1): düz metin madde bağ biçimi taşırsa okur bağlı sanabilir.
+                d.uyar("sema.cevap_bagi_bicimi", f"{yer} düz metin ama '-> claims' gibi bir bağ yazısı taşıyor; bağ için "
+                                                 '{"q": …, "claims": […]} biçimini kullanın.')
+            continue
+        s.alanlar(oge, yer, {"q", *okuma_eki_modulu.CEVAP_BAG_ALANLARI}, ("q",))
+        soru = s.metin(oge.get("q"), f"{yer}.q", 1, 120, zorunlu="q" in oge)
+        baglar = [alan for alan in okuma_eki_modulu.CEVAP_BAG_ALANLARI if alan in oge]
+        if len(baglar) != 1:
+            d.kal("sema.cevap_bagi", f"{yer} ya claims (bu iddiaların alıntıları cevaplar) ya da inferred_from (yalnız "
+                                     "çıkarım) taşımalı; ikisi birden ya da hiçbiri olmaz.")
+            continue
+        alan = baglar[0]
+        hata = _numaralar(oge[alan], f"{yer}.{alan}", len(iddialar), en_az=1 if alan == "claims" else 0)
+        if hata:
+            d.kal("sema.cevap_bagi", hata)
+            continue
+        if alan == "claims" and soru:
+            bagli = [iddialar[n - 1] for n in oge["claims"] if isinstance(iddialar[n - 1], dict)]
+            eksik = okuma_eki_modulu.bagli_cevap_eksikleri(soru, [i.get("quote") for i in bagli], [i.get("source_url") for i in bagli])
+            if eksik:
+                d.uyar("sema.cevap_bagi_terim", f"{yer}: {len(eksik)} terim bağlı iddiaların alıntılarında geçmiyor: "
+                                                + ", ".join(_ad_goster(t) for t in eksik[:8]) + ".")
+
+
+def _yokluk_notlari(s, paket, kart):
+    """alpha.15 yokluk notları (tasarım engel 2): `not_in_sources` maddesi `{"item", "checked": [kaynak no]}`,
+    `not_researched` maddesi metin. Sınırlar eski `not_covered` ile aynı (kart 3 × 80, rapor 10 × 240)."""
+    en_cok_oge, en_cok_uzunluk = okuma_eki_modulu.YOKLUK_SINIRI["source_card" if kart else "report"]
+    kaynak_sayisi = len(okuma_eki_modulu.paket_kaynak_sirasi(paket))
+    if "not_in_sources" in paket:
+        for sira, oge in enumerate(s.liste(paket["not_in_sources"], "paket.not_in_sources", 0, en_cok_oge)):
+            yer = f"paket.not_in_sources[{sira}]"
+            if not s.alanlar(oge, yer, {"item", "checked"}, ("item", "checked")):
+                continue
+            s.metin(oge.get("item"), f"{yer}.item", 1, en_cok_uzunluk, zorunlu="item" in oge)
+            if "checked" in oge:
+                hata = _numaralar(oge["checked"], f"{yer}.checked", kaynak_sayisi, en_az=1)
+                if hata:
+                    s.d.kal("sema.kaynak_no", hata + " Numara kaynak sırasıdır: önce sources listesi, sonra listede "
+                                                    "olmayan iddia adresleri; kaynak kartında 1.")
+    if "not_researched" in paket:
+        for sira, oge in enumerate(s.liste(paket["not_researched"], "paket.not_researched", 0, en_cok_oge)):
+            s.metin(oge, f"paket.not_researched[{sira}]", 1, en_cok_uzunluk)

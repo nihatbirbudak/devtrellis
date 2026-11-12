@@ -35,9 +35,18 @@ V1_KOKEN_ALANLARI = {"model", "provider", "generated_at", "question", "topic", "
 V1_GELISIM_ALANLARI = {"parents", "change_summary"}
 V1_EBEVEYN_ALANLARI = {"research_id", "version"}
 V4_KAYIT_ALANLARI = {"schema", "schema_version", "contract", "kind", "id", "version", "language", "content", "claims",
-                     "provenance", "rights", "publication", "corrections", "link"}
+                     "provenance", "rights", "publication", "corrections", "link", "lineage"}
+# alpha.15 (14a) uzantı eki `lineage`: sürüm zinciri (isteğe bağlı; yetenekler `record_extensions`).
+V4_SOY_ALANLARI = {"versions"}
+V4_SOY_SURUM_ALANLARI = {"version", "published_at", "path", "human_reviewed", "claims", "based_on", "seen_version",
+                         "change_summary", "provenance"}
 V4_ICERIK_ALANLARI = {"title", "summary", "short_answer", "answers", "recommendations", "not_covered", "applies_to", "sources",
-                      "generated_at"}
+                      "generated_at", "not_in_sources", "not_researched"}
+# alpha.15 okuma ekleri: cevap bağı nesnesi, kaynaklarda yok maddesi, kaynak anlığı ve terim araması satırı.
+V4_CEVAP_ALANLARI = {"q", "claims", "inferred_from"}
+V4_YOKLUK_ALANLARI = {"item", "checked"}
+V4_ANLIK_ALANLARI = {"address_key", "fetched_at", "visible_text_sha256"}
+V4_YOKLUK_DENETIMI_ALANLARI = {"item", "terms", "checked_keys", "found_in_keys", "found_in_claims"}
 V4_KAPSAM_ALANLARI = {"product", "versions", "version_scheme"}
 V4_KAYNAK_ALANLARI = {"title", "url"}
 V4_IDDIA_ALANLARI = {"id", "text", "claim_type", "applies_to", "evidence", "quote_match", "claim_review", "evidence_state"}
@@ -52,7 +61,7 @@ V4_ALINTI_HAK_ALANLARI = {"basis", "max_chars"}
 V4_YAYIN_ALANLARI = {"state", "path", "policy_version", "published_at", "human_reviewed", "gate", "label"}
 # alpha.13b kayıt eki `machine_not_covered` (isteğe bağlı; yetenekler `record_extensions`).
 V4_KAPI_ALANLARI = {"version", "ran_at", "input_sha256", "checks_passed", "warnings", "fields_not_tied_to_sources",
-                    "machine_not_covered"}
+                    "machine_not_covered", "source_snapshots", "absence_checks"}
 V4_ETIKET_ALANLARI = {"tr", "en"}
 V4_DUZELTME_ALANLARI = {"open", "latest_public_version", "public_note"}
 V4_IZ_ALANLARI = {"schema", "schema_version", "contract", "id", "version", "state", "removed_at"}
@@ -142,6 +151,11 @@ def v4_kaydini_dogrula(kayit):
         _kapsam_listesi(icerik.get("applies_to"), "record.content.applies_to")
         for i, kaynak in enumerate(_liste(icerik.get("sources"), "record.content.sources")):
             _kapali(kaynak, V4_KAYNAK_ALANLARI, f"record.content.sources[{i}]")
+        for i, cevap in enumerate(_liste(icerik.get("answers"), "record.content.answers")):
+            if not isinstance(cevap, str):
+                _kapali(cevap, V4_CEVAP_ALANLARI, f"record.content.answers[{i}]")
+        for i, madde in enumerate(_liste(icerik.get("not_in_sources"), "record.content.not_in_sources")):
+            _kapali(madde, V4_YOKLUK_ALANLARI, f"record.content.not_in_sources[{i}]")
     for i, iddia in enumerate(_liste(kayit.get("claims"), "record.claims")):
         yol = f"record.claims[{i}]"
         _kapali(iddia, V4_IDDIA_ALANLARI, yol)
@@ -160,11 +174,24 @@ def v4_kaydini_dogrula(kayit):
     if kayit.get("publication") is not None:
         _kapali(kayit["publication"], V4_YAYIN_ALANLARI, "record.publication")
         if kayit["publication"].get("gate") is not None:
-            _kapali(kayit["publication"]["gate"], V4_KAPI_ALANLARI, "record.publication.gate")
+            kapi = kayit["publication"]["gate"]
+            _kapali(kapi, V4_KAPI_ALANLARI, "record.publication.gate")
+            for ad, kume in (("source_snapshots", V4_ANLIK_ALANLARI), ("absence_checks", V4_YOKLUK_DENETIMI_ALANLARI)):
+                for i, satir in enumerate(_liste(kapi.get(ad), f"record.publication.gate.{ad}")):
+                    _kapali(satir, kume, f"record.publication.gate.{ad}[{i}]")
         if kayit["publication"].get("label") is not None:
             _kapali(kayit["publication"]["label"], V4_ETIKET_ALANLARI, "record.publication.label")
     if kayit.get("corrections") is not None:
         _kapali(kayit["corrections"], V4_DUZELTME_ALANLARI, "record.corrections")
+    if kayit.get("lineage") is not None:
+        _kapali(kayit["lineage"], V4_SOY_ALANLARI, "record.lineage")
+        for i, surum in enumerate(_liste(kayit["lineage"].get("versions"), "record.lineage.versions")):
+            yol = f"record.lineage.versions[{i}]"
+            _kapali(surum, V4_SOY_SURUM_ALANLARI, yol)
+            if surum.get("provenance") is not None:
+                _kapali(surum["provenance"], V4_KOKEN_ALANLARI, yol + ".provenance")
+                for j, asama in enumerate(_liste(surum["provenance"].get("stages"), yol + ".provenance.stages")):
+                    _kapali(asama, V4_ASAMA_ALANLARI, f"{yol}.provenance.stages[{j}]")
 
 
 def v1_kayitlari(community_db, public_url):

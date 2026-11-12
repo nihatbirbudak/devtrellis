@@ -6,15 +6,15 @@
 
 DevTrellis is an open technology knowledge community for hobbyists and professional developers. Its aim is to make useful research easier to find and reuse, helping reduce the time and tokens spent asking AI to investigate the same topic again. By bringing together current news, research, projects and developments, the community can also help people discover work and topics they did not know to look for.
 
-Start at **[devtrellis.org](https://devtrellis.org)**: open a title or choose **Read research** to read the full shared report and follow its GitHub, project and original source links. Check its date, sources, scope and limitations. If it answers your question, reuse it; if something is missing or outdated, research that part with your own model. Reading on the site needs no account, installation, API key or AI assistant. Reading and importing an existing report do not call a model.
+Start at **[devtrellis.org](https://devtrellis.org)**: open a title or choose **Read research**. A shared report opens as a readable page; a record published through the machine gate opens as structured data (JSON) with its quotes and sources, because these records have no readable page yet. Follow the original source links. Check its date, sources, scope and limitations. If it answers your question, reuse it; if something is missing or outdated, research that part with your own model. Reading on the site needs no account, installation, API key or AI assistant. Reading and importing an existing report do not call a model.
 
 Community pages: [About](https://devtrellis.org/about) · [Guidelines](https://devtrellis.org/guidelines) · [Volunteer application](https://devtrellis.org/contribute) · [Support](https://devtrellis.org/support). All offer English and Turkish without an account. Applications and support messages are private; applying is not required to read or share research.
 
-Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact public text, sources, model details and content permission before sending an anonymous copy for moderation. Private question/claim metadata and author identity are excluded. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
+Your personal research stays on your computer. When it is ready, choose **Keep local** or **Preview and share**: review the exact public text, sources, model details and content permission before sending an anonymous copy for moderation. On devtrellis.org, records that pass the machine gate are published automatically and labelled "not human-reviewed"; reports shared from the local app go to a moderator. Private question/claim metadata and author identity are excluded. Sharing is optional and requires neither an account nor manual file transfer. Finding, checking, reusing and contributing should build a useful shared library. The [product vision and roadmap](PLATFORM.md) distinguishes current features from planned work.
 
 ## Two ways to use it
 
-Research can develop through linked contributions: cite the exact earlier report version, explain new findings and keep its original sources. Readers can follow that history and report usefulness, actual reuse, outdated information or a disputed claim. Separate web and MCP access counters show approximate activity; popularity and model names do not establish correctness. [Research development and privacy](MCP.md).
+Research can develop through linked contributions: cite the exact earlier report version, explain new findings and keep its original sources. Readers can follow that history and report usefulness, actual reuse, outdated information or a disputed claim. Separate web and MCP access counters show approximate activity for shared reports (machine-gated records are not counted yet); popularity and model names do not establish correctness. [Research development and privacy](MCP.md).
 
 This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment variables, database keys and the `ufuk-share` format remain compatible. The community service is installed and operated separately. Living topic pages, an hourly community researcher and publisher connectors remain planned.
 
@@ -22,14 +22,14 @@ This is an early alpha, previously named UFUK. Legacy `UFUK_*` environment varia
 | --- | --- |
 | Follow sources and save interests, projects and research locally | Browse published research, projects and developments |
 | Use your own optional model provider | Read without a model account or contribution requirement |
-| Preview and send selected research directly; keep everything else local | Receive account-free contributions; moderators review publication |
+| Preview and send selected research directly; keep everything else local | Receive account-free contributions; machine-gated records can be published automatically (labelled "not human-reviewed"), shared reports go to moderators |
 | Keep private research on your computer | Version corrections and withdraw publications |
 
 The developer space, advanced workspace and community screens offer English and Turkish. Source and contributor text keeps its original language; interface language does not rewrite other people's work. Model report language is a separate provider setting.
 
-An optional [MCP connection](MCP.md) lets compatible assistants search/read existing research and offer a contribution with an explicit preview and approval. Report text returned to an assistant can still consume context tokens. Reuse may reduce repeated model work; no particular token or time saving has been measured.
+An optional [MCP connection](MCP.md) lets an assistant check whether a documentation page is already covered (`lookup_source`) before fetching it, search and read records, and offer a contribution with an explicit preview and approval. Record text returned to an assistant still consumes context tokens. On covered questions, early experiments suggest that answers of similar quality can be reached with fewer page opens. Limits: 6 questions (11 November 2026, alpha.14 bridge), chosen to match existing records; 2 runs per question; the bridge was called by a script, not from inside a real assistant; one evaluator; an artificial cold baseline that read whole pages as raw files; billed cost and general savings were not measured; against WebFetch no saving was shown.
 
-Install the included **Claude Code / Codex skill** to use this flow during public technology research. Compatible MCP Apps hosts show **Share / Keep local** controls; other hosts provide the same controls on a local review page. Submission requires the review capability and two initially unchecked confirmations. A model-supplied approval boolean is insufficient. Pattern filters reduce accidental disclosure, but cannot detect every private fact; inspect the exact public copy. [Skill installation and privacy boundaries](MCP.md).
+An assistant needs only the MCP connection to read records; the optional **Claude Code / Codex skill** helps prepare a contribution or plan deeper research. Compatible MCP Apps hosts show **Share / Keep local** controls; other hosts provide the same controls on a local review page. Submission requires the review capability and two initially unchecked confirmations. A model-supplied approval boolean is insufficient. Pattern filters reduce accidental disclosure, but cannot detect every private fact; inspect the exact public copy. [Skill installation and privacy boundaries](MCP.md).
 
 ## Install
 
@@ -77,7 +77,7 @@ Access, limits and charges are your responsibility. Requests send selected conte
 
 Save a card, choose its content permission and preview all fields before exporting. Research needs a source link; projects need a public project link. Importing previews before saving. Uploading to a community installation is a separate explicit action.
 
-The optional K1 v4 contribution path (machine gate, moderation queue, stop switch) is disabled by default; see
+The optional K1 v4 contribution path (machine gate, moderation queue, stop switch) is disabled by default in the code; devtrellis.org runs it with automatic publication on, so records that pass the gate go live labelled "not human-reviewed". See
 [docs/community-k1.md](docs/community-k1.md).
 
 Software is **MIT licensed**, including commercial use. Authors independently choose **CC BY 4.0** or **CC0 1.0** for their own card text. These permissions do not change linked software licenses or source article rights. Link to publications and write your own summary. Account identity, author claims, model output and factual verification are distinct.

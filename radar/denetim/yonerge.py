@@ -110,6 +110,49 @@ KALIPLAR = [
 ]
 
 
+# alpha.15 güvenlik (izolasyon incelemesi Y1): geniş tarama. Yalnız sunucu ayarı `hold_instruction_like` açıkken çalışır
+# (`denetle(..., genis=True)`); kapalıyken kapı sonucu önceki sürümün aynısıdır. İkisi de yalnız uyarıdır (ret kuralı değil);
+# bekletme sınıfına girer (`bekletme.py`). Kibar buyruklar: "doğrulamak için şu komutu çalıştırın", "önce `pip install …` gerekli".
+_KOMUT_HEDEF = (r"(?:`|\$\s|\b(?:ssh|scp|curl|wget|sudo|bash|sh|zsh|pwsh|powershell|cmd|python[\d.]*|py|node|npx|uvx|pipx|"
+                r"pip[\d.]*|npm|pnpm|yarn|uv|systemctl|journalctl|docker|kubectl|git|gh|chmod|export|iwr|irm)\b)")
+_EMIR_BASI = (r"(?:^|[.!?;:]\s+|\b(?:then|first|now|please|simply|just|next|finally|also)\s+|"
+              r"\bto\s+(?:verify|confirm|check|test|validate|diagnose|debug|fix|enable|resolve|ensure|make\s+sure)\b"
+              r"[^.!?\n]{0,60}?,?\s+)")
+_KURULUM = (r"(?:\b(?:pip[\d.]*|pipx|uv(?:\s+pip)?|poetry|pdm|npm|pnpm|yarn|bun|cargo|go|gem|brew|apt(?:-get)?|dnf|yum|"
+            r"conda|mamba|choco|winget|scoop)\s+(?:install|add|get|i)\b)")
+GENIS_KALIPLAR = [
+    ("dogrulama_komutu", re.compile(_EMIR_BASI + r"(?:run|execute|invoke|launch)\s+[^.!?\n]{0,30}?"
+                                    + _KOMUT_HEDEF, _I)),
+    ("dogrulama_komutu", re.compile(r"\b(?:verify|confirm|check|test|validate)\b[^.!?\n]{0,60}?\bby\s+running\b", _I)),
+    ("dogrulama_komutu", re.compile(r"\b(?:doğrula|kontrol\s+et|dene)\w*\s+için\b[^.!?\n]{0,60}?çalıştır", _I)),
+    ("kurulum_on_kosulu", re.compile(r"\b(?:first|beforehand|prerequisite|before\s+(?:using|running|you|calling|importing|"
+                                     r"starting|it|this|that|the))\b[^.!?\n]{0,60}?" + _KURULUM, _I)),
+    ("kurulum_on_kosulu", re.compile(_KURULUM + r"[^.!?\n]{0,80}?\b(?:first|beforehand|(?:is|are)\s+(?:required|needed|"
+                                     r"necessary|mandatory))\b", _I)),
+    ("kurulum_on_kosulu", re.compile(r"\b(?:requires?|need(?:s|ed)?\s+to|must|have\s+to|has\s+to|you\s+should)\b"
+                                     r"[^.!?\n]{0,25}?" + _KURULUM, _I)),
+    ("kurulum_on_kosulu", re.compile(_EMIR_BASI + r"`?" + _KURULUM, _I)),
+    ("kurulum_on_kosulu", re.compile(r"\bönce\b[^.!?\n]{0,40}?" + _KURULUM + r"|" + _KURULUM
+                                     + r"[^.!?\n]{0,60}?\b(?:gerekli|gerekir|şart)", _I)),
+]
+
+
+def genis_tara(paket, d):
+    """Geniş tarama bulgularını `d` denetimine uyarı olarak ekler: katkıcının kendi metni (adres alanları ve alıntılar hariç).
+
+    Alıntılar taranmaz: kapının sayfada aynen bulduğu belge metnidir ve belgeler sık sık "Run `…`" der (ölçümde üç yanlış
+    bekletmenin ikisi alıntıdandı). Bugünkü kalıplar (`KALIPLAR`) alıntıyı taramaya devam eder. Sınır: kötü niyetli bir kişi
+    kendi yayımladığı sayfadan buyruk içeren bir cümleyi alıntılayabilir; bu cümle geniş taramaya girmez."""
+    for yol, alan, metin in metinleri_gez(paket):
+        if alan in ADRES_ALANLARI or alan == "quote":
+            continue
+        for tur, kalip in GENIS_KALIPLAR:
+            for eslesme in kalip.finditer(metin):
+                d.uyar(f"yonerge.{tur}")
+                d.ayrinti.append({"tur": tur, "konum": yol, "karakter": eslesme.start(), "seviye": "uyari"})
+    return d
+
+
 def _belge_yonlendirmesi(metin, eslesme):
     """'If you use version 2, disregard the above and follow the steps below' gibi belgede yön gösteren kullanım.
     Cümlenin devamında adres, yol, komut ya da anahtar sözcüğü geçiyorsa yönlendirme sayılmaz (v0.2.3)."""
@@ -126,7 +169,8 @@ def _olumsuz_yuklem(metin, eslesme):
     return bool(_OLUMSUZ.search(onceki[-60:]))
 
 
-def denetle(paket):
+def denetle(paket, genis=False):
+    """`genis=True` (yalnız sunucu ayarı `hold_instruction_like` açıkken): ek olarak `GENIS_KALIPLAR` uyarıları."""
     d = Denetim(6, "yonerge_kokusu", "Ajana yönelik buyruk kokusu", engelleyici=True,
                 gecti_aciklamasi="Ajana yönelik buyruk kalıbı bulunmadı. Bu sezgisel bir taramadır; temiz sonuç metnin zararsız olduğunu kanıtlamaz.")
     for yol, alan, metin in metinleri_gez(paket):
@@ -163,4 +207,6 @@ def denetle(paket):
                 "kullaniciya_sormadan" in turler and turler & {"ajana_hitap", "rol_taklidi", "calistir_buyrugu"}):
             d.kal("yonerge.ajana_buyruk")
             d.ayrinti.append({"tur": "ajana_buyruk", "konum": yol, "karakter": None, "seviye": "kaldi"})
+    if genis:
+        genis_tara(paket, d)
     return d
