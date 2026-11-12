@@ -14,7 +14,7 @@ from unittest import mock
 
 import mcp_topluluk as kopru
 from mcp_topluluk import HitLog, create_server
-from test_kopru_sinir import SinirTaban, blok_govdesi, dolgu, kucuk_kayit
+from tests.test_kopru_sinir import SinirTaban, blok_govdesi, dolgu, kucuk_kayit
 from tests import k2_sahte_sunucu as sahte
 
 AYIRICILAR = {"u2028": "a ", "u0085": "b\x85", "u2029_tirnak": " \""}
